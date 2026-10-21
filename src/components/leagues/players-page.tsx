@@ -35,7 +35,7 @@ import { cn } from '@/lib/utils'
 import { ClaimDialog } from './claim-dialog'
 
 import { LockTag, TeamNameLink, LeaguePageTitle } from './league-cells'
-import { healthyIrAddTitle, healthyIrBlockers, healthyIrHeadline } from './healthy-ir-ops'
+import { currentWeekGamesOver, healthyIrAddTitle, healthyIrBlockers, healthyIrHeadline } from './healthy-ir-ops'
 import { currentWeekOf, formatInstantWithDate, lockBadgeFor } from './lineup-editor-ops'
 import { opponentOf } from './my-team-ops'
 import {
@@ -240,7 +240,8 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
   const fill = rosterFill(myRoster, deriveRosterSize(detail.settings.roster_settings))
   // D593 (migration 205): a player who isn't IR-eligible in one of my IR
   // spots closes every + until he leaves it — said once above the table.
-  const irBlockers = healthyIrBlockers(myRoster ?? [], detail.settings.roster_settings.ir_slots, currentWeekOf(scheduleWeeks))
+  const irWeek = currentWeekOf(scheduleWeeks)
+  const irBlockers = healthyIrBlockers(myRoster ?? [], detail.settings.roster_settings.ir_slots, irWeek, currentWeekGamesOver(scheduleWeeks, irWeek))
   const irBlockTitle = healthyIrAddTitle(irBlockers)
   const irHeadline = healthyIrHeadline(irBlockers)
 

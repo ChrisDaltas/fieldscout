@@ -3,11 +3,12 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
-import { HEALTHY_IR_STILL_OPEN, HEALTHY_IR_WAYS, healthyIrBlockers, healthyIrHeadline } from '@/components/leagues/healthy-ir-ops'
+import { HEALTHY_IR_STILL_OPEN, currentWeekGamesOver, healthyIrBlockers, healthyIrHeadline, healthyIrWays } from '@/components/leagues/healthy-ir-ops'
 import {
   buildEditorModel,
   currentWeekOf,
   defaultLineupWeek,
+  formatInstantWithDate,
   keptStarters,
   placementFromStored,
   weekEditability,
@@ -109,8 +110,14 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   const movesState = movesGate(detail.league.status)
   // D593 (migration 205): a player who isn't IR-eligible left in one of your
   // IR spots blocks every add and claim until he leaves it — said above the
-  // lineup with the two ways out (the + doors elsewhere are closed too).
-  const irHeadline = movesState.open ? healthyIrHeadline(healthyIrBlockers(roster, detail.settings.roster_settings.ir_slots, currentWeek)) : null
+  // lineup with the ways out that work NOW (the + doors elsewhere are closed
+  // too). F690: once his game has started the move out (and for a while the
+  // drop) is locked as well, and the notice says so instead.
+  const irBlockers = movesState.open
+    ? healthyIrBlockers(roster, detail.settings.roster_settings.ir_slots, currentWeek, currentWeekGamesOver(weeks, currentWeek))
+    : []
+  const irHeadline = healthyIrHeadline(irBlockers)
+  const irWays = healthyIrWays(irBlockers, (iso) => formatInstantWithDate(iso, detail.settings.draft.time_zone ?? null).local)
   const waiverWindow = detail.waiver_window ?? null
   const claimsLive = detail.waivers_live !== false && detail.settings.waiver_type !== 'none_fcfs' && waiverWindow?.waivers !== false
   const [builder, setBuilder] = useState(false)
@@ -272,7 +279,7 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
             <div className="px-3 pt-3" data-healthy-ir-notice>
               <MNotice tone="error">
                 <span className="block font-semibold">{irHeadline}</span>
-                {HEALTHY_IR_WAYS.map((w) => (
+                {irWays.map((w) => (
                   <span key={w} className="block text-m-t1">
                     {w}
                   </span>

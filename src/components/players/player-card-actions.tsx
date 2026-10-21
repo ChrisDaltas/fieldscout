@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { Crest } from '@/components/leagues/league-cells'
 import { DropConfirm } from '@/components/leagues/drop-player-dialog'
+import { currentWeekGamesOver } from '@/components/leagues/healthy-ir-ops'
 import { currentWeekOf, formatInstantWithDate, lockBadgeFor } from '@/components/leagues/lineup-editor-ops'
 import { moveReadout, poolRows } from '@/components/leagues/players-page-ops'
 import { tradesHref } from '@/components/leagues/trades-ops'
@@ -92,6 +93,7 @@ export function useCardLeagueView(player: PoolPlayer, leagueId: string) {
     formatInstant: (iso) => formatInstantWithDate(iso, tz).local,
     irSlots: detail.settings.roster_settings.ir_slots,
     currentWeek: currentWeekOf(schedule.data?.weeks ?? []),
+    weekGamesOver: currentWeekGamesOver(schedule.data?.weeks ?? [], currentWeekOf(schedule.data?.weeks ?? [])),
   })
   return { state: 'ready' as const, view, myTeamId }
 }

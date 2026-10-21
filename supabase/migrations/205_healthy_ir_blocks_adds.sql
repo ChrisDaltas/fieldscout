@@ -79,8 +79,12 @@
 --
 -- WHAT IS UNCHANGED, STATED. IR placement (only a player holding one of the
 -- spot's designations moves INTO it), Restricted-IR stints, per-player kickoff
--- locks (an IR man whose game has kicked off can't leave the spot until his
--- lock releases — the block stands meanwhile, as on ESPN / Yahoo; F690),
+-- locks (an IR man whose own game this week has kicked off can't leave the
+-- spot until the NEXT week starts — set_lineup's IR-timing gate clears when
+-- the current week flips, Wednesday 00:00 ET — and can't be dropped until the
+-- week's last game ends; the block stands meanwhile, so from his kickoff to
+-- the games' end the team can't add at all and from then to the new week only
+-- a plain drop of him clears it — measured, PROGRESS F690, Chris's call),
 -- position fit, one start per player per week, bye players never locked
 -- (200), lineup saves never refused (201), set_lineup / commish_edit_lineup /
 -- autopilot, the trade verbs and executor, commish_roster_override, every

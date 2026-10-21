@@ -246,6 +246,20 @@ describe('cardLeagueView — where he is, and the one move that fits', () => {
     const stint = { teams: [team('mine', [rp('p-dl', { slot_key: 'dl:0', ir_placed_week: 5, ir_lock_until_week: 9 })]), team('them', [])] }
     const open = cardLeagueView(input({ rosters: stint, irSlots, currentWeek: 6 }))
     expect(open.kind === 'available' && open.acquire).toEqual({ kind: 'add', disabled: false })
+    // F690: the closed + never prescribes a locked move — in his game, and once the week's games are over.
+    const inGame = { teams: [team('mine', [rp('p-irh', { full_name: 'Jalen Hurts', slot_key: 'ir:0', ir_placed_week: 5, game_lock: { state: 'locked_until', until: '2026-10-20T07:00:00Z' } })]), team('them', [])] }
+    const locked = cardLeagueView(input({ rosters: inGame, irSlots, currentWeek: 6 }))
+    expect(locked.kind === 'available' && locked.add).toEqual({
+      show: true,
+      disabled: true,
+      title: 'Your IR spot still holds Jalen Hurts, who is healthy, and his game has started — no adds until you can drop him (after this week’s games) or move him out (next week).',
+    })
+    const over = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6, weekGamesOver: true }))
+    expect(over.kind === 'available' && over.add).toEqual({
+      show: true,
+      disabled: true,
+      title: 'Your IR spot still holds Jalen Hurts, who is healthy — no adds until he leaves it: drop him now, or move him out next week.',
+    })
   })
 })
 

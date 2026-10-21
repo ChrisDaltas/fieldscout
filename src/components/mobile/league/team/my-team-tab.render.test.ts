@@ -184,6 +184,23 @@ describe('MyTeamTab (mobile League › Team)', () => {
     expect(html).not.toContain('data-healthy-ir-notice')
   })
 
+  it('F690: the week’s games are over and he played — the notice says a drop works now and the move waits for next week (never the locked move)', () => {
+    const spot = `${settings.roster_settings.ir_slots[0]!.key}:0`
+    const seed = (qc: QueryClient) => {
+      qc.setQueryData(leagueRosterKeys.all(LEAGUE), {
+        ...ROSTERS,
+        teams: [{ ...ROSTERS.teams[0]!, roster: [...ROSTER, { ...p('irm', 'Nick Chubb', 'RB', 'HOU'), status: 'Active', slot_key: spot, ir_placed_week: 3 }] }, ROSTERS.teams[1]!],
+      })
+      qc.setQueryData(teamLineupKeys.week(ME, 5), { ...LINEUP, slot_map: { ...LINEUP.slot_map, [spot]: 'irm' } })
+    }
+    const over: LeagueSchedule = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => (w.week === 5 ? { ...w, status: 'correction_window' } : w)) }
+    const out = render(over, detail, seed)
+    expect(out).toContain('Nick Chubb is healthy — he can’t leave your IR spot until next week, so adds stay closed unless you drop him')
+    expect(out).toContain('You can drop him now.')
+    expect(out).toContain('Or move him out of the spot once next week starts.')
+    expect(out).not.toContain('Move him to your bench — drop someone too if your roster is full.')
+  })
+
   it('renders the league header and the team card from real reads', () => {
     expect(html).toContain('Sunday Funday League')
     expect(html).toContain('Touchdown Tacos')

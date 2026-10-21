@@ -36,7 +36,7 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 
 import { LineupEditor, railTargetProps, type LineupStats } from './lineup-editor'
 import { KEPT_STARTER_COPY, KEPT_STARTER_OTHER_WEEK_COPY, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
-import { HEALTHY_IR_STILL_OPEN, HEALTHY_IR_WAYS } from './healthy-ir-ops'
+import { HEALTHY_IR_MOVE_NEXT_WEEK, HEALTHY_IR_STILL_OPEN, HEALTHY_IR_WAYS } from './healthy-ir-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, NO_SEAT_ROW_AUTOPILOT_COPY } from './team-commish-ops'
 import { TeamPage } from './team-page'
@@ -336,11 +336,11 @@ function unescapeHtml(html: string): string {
 
 describe('D593 — a healthy man left in my IR spot: the notice above the lineup', () => {
   const spot = `${settings.roster_settings.ir_slots[0]!.key}:0`
-  const withIr = (status: string): Seed => ({
+  const withIr = (status: string, over: Partial<RosterPlayer> = {}): Seed => ({
     rosters: {
       ...rosters,
       teams: [
-        { ...rosters.teams[0]!, roster: [...roster, player({ player_id: 'ir-man', position: 'RB', full_name: 'Render IR Man', status, slot_key: spot, ir_placed_week: 1 })] },
+        { ...rosters.teams[0]!, roster: [...roster, player({ player_id: 'ir-man', position: 'RB', full_name: 'Render IR Man', status, slot_key: spot, ir_placed_week: 1, ...over })] },
         rosters.teams[1]!,
       ],
     },
@@ -354,6 +354,13 @@ describe('D593 — a healthy man left in my IR spot: the notice above the lineup
     expect(html).toContain(HEALTHY_IR_STILL_OPEN)
     expect(html).toContain('bg-negative-soft')
     expect(html).not.toMatch(/bg-negative-strong|bg-destructive/)
+  })
+  it('F690: his game has started — the notice never prescribes the locked move; it says when a drop opens and that the move waits for next week', () => {
+    const html = renderTeamPage(withIr('Active', { game_lock: { state: 'locked_release_unrecorded', until: null } }))
+    expect(html).toContain('Render IR Man is healthy, but his game has started — he’s locked in your IR spot, so you can’t add players yet')
+    expect(html).toContain('You can drop him once this week’s games end.')
+    expect(html).toContain(HEALTHY_IR_MOVE_NEXT_WEEK)
+    for (const way of HEALTHY_IR_WAYS) expect(html).not.toContain(way)
   })
   it('none while he still fits the spot, and none before the season', () => {
     expect(renderTeamPage(withIr('Out'))).not.toContain('data-healthy-ir-notice')

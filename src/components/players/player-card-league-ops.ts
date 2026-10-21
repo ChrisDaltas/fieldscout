@@ -68,6 +68,9 @@ export interface CardLeagueInput {
    *  in one of the viewer's IR spots closes every Add / Claim (D593). */
   irSlots?: readonly IrSlot[]
   currentWeek?: number | null
+  /** The current week's games are over (`currentWeekGamesOver`) — the closed
+   *  Add's reason then says a drop of him works but the move waits (F690). */
+  weekGamesOver?: boolean
 }
 
 export type CardLeagueView =
@@ -124,7 +127,7 @@ export function cardLeagueView(input: CardLeagueInput): CardLeagueView {
 
   const myTeam = input.rosters?.teams.find((t) => t.team_id === input.myTeamId)
   const myRoster = myTeam?.roster ?? []
-  const irBlockTitle = healthyIrAddTitle(healthyIrBlockers(myRoster, input.irSlots ?? [], input.currentWeek ?? null))
+  const irBlockTitle = healthyIrAddTitle(healthyIrBlockers(myRoster, input.irSlots ?? [], input.currentWeek ?? null, input.weekGamesOver ?? false))
   let { add, claim } = pickupActions(row, {
     waiverType: input.waiverType,
     window: input.waiverWindow,
