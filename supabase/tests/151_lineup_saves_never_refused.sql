@@ -14,8 +14,10 @@
 --   2026-10-20: "the only thing you can't do is put a player that's not
 --   injured into an IR spot" — IR placement and Restricted-IR stay as built.
 --   The same sentence goes on: a player who became healthy while in an IR
---   spot blocks other roster moves until he is moved out. That block is NOT
---   built (PROGRESS F687, quoted whole there) — see §B's marks.
+--   spot blocks other roster moves until he is moved out. That block landed
+--   later in 205 (D593, F687 discharged; pgTAP 155) for ADDS and CLAIMS only
+--   — Chris: roster moves "mean adds and drops"; lineup moves stay open —
+--   so §B's lineup saves with him there hold as written.
 --
 -- OWN FIXTURE: users 9201…, league b201…01 (SL — stores
 -- `allow_illegal_lineups = false`, as SuperLeague v0.1 does), teams c201…,
@@ -42,10 +44,10 @@
 --       newly starting an OUT player, a bye starter and an empty slot all
 --       save; what still refuses: a WR in the QB slot (the fit), a Thursday
 --       player entering a slot (the lock), a healthy player into the IR spot
---       (IR placement); an OUT player swapped into it lands. UNTIL F687:
---       B3–B8 keep the since-healthy man on IR and assert today's answer —
---       he keeps `ir_ineligible` and blocks nothing. When F687's block lands
---       they flip and are re-cut there; B1 / B2 / B9 do not depend on it.
+--       (IR placement); an OUT player swapped into it lands. B3–B8 keep
+--       the since-healthy man on IR: he keeps `ir_ineligible` and blocks no
+--       LINEUP save — 205's block (D593) is adds and claims only, so they
+--       hold as written; B1 / B2 / B9 never depended on it.
 --   §C  the commissioner (commish_edit_lineup_internal), SV Delta: the same
 --       cases land with their receipt (none for the no-op); the pre-201 editor
 --       refuses Chris's map; the fit still binds him; set_lineup's
@@ -480,8 +482,8 @@ select is(pg_temp.said('b4'),
 -- FIXTURE STEP — F687's case from here on: the bench RB sv-a-irh went into
 -- the IR spot in week 5 (he was OUT then) and is HEALTHY again now. Written
 -- directly, as the fixture writes every roster row; his stored start is the
--- IR spot. B3–B8 assert TODAY's answer with him there (he keeps
--- `ir_ineligible`, blocks nothing) — TRUE ONLY UNTIL F687's block lands.
+-- IR spot. B3–B8 assert the answer with him there: he keeps
+-- `ir_ineligible` and blocks no lineup save (205 / D593 blocks adds only).
 update league_rosters set slot_key = 'ir:0', ir_placed_week = 5
 where league_id = 'b2010000-0000-4000-8000-000000000001' and player_id = 'sv-a-irh';
 update team_lineups set slot_map = slot_map || '{"ir:0": "sv-a-irh"}'::jsonb
@@ -491,41 +493,41 @@ select pg_temp.call('b5', 2, pg_temp.sl('public.set_lineup_internal', 2,
   '{"qb:0": "sv-a-qb", "rb:0": "sv-a-out", "rb:1": "sv-a-ob", "wr:0": "sv-a-wr", "ir:0": "sv-a-irh"}', 4));
 select is(pg_temp.said('b5'),
   'saved no_changes=false bye=[] out=["sv-a-out", "sv-a-ob"] empty=[] ir_ineligible=["sv-a-irh"] illegal=true allow=true',
-  'B3 NEWLY STARTING an OUT player saves — flagged out; he scores what he scores [until F687: the since-healthy IR man blocks nothing]');
+  'B3 NEWLY STARTING an OUT player saves — flagged out; he scores what he scores [D593: the since-healthy IR man blocks adds, never a lineup save]');
 -- A bye starter: the YC WR at wr:0.
 select pg_temp.call('b6', 2, pg_temp.sl('public.set_lineup_internal', 2,
   '{"qb:0": "sv-a-qb", "rb:0": "sv-a-out", "rb:1": "sv-a-ob", "wr:0": "sv-a-bye", "ir:0": "sv-a-irh"}', 5));
 select is(pg_temp.said('b6'),
   'saved no_changes=false bye=["sv-a-bye"] out=["sv-a-out", "sv-a-ob"] empty=[] ir_ineligible=["sv-a-irh"] illegal=true allow=true',
-  'B4 a BYE starter saves — flagged bye (Chris: "You can always start a player on a buy … That shouldn''t be blocking anyone from doing anything.") [until F687]');
+  'B4 a BYE starter saves — flagged bye (Chris: "You can always start a player on a buy … That shouldn''t be blocking anyone from doing anything.") [D593: lineup saves stay open]');
 -- An empty slot: rb:1 left open.
 select pg_temp.call('b7', 2, pg_temp.sl('public.set_lineup_internal', 2,
   '{"qb:0": "sv-a-qb", "rb:0": "sv-a-out", "wr:0": "sv-a-bye", "ir:0": "sv-a-irh"}', 6));
 select is(pg_temp.said('b7'),
   'saved no_changes=false bye=["sv-a-bye"] out=["sv-a-out"] empty=["rb:1"] ir_ineligible=["sv-a-irh"] illegal=true allow=true',
-  'B5 an EMPTY slot saves — named in flags.empty [until F687]');
+  'B5 an EMPTY slot saves — named in flags.empty [D593: lineup saves stay open]');
 -- WHAT STILL REFUSES.
 select pg_temp.call('b8', 2, pg_temp.sl('public.set_lineup_internal', 2,
   '{"qb:0": "sv-a-wr", "rb:0": "sv-a-out", "wr:0": "sv-a-bye", "ir:0": "sv-a-irh"}', 7));
 select is(split_part(pg_temp.said('b8'), ' — ', 1),
   'refused: set_lineup: SV A WR (WR) cannot be placed',
-  'B6 POSITION RULES STILL BIND: a WR in the QB slot is refused by name (the E16 fit, unchanged) [until F687: the refusal named may change]');
+  'B6 POSITION RULES STILL BIND: a WR in the QB slot is refused by name (the E16 fit, unchanged) [D593: unchanged — his block is adds only]');
 select pg_temp.call('b9', 2, pg_temp.sl('public.set_lineup_internal', 2,
   '{"qb:0": "sv-a-qb", "rb:0": "sv-a-out", "wr:0": "sv-a-thu", "ir:0": "sv-a-irh"}', 8));
 select is(pg_temp.said('b9'),
   'refused: set_lineup: SV A Thu''s game kicked off at 2026-10-16T00:15:00+00:00 (nfl_games) — a player whose game has started cannot enter or move slots (§11.2, lineup_lock = per_player_kickoff); wanted "wr:0"',
-  'B7 THE KICKOFF LOCK STILL BINDS: the Thursday WR cannot enter a slot after his game (per-player lock, unchanged) [until F687: the refusal named may change]');
+  'B7 THE KICKOFF LOCK STILL BINDS: the Thursday WR cannot enter a slot after his game (per-player lock, unchanged) [D593: unchanged — his block is adds only]');
 select pg_temp.call('b10', 2, pg_temp.sl('public.set_lineup_internal', 2,
   '{"qb:0": "sv-a-qb", "rb:0": "sv-a-out", "wr:0": "sv-a-bye", "ir:0": "sv-a-rb2"}', 9));
 select is(pg_temp.said('b10'),
   'refused: set_lineup: SV A RB Two holds designation none — IR spot ir accepts only OUT, IR (§7.3.2 IR slot rules)',
-  'B8 IR PLACEMENT STILL BINDS (Chris 2026-10-20: "the only thing you can''t do is put a player that''s not injured into an IR spot"): a healthy RB into the IR spot is refused by name [until F687: the refusal named may change]');
+  'B8 IR PLACEMENT STILL BINDS (Chris 2026-10-20: "the only thing you can''t do is put a player that''s not injured into an IR spot"): a healthy RB into the IR spot is refused by name [D593: unchanged — his block is adds only]');
 select pg_temp.call('b11', 2, pg_temp.sl('public.set_lineup_internal', 2,
   '{"qb:0": "sv-a-qb", "rb:0": "sv-a-out", "rb:1": "sv-a-irh", "wr:0": "sv-a-bye", "ir:0": "sv-a-ob"}', 10));
 select is(pg_temp.said('b11') || ' | placed ' || (select r -> 'ir_moves' -> 'placed' -> 0 ->> 'player_id' from r151 where tag = 'b11')
           || ' removed ' || (select r -> 'ir_moves' -> 'removed' -> 0 ->> 'player_id' from r151 where tag = 'b11'),
   'saved no_changes=false bye=["sv-a-bye"] out=["sv-a-out"] empty=[] ir_ineligible=[] illegal=true allow=true | placed sv-a-ob removed sv-a-irh',
-  'B9 …and an OUT player INTO the IR spot lands (the healthy IR man back to rb:1) — the IR rules are exactly as built; this swap is one of the ways out Chris names (F687)');
+  'B9 …and an OUT player INTO the IR spot lands (the healthy IR man back to rb:1) — the IR rules are exactly as built; this swap is one of the ways out Chris names (D593)');
 
 -- ---------------------------------------------------------------------------
 -- C. THE COMMISSIONER — commish_edit_lineup_internal on SV Delta (u1), at P
