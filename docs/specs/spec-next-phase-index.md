@@ -16,6 +16,7 @@ Existing fantasy platforms reset every year and make fantasy feel like admin. Fi
 | [Highlights & Watch — PRD](https://claude.ai/code/artifact/e5c2c903-8296-49a3-862d-3293b784c4ac) | YouTube highlight index, video on player and team pages, the Watch tab |
 | [NFL Player Profiles — PRD](https://claude.ai/code/artifact/60bd47bf-55bf-45d6-a68b-68fe21259a1a) | Ranked claims, stat catalog, receipts, comparisons, share cards |
 | [Manager Profiles & Versus — PRD](https://claude.ai/code/artifact/82835c33-0407-4c4b-9a59-03a08f9ec121) | Persistent manager history, skill stats and ranks, the Versus tab |
+| [Trade Calculator — PRD](spec-trade-calculator.md) *(repo only, Oct 21)* | Redraft trade calculator for 2–4 teams; values blend projections with real Sleeper trades. Not yet placed in the launch order |
 
 ## Launch order
 
@@ -44,6 +45,7 @@ The Claude Docs links above are the editable originals. Repo copies live next to
 - `spec-highlights-watch.md`
 - `spec-player-profiles.md`
 - `spec-manager-profiles-versus.md`
+- `spec-trade-calculator.md`
 - `prompt-next-phase-architect-pass.md` — the Claude Code prompt for building from these
 
 Overlaps with older specs: `spec-highlights-watch.md` supersedes the embedded-video phases of `spec-youtube-highlights.md`, and `spec-duel.md` overlaps the live-scoring parts of `spec-leagues-live-mode.md`.
