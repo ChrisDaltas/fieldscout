@@ -24,6 +24,9 @@
 --   modal or card should have "Drop" as an option if they are droppable. Not
 --   if they are locked for the week though. 3. No, if the player is no longer
 --   IR eligible the claims are cancelled."
+-- AND (Chris, 2026-10-21, verbatim — F693, correcting how answer 3 was first
+-- built): "no the claims are not cancelled, they should fail when waivers
+--   run. or maybe that is what you are saying another way..."
 --
 -- OWN FIXTURE: users 9205…, leagues b205…01 (LA — no waivers: instant
 -- pickups, trades with no review) and b205…02 (LW — FAAB, a run every day at
@@ -46,19 +49,21 @@
 --       Foxtrot a HEALTHY man in `ir` AND a healthy man in `dl` whose stint
 --               ended — two blockers (F692: dropping one in an add + drop
 --               leaves the other; dropping the last lets the add land)
---   LW  W Alpha a man in `ir` who is OUT when his claim is placed, then
---               healthy (the sync's write); the sync's door cancels the
---               claim; W Bravo claims the same free agent for less.
+--   LW  W Alpha a man in `ir` who is OUT when his two claims are placed,
+--               then healthy (the sync's write) and STILL there at the run —
+--               both claims fail; W Bravo claims the same free agent for less.
 --       W Charlie a man in `ir` who is OUT when his two claims are placed,
---               then listed Doubtful (which a plain IR spot doesn't take)
---               with no sync after — the RUN cancels both (the backstop).
+--               then listed Doubtful (which a plain IR spot doesn't take) —
+--               and FIXED before the run (moved to the bench): his claims
+--               are processed as usual.
 --
---   §A  FORM and D137: the posture of the helper, the three bodies, the new
---       internal and the job door; un205 gives back each of the three sources
---       (199's FILE TEXT) byte for byte and waiver_claim_notify_internal is
---       199's untouched; the live md5s are 205 as written; un205 is an
---       identity on every other body; the helper, the internal, the door and
---       the column as written; the reason vocabulary names healthy_in_ir.
+--   §A  FORM and D137: the posture of the helper and the four bodies; un205
+--       gives back each of the four sources (199's FILE TEXT) byte for byte;
+--       the live md5s are 205 as written; un205 is an identity on every other
+--       body; the helper as written; the reason vocabulary names
+--       healthy_in_ir among the INVALID (failed) reasons; nothing of the
+--       retired cancel build is on the database (no cancel function, no
+--       result_detail column).
 --   §B  the check itself (the helper): per team, per spot's designations,
 --       the Restricted stint.
 --   §C  adds (roster_add_drop): a healthy IR occupant refuses an add alone
@@ -76,36 +81,35 @@
 --       kicked off, the block STANDS — an add + drop of him is refused by
 --       the drop lock, an add alone by the block.
 --   §W  claims (LW): a new claim is refused by name (the manager, and the
---       commissioner acting for the team); F693 as ruled — the sync's door
---       CANCELS the claim placed before he got healthy (cancelled /
---       healthy_in_ir, result_detail naming him, nothing spent, its owner
---       told ONCE in plain words), a second call cancels and sends nothing,
---       a signed-in caller is refused; the RUN cancels a team's claims the
---       sync didn't reach (both of W Charlie's, one notice listing both), the
---       player goes to the next claim; the run's counts; after the fix a
---       claim is accepted.
+--       commissioner acting for the team); F693 as ruled — the claims placed
+--       before he turned ineligible SURVIVE the flip (still pending, nobody
+--       told); AT THE RUN each claim of the team still blocked FAILS (invalid
+--       / healthy_in_ir, before the decision, nothing spent, its owner told
+--       per claim in plain words, the player to the next claim in line); the
+--       team that fixed it before the run gets its claims processed; the
+--       run's counts; after the fix a claim is accepted.
 --
 -- BREAK PROBES (measured 2026-10-21 on the local DB, 205 applied; each
 -- inserted right after the fixture, inside this transaction):
---   (a) the three bodies put back from pg_temp.un205(prosrc) — 199's text ⇒
---       19 of 48 red — C1 C2 C2b C4 C7 C8 C9 D3 D5 E4 W1 W2 W3 W5 W6 W9 W10
---       W11 W12: every add and claim of a blocked team goes through and the
---       run cancels nothing (C8 C9 D3 D5 W3 W5 W6 follow: the moves they
---       repeat already went through). Green under it by design: §A
+--   (a) the four bodies put back from pg_temp.un205(prosrc) — 199's text ⇒
+--       18 of 42 red — C1 C2 C2b C4 C7 C8 C9 D3 D5 E4 W1 W2 W3 W5 W6 W7 W8
+--       W9: every add and claim of a blocked team goes through, and at the
+--       run W Alpha's claims win (C8 C9 D3 D5 W3 W9 follow: the moves they
+--       repeat or count already went through). Green under it by design: §A
 --       (measured before the probe), §B (the helper is 205's own), E3 (the
---       drop lock is 199's), W4 W7 (the door is 205's own and still cancels),
---       and every way out — the drop, the lineup moves, the trade, the
---       commissioner's force-add.
---   (b) the new cancel internal made a no-op ⇒ 9 of 48 red — W3 W4 W5 W6 W7
---       W9 W10 W11 W12: nothing is cancelled by the sync's door or the run,
---       nobody is told.
+--       drop lock is 199's), W4 (a lineup move), and every way out — the
+--       drop, the lineup moves, the trade, the commissioner's force-add.
+--   (b) process_waivers_internal alone put back (199's run; the submit still
+--       205's) ⇒ 4 of 42 red — W5 W6 W7 W8: the still-blocked team's claims
+--       go to the decision and win, nobody is told of a failure. W3 stays
+--       green under it: nothing but the run ever touches a pending claim.
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(48);
+select plan(42);
 
 -- pg_temp.un205 — migration 205's inserted lines removed (each ends
 -- `-- 205 / D593`; 205 alters no line of 199's text); an identity on every
@@ -117,11 +121,8 @@ $un205$;
 -- ---------------------------------------------------------------------------
 -- A. Form pins, D137 in the database
 -- ---------------------------------------------------------------------------
-create function pg_temp.three() returns text[] language sql as $$
-  select array['roster_add_drop_internal', 'waiver_claim_submit_internal', 'process_waivers_internal']
-$$;
-create function pg_temp.mine() returns text[] language sql as $$
-  select pg_temp.three() || array['ir_healthy_blockers_internal', 'waiver_claims_cancel_healthy_ir_internal', 'waiver_claims_cancel_healthy_ir']
+create function pg_temp.four() returns text[] language sql as $$
+  select array['roster_add_drop_internal', 'waiver_claim_submit_internal', 'process_waivers_internal', 'waiver_claim_notify_internal']
 $$;
 select is(
   (select string_agg(format('%s:%s:%s:%s:%s:%s:%s:%s', p.proname, l.lanname, p.provolatile, p.prosecdef, array_to_string(p.proconfig, ','),
@@ -129,59 +130,50 @@ select is(
                             has_function_privilege('authenticated', p.oid, 'EXECUTE'),
                             has_function_privilege('service_role', p.oid, 'EXECUTE')), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace join pg_language l on l.oid = p.prolang
-   where n.nspname = 'public' and p.proname = any (pg_temp.mine())),
-  'ir_healthy_blockers_internal:sql:s:f:search_path="":f:f:t process_waivers_internal:plpgsql:v:f:search_path="":f:f:t roster_add_drop_internal:plpgsql:v:f:search_path="":f:f:t waiver_claim_submit_internal:plpgsql:v:f:search_path="":f:f:t waiver_claims_cancel_healthy_ir:plpgsql:v:t:search_path="":f:f:t waiver_claims_cancel_healthy_ir_internal:plpgsql:v:f:search_path="":f:f:t',
-  'A1 the six: one overload each; the helper STABLE sql, the rest VOLATILE plpgsql; only the job door SECURITY DEFINER; search_path empty; closed to anon and authenticated, open to the service role (the syncs)');
+   where n.nspname = 'public' and (p.proname = any (pg_temp.four()) or p.proname = 'ir_healthy_blockers_internal')),
+  'ir_healthy_blockers_internal:sql:s:f:search_path="":f:f:t process_waivers_internal:plpgsql:v:f:search_path="":f:f:t roster_add_drop_internal:plpgsql:v:f:search_path="":f:f:t waiver_claim_notify_internal:plpgsql:v:f:search_path="":f:f:t waiver_claim_submit_internal:plpgsql:v:f:search_path="":f:f:t',
+  'A1 the five: one overload each; the helper STABLE sql, the four VOLATILE plpgsql as before; none SECURITY DEFINER; search_path empty; closed to anon and authenticated, open to the service role');
 select ok(
   not exists (
     select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
     where n.nspname = 'public' and a.privilege_type = 'EXECUTE' and a.grantee = 0
-      and p.proname = any (pg_temp.mine())),
-  'A2 PUBLIC holds EXECUTE on none of the six (REVOKEs restated)');
+      and (p.proname = any (pg_temp.four()) or p.proname = 'ir_healthy_blockers_internal')),
+  'A2 PUBLIC holds EXECUTE on none of the five (REVOKEs restated)');
 select is(
   (select string_agg(p.proname || '=' || md5(pg_temp.un205(p.prosrc)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname = any (pg_temp.three() || array['waiver_claim_notify_internal'])),
+   where n.nspname = 'public' and p.proname = any (pg_temp.four())),
   'process_waivers_internal=9e3aecda62b60c7bdc124f8efcd9cc62 roster_add_drop_internal=635060c519df0e420fc4cb7c64c9052f waiver_claim_notify_internal=75f0fb9a57bee9eb2ba47a460f0aec26 waiver_claim_submit_internal=382e6aec7b528c14a80370ff18b794a3',
-  'A3 D137: each live body with 205''s lines removed is its newest definer''s FILE TEXT (199:1345 / 199:5041 / 199:8040 — the md5s 149 A2 pins); waiver_claim_notify_internal is 199''s, untouched (the one notice per team is the new internal''s)');
+  'A3 D137: each live body with 205''s lines removed is its newest definer''s FILE TEXT (199:1345 / 199:5041 / 199:1898 / 199:8040 — the md5s 149 A2 pins)');
 select is(
   (select string_agg(p.proname || '=' || md5(p.prosrc) || '/' || (length(p.prosrc) - length(replace(p.prosrc, '   -- 205 / D593', ''))) / length('   -- 205 / D593'), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname = any (pg_temp.three() || array['waiver_claim_notify_internal'])),
-  'process_waivers_internal=d63a266a9d932dd2abf94055dba324db/17 roster_add_drop_internal=c0525a262a5a339ecf1311bb83e82142/23 waiver_claim_notify_internal=75f0fb9a57bee9eb2ba47a460f0aec26/0 waiver_claim_submit_internal=d48512e81b2565e7c676a4b10c5c178b/14',
-  'A4 the live prosrc md5s — 205 as written (stored literals) — and the lines it inserted (17 / 23 / 14; none in the notify body)');
+   where n.nspname = 'public' and p.proname = any (pg_temp.four())),
+  'process_waivers_internal=88a138c852c959a8d57cc67d4079758e/37 roster_add_drop_internal=c0525a262a5a339ecf1311bb83e82142/23 waiver_claim_notify_internal=3a3755bb54a13455b1b3e9c8e1b3ec96/4 waiver_claim_submit_internal=43d3c7fcf5512bfdf8619ca786ace135/15',
+  'A4 the four live prosrc md5s — 205 as written (stored literals) — and the lines it inserted (37 / 23 / 4 / 15)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and not (p.proname = any (pg_temp.three()))
+   where n.nspname = 'public' and not (p.proname = any (pg_temp.four()))
      and pg_temp.un205(p.prosrc) <> p.prosrc),
   0,
-  'A5 un205 is an identity on every other body in the schema, the two new ones included — so the older suites that apply it innermost pin exactly what they pinned (additive, R992)');
+  'A5 un205 is an identity on every other body in the schema, the helper included — so the older suites that apply it innermost pin exactly what they pinned (additive, R992)');
 select is(
   (select md5(p.prosrc) || ' | ' || (obj_description(p.oid, 'pg_proc') like 'D593 / spec §7.3.2 (migration 205)%')::text
           || ' | ' || (col_description('public.waiver_claims'::regclass,
                          (select a.attnum from pg_attribute a where a.attrelid = 'public.waiver_claims'::regclass and a.attname = 'result_reason'))
-                       like '%cancelled = cancelled (the verb) | seat_vacated | manager_left (F411) | healthy_in_ir (205 / D593 / F693:%')::text
+                       like '%| no_waivers (the league switched to none_fcfs — F421(e)) | healthy_in_ir (205 / D593 / F693:%; cancelled = cancelled (the verb) | seat_vacated | manager_left (F411). NULL%')::text
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'ir_healthy_blockers_internal'),
   '576758f5e60480e80172f053fadc2a2c | true | true',
-  'A6 the helper as written (a stored literal) with its comment; the stored-reason vocabulary names healthy_in_ir among the CANCELLED reasons');
+  'A6 the helper as written (a stored literal) with its comment; the stored-reason vocabulary names healthy_in_ir among the INVALID (failed) reasons — not the cancelled ones');
 select is(
-  (select string_agg(p.proname || '=' || md5(p.prosrc) || '/' || (obj_description(p.oid, 'pg_proc') like 'F693 / D593 (migration 205%')::text, ' ' order by p.proname)
-   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname in ('waiver_claims_cancel_healthy_ir_internal', 'waiver_claims_cancel_healthy_ir')),
-  'waiver_claims_cancel_healthy_ir=7e16a2561f715f73cc5d92f7244e8f4e/true waiver_claims_cancel_healthy_ir_internal=9bbd2c2af4d1be6506b26fe198a64958/true',
-  'A7 the new internal and the job door as written (stored literals), each COMMENTed');
-select is(
-  (select format('%s:%s:%s:%s', a.atttypid::regtype, a.attnotnull, a.atthasdef,
-                 col_description('public.waiver_claims'::regclass, a.attnum) like 'What a claim''s result is about when it is not the add or the drop (205 / D593 / F693)%')
-   from pg_attribute a where a.attrelid = 'public.waiver_claims'::regclass and a.attname = 'result_detail' and not a.attisdropped),
-  'jsonb:f:f:t',
-  'A8 the column waiver_claims.result_detail: jsonb, nullable, no default (no backfill), COMMENTed');
-select is(
-  (select count(*)::int from pg_policy pol where pol.polrelid = 'public.waiver_claims'::regclass),
-  1,
-  'A9 waiver_claims still has its ONE policy (SELECT, own team or commissioner) and no write policy (C73) — the column rides it');
+  format('cancel functions=%s | result_detail column=%s',
+         (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname like 'waiver_claims_cancel_healthy_ir%'),
+         (select count(*) from pg_attribute a where a.attrelid = 'public.waiver_claims'::regclass and a.attname = 'result_detail' and not a.attisdropped)),
+  'cancel functions=0 | result_detail column=0',
+  'A7 F693 as ruled ("they should fail when waivers run"): nothing of the retired cancel build is here — no cancel internal, no job door for the syncs, no result_detail column');
 
 -- ---------------------------------------------------------------------------
 -- FIXTURE
@@ -268,7 +260,7 @@ from (values
  ('hw-b-qb', 'HW B QB', 'QB', 'Active'), ('hw-k-qb', 'HW K QB', 'QB', 'Active'),
  ('hw-c-qb', 'HW C QB', 'QB', 'Active'), ('hw-c-ird', 'HW C IR (Doubtful)', 'RB', 'Out'),
  ('hw-fa1', 'HW FA One', 'RB', 'Active'), ('hw-fa2', 'HW FA Two', 'RB', 'Active'),
- ('hw-fa3', 'HW FA Three', 'RB', 'Active'), ('hw-fa4', 'HW FA Four', 'RB', 'Active')
+ ('hw-fa3', 'HW FA Three', 'RB', 'Active'), ('hw-fa4', 'HW FA Four', 'RB', 'Active'), ('hw-fa5', 'HW FA Five', 'RB', 'Active')
 ) as p(id, nm, pos, st);
 
 insert into league_rosters (league_id, team_id, player_id, slot_key, ir_placed_week, ir_lock_until_week)
@@ -479,107 +471,90 @@ select is(format('%s | %s / %s', split_part(pg_temp.said('e4'), ' — ', 1), pg_
   'E4 …and an add alone is refused by the block — it STANDS while he is locked; nothing written');
 
 -- ---------------------------------------------------------------------------
--- W. CLAIMS (LW) — the submit, the sync's cancel, the run's cancel, the fix
+-- W. CLAIMS (LW) — the submit, the flip, the run, the fix
 -- ---------------------------------------------------------------------------
 -- W Alpha's and W Charlie's men are OUT (they fit the IR spot) when the claims go in at 14:00.
 select pg_temp.call('w0a', 2, pg_temp.cl('HW Alpha', 'hw-fa1', 10, 31, '2026-10-18 14:00:00+00'));
+select pg_temp.call('w0e', 2, pg_temp.cl('HW Alpha', 'hw-fa5', 1, 39, '2026-10-18 14:00:04+00'));
 select pg_temp.call('w0b', 3, pg_temp.cl('HW Bravo', 'hw-fa1', 5, 32, '2026-10-18 14:00:01+00'));
 select pg_temp.call('w0c', 8, pg_temp.cl('HW Charlie', 'hw-fa3', 4, 37, '2026-10-18 14:00:02+00'));
 select pg_temp.call('w0d', 8, pg_temp.cl('HW Charlie', 'hw-fa4', 2, 38, '2026-10-18 14:00:03+00'));
-select is(format('%s %s %s %s | blockers=%s %s', pg_temp.said('w0a'), pg_temp.said('w0b'), pg_temp.said('w0c'), pg_temp.said('w0d'),
+select is(format('%s %s %s %s %s | blockers=%s %s', pg_temp.said('w0a'), pg_temp.said('w0e'), pg_temp.said('w0b'), pg_temp.said('w0c'), pg_temp.said('w0d'),
                  pg_temp.blk('HW Alpha', 6), pg_temp.blk('HW Charlie', 6)),
-  'ok ok ok ok | blockers=- -',
-  'W0 PREMISE: while their men are OUT, W Alpha''s claim ($10) and W Charlie''s two ($4, $2) are accepted; W Bravo claims W Alpha''s free agent too ($5)');
+  'ok ok ok ok ok | blockers=- -',
+  'W0 PREMISE: while their men are OUT, W Alpha''s two claims ($10, $1) and W Charlie''s two ($4, $2) are accepted; W Bravo claims W Alpha''s first free agent too ($5)');
 -- FIXTURE STEP — the sync clears his tag: he is healthy, still in the IR spot.
 update players set status = 'Active' where id = 'hw-a-irh';
 select pg_temp.call('w1', 2, pg_temp.cl('HW Alpha', 'hw-fa2', 3, 33, '2026-10-18 15:00:00+00'));
 select is(pg_temp.said('w1'),
   'refused: waiver_claim_submit: HW A IR (healthy) is healthy and still in HW Alpha''s IR spot — no claims while a player who isn''t IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), swap an IR-eligible player into his spot, or drop him (§7.3.2)',
-  'W1 A NEW CLAIM IS REFUSED by name now that he is healthy');
+  'W1 A NEW CLAIM IS REFUSED by name now that he is healthy (prevent: it would only fail at the run)');
 select pg_temp.call('w2', 1, pg_temp.cl('HW Alpha', 'hw-fa2', 3, 34, '2026-10-18 15:00:01+00'));
 select is(split_part(pg_temp.said('w2'), ' — ', 1),
   'refused: waiver_claim_submit: HW A IR (healthy) is healthy and still in HW Alpha''s IR spot',
-  'W2 …the commissioner placing a claim FOR W Alpha the same way (it would be cancelled — his force-add, E2, is the tool that stands outside)');
--- THE SYNC'S DOOR, as the service role (no JWT), right after the write.
-insert into r155 select 'w3', public.waiver_claims_cancel_healthy_ir('2026-10-18 15:10:00+00', pg_temp.lg(2));
-select is(
-  (select string_agg(t.name || ':' || c.add_player_id || '=' || c.status || ':' || coalesce(c.result_reason, '-'), ' ' order by t.name, c.add_player_id)
-   from waiver_claims c join teams t on t.id = c.team_id where c.league_id = pg_temp.lg(2)),
-  'HW Alpha:hw-fa1=cancelled:healthy_in_ir HW Bravo:hw-fa1=pending:- HW Charlie:hw-fa3=pending:- HW Charlie:hw-fa4=pending:-',
-  'W3 F693 AS RULED ("if the player is no longer IR eligible the claims are cancelled") — AS SOON AS WE KNOW: the sync''s door cancels W Alpha''s pending claim; nobody else''s is touched');
-select is(
-  (select format('%s | at %s | by author %s | processed %s | faab %s',
-                 c.result_detail, c.cancelled_at = '2026-10-18 15:10:00+00', c.cancelled_by = c.created_by, coalesce(c.processed_at::text, '-'),
-                 (select m.faab_balance from league_members m where m.team_id = pg_temp.team('HW Alpha')))
-   from waiver_claims c where c.team_id = pg_temp.team('HW Alpha') and c.add_player_id = 'hw-fa1'),
-  '{"why": "healthy", "spot": "IR", "source": "injury_sync", "ir_player": "HW A IR (healthy)", "ir_player_id": "hw-a-irh"} | at t | by author t | processed - | faab 100',
-  'W4 …the row says who and why (result_detail, for My moves), when (the door''s instant) and by the claim''s own author (the run''s precedent for a system settlement); nothing spent');
-select is(
-  (select format('checked=%s cancelled=%s notified=%s paused=%s why=%s | %s', r ->> 'leagues_checked', r ->> 'cancelled', r ->> 'notified', r ->> 'paused',
-                 coalesce(r ->> 'why', '-'),
-                 (select string_agg(format('%s:%s', b ->> 'team_id' = pg_temp.team('HW Alpha')::text, b ->> 'cancelled'), ',')
-                  from jsonb_array_elements(r -> 'leagues') l, jsonb_array_elements(l -> 'by_team') b))
-   from r155 where tag = 'w3'),
-  'checked=1 cancelled=1 notified=1 paused=false why=- | t:1',
-  'W5 …the door''s report counts it — one league checked, one claim cancelled, one notice — and names the team');
-select is(
-  (select format('%s | %s | %s', count(*), max(n.title), max(n.body)) from notifications n
-   where n.type = 'league_waiver_claim' and n.data ->> 'reason' = 'healthy_in_ir'
-     and n.user_id = '92050000-0000-4000-8000-000000000002'),
-  '1 | Waiver claim cancelled: HW FA One | HW A IR (healthy) is healthy and still in your IR spot, so your claim for HW FA One was cancelled. Nothing was spent. To add players again, move him to your bench, swap an IR-eligible player into his spot, or drop him.',
-  'W6 …and W Alpha is TOLD, once, in plain words, naming the player in his IR spot');
-insert into r155 select 'w7', public.waiver_claims_cancel_healthy_ir('2026-10-18 15:20:00+00', pg_temp.lg(2));
-select is(
-  (select format('cancelled=%s notified=%s why=%s | notices=%s | first cancel kept=%s', r ->> 'cancelled', r ->> 'notified', split_part(r ->> 'why', ' — ', 1),
-                 (select count(*) from notifications n where n.type = 'league_waiver_claim' and n.data ->> 'reason' = 'healthy_in_ir'
-                    and n.user_id = '92050000-0000-4000-8000-000000000002'),
-                 (select c.cancelled_at = '2026-10-18 15:10:00+00' from waiver_claims c where c.team_id = pg_temp.team('HW Alpha') and c.add_player_id = 'hw-fa1'))
-   from r155 where tag = 'w7'),
-  'cancelled=0 notified=0 why=none_blocked | notices=1 | first cancel kept=t',
-  'W7 IDEMPOTENT: the next hourly call cancels nothing and sends nothing (still ONE notice); the first cancel stands as written');
-select pg_temp.call('w8', 1, 'select public.waiver_claims_cancel_healthy_ir(''2026-10-18 15:21:00+00'')');
-select is(
-  (select format('%s | %s', r ->> 'sqlstate', r ->> 'error') from r155 where tag = 'w8'),
-  '42501 | waiver_claims_cancel_healthy_ir: a job RPC is run by the injury syncs (the service role), never by a signed-in user',
-  'W8 the door refuses a signed-in caller (a job RPC — the waiver_tick shape)');
--- FIXTURE STEP — W Charlie's man is listed Doubtful (the plain IR spot takes OUT / IR only); no sync runs after it.
+  'W2 …the commissioner placing a claim FOR W Alpha the same way (the run would fail it — his force-add, E2, is the tool that stands outside)');
+-- FIXTURE STEP — W Charlie's man is listed Doubtful (the plain IR spot takes OUT / IR only).
 update players set status = 'Doubtful' where id = 'hw-c-ird';
-insert into r155 select 'w9', public.process_waivers_internal(pg_temp.lg(2), '2026-10-18 16:00:00+00');
+select is(
+  format('%s | blockers=%s %s | healthy_in_ir notices=%s',
+         (select string_agg(t.name || ':' || c.add_player_id || '=' || c.status, ' ' order by t.name, c.add_player_id)
+          from waiver_claims c join teams t on t.id = c.team_id where c.league_id = pg_temp.lg(2)),
+         pg_temp.blk('HW Alpha', 6), pg_temp.blk('HW Charlie', 6),
+         (select count(*) from notifications n where n.type = 'league_waiver_claim' and n.data ->> 'reason' = 'healthy_in_ir'
+            and n.user_id in ('92050000-0000-4000-8000-000000000002', '92050000-0000-4000-8000-000000000008'))),
+  'HW Alpha:hw-fa1=pending HW Alpha:hw-fa5=pending HW Bravo:hw-fa1=pending HW Charlie:hw-fa3=pending HW Charlie:hw-fa4=pending | blockers=hw-a-irh hw-c-ird | healthy_in_ir notices=0',
+  'W3 F693 AS RULED ("the claims are not cancelled, they should fail when waivers run") — THE CLAIMS SURVIVE THE FLIP: both teams are blocked now, every claim is still pending and nobody has been told anything');
+-- THE FIX BEFORE THE RUN — W Charlie moves his man out of the IR spot to the bench.
+select pg_temp.call('w4', 8, format('select public.set_lineup_internal(%L, %L, 6, %L::jsonb, %L, %L, NULL)',
+  pg_temp.lg(2), pg_temp.team('HW Charlie'), '{"qb:0": "hw-c-qb"}', pg_temp.act(40), '2026-10-18 15:30:00+00'));
+select is(
+  coalesce((select 'refused: ' || (r ->> 'error') from r155 where tag = 'w4' and r ? 'error'),
+           format('removed %s | blockers=%s %s', (select r -> 'ir_moves' -> 'removed' -> 0 ->> 'player_id' from r155 where tag = 'w4'),
+                  pg_temp.blk('HW Alpha', 6), pg_temp.blk('HW Charlie', 6))),
+  'removed hw-c-ird | blockers=hw-a-irh -',
+  'W4 W Charlie FIXES IT BEFORE THE RUN (his man to the bench); W Alpha does not');
+insert into r155 select 'w5', public.process_waivers_internal(pg_temp.lg(2), '2026-10-18 16:00:00+00');
 select is(
   (select string_agg(t.name || ':' || c.add_player_id || '=' || c.status || ':' || coalesce(c.result_reason, '-'), ' ' order by t.name, c.add_player_id)
    from waiver_claims c join teams t on t.id = c.team_id where c.league_id = pg_temp.lg(2)),
-  'HW Alpha:hw-fa1=cancelled:healthy_in_ir HW Bravo:hw-fa1=won:- HW Charlie:hw-fa3=cancelled:healthy_in_ir HW Charlie:hw-fa4=cancelled:healthy_in_ir',
-  'W9 THE RUN — THE BACKSTOP: W Charlie''s two claims, which no sync reached, are cancelled before the decision; W Alpha''s free agent goes to the next claim in line (W Bravo''s, for less)');
+  'HW Alpha:hw-fa1=invalid:healthy_in_ir HW Alpha:hw-fa5=invalid:healthy_in_ir HW Bravo:hw-fa1=won:- HW Charlie:hw-fa3=won:- HW Charlie:hw-fa4=won:-',
+  'W5 THE RUN: EACH of W Alpha''s claims FAILS — still an ineligible player in his IR spot — and his first free agent goes to the next claim in line (W Bravo''s, for less); W Charlie, fixed before the run, gets both of his');
 select is(
-  (select format('claims=%s won=%s lost=%s invalid=%s healthy_in_ir=%s notified=%s | %s / faab %s / %s / %s',
+  (select format('claims=%s won=%s lost=%s invalid=%s healthy_in_ir=%s notified=%s | %s %s | faab %s / %s / %s | failed settled at the run=%s',
                  r ->> 'claims', r ->> 'won', r ->> 'lost', r ->> 'invalid', r ->> 'healthy_in_ir', r ->> 'notified',
-                 pg_temp.roster_of('hw-fa1'),
+                 pg_temp.roster_of('hw-fa1'), pg_temp.roster_of('hw-fa5'),
                  (select m.faab_balance from league_members m where m.team_id = pg_temp.team('HW Alpha')),
                  (select m.faab_balance from league_members m where m.team_id = pg_temp.team('HW Bravo')),
-                 (select m.faab_balance from league_members m where m.team_id = pg_temp.team('HW Charlie')))
-   from r155 where tag = 'w9'),
-  'claims=3 won=1 lost=0 invalid=0 healthy_in_ir=2 notified=2 | HW Bravo / faab 100 / 95 / 100',
-  'W10 …the run counts them (claims, healthy_in_ir — cancelled, not invalid) and its notices (W Bravo''s win, W Charlie''s one); nothing is spent by W Alpha or W Charlie; W Bravo pays his $5');
+                 (select m.faab_balance from league_members m where m.team_id = pg_temp.team('HW Charlie')),
+                 (select bool_and(c.processed_at = '2026-10-18 16:00:00+00' and c.process_at = '2026-10-18 16:00:00+00' and c.cancelled_at is null)
+                  from waiver_claims c where c.result_reason = 'healthy_in_ir' and c.league_id = pg_temp.lg(2)))
+   from r155 where tag = 'w5'),
+  'claims=5 won=3 lost=0 invalid=2 healthy_in_ir=2 notified=5 | HW Bravo (none) | faab 100 / 95 / 94 | failed settled at the run=t',
+  'W6 …the run counts them (claims, invalid, healthy_in_ir) and its five notices; nothing is spent by W Alpha; W Bravo pays $5, W Charlie $4 + $2; the failed rows carry the run''s instant, never a cancel');
 select is(
-  (select format('%s | %s | %s | %s', count(*), max(n.title), max(n.body), max(jsonb_array_length(n.data -> 'claim_ids'))) from notifications n
+  (select format('%s | %s | %s', count(*),
+                 string_agg(n.title, ' / ' order by n.title),
+                 max(n.body) filter (where n.data ->> 'add_player_id' = 'hw-fa1'))
+   from notifications n
    where n.type = 'league_waiver_claim' and n.data ->> 'reason' = 'healthy_in_ir'
-     and n.user_id = '92050000-0000-4000-8000-000000000008'),
-  '1 | 2 waiver claims cancelled | HW C IR (Doubtful) is listed Doubtful, which your IR spot doesn''t take, and is still in it, so your claims for HW FA Three and HW FA Four were cancelled. Nothing was spent. To add players again, move him to your bench, swap an IR-eligible player into his spot, or drop him. | 2',
-  'W11 …W Charlie is told ONCE for both (the notice names both claims), in his claim order, named for what his man is ("listed Doubtful")');
+     and n.user_id = '92050000-0000-4000-8000-000000000002'),
+  '2 | Waiver claim didn''t go through: HW FA Five / Waiver claim didn''t go through: HW FA One | You had an ineligible player in your IR spot when waivers ran — HW A IR (healthy) was healthy — so the claim for HW FA One didn''t go through. To add players again, move him to your bench, swap an IR-eligible player into his spot, or drop him. Nothing was spent.',
+  'W7 …and W Alpha is TOLD per claim, as every failed claim''s owner is, in plain words — the ruled headline, said of the run, naming the player in his IR spot');
 select is(
-  (select format('input claims=%s | %s', jsonb_array_length(w.input -> 'claims'),
-                 (select string_agg(c.result_detail ->> 'why' || '/' || (c.result_detail ->> 'source'), ',') from waiver_claims c where c.team_id = pg_temp.team('HW Charlie')))
+  (select format('input claims=%s | W Charlie healthy_in_ir notices=%s', jsonb_array_length(w.input -> 'claims'),
+                 (select count(*) from notifications n where n.type = 'league_waiver_claim' and n.data ->> 'reason' = 'healthy_in_ir'
+                    and n.user_id = '92050000-0000-4000-8000-000000000008'))
    from waiver_runs w where w.league_id = pg_temp.lg(2)),
-  'input claims=1 | listed Doubtful/waiver_run,listed Doubtful/waiver_run',
-  'W12 the cancelled claims never reached the decision — the run''s logged input holds W Bravo''s alone (the resolver pair is untouched); W Charlie''s rows say why and that the run cancelled them');
--- THE FIX — he moves to the bench; a claim is accepted again.
-select pg_temp.call('w13:fix', 2, format('select public.set_lineup_internal(%L, %L, 6, %L::jsonb, %L, %L, NULL)',
+  'input claims=3 | W Charlie healthy_in_ir notices=0',
+  'W8 the failed claims never reached the decision — the run''s logged input holds W Bravo''s and W Charlie''s alone (the resolver pair is untouched); W Charlie was never told of a block');
+-- THE FIX AFTER THE RUN — W Alpha moves his man to the bench; a claim is accepted again.
+select pg_temp.call('w9:fix', 2, format('select public.set_lineup_internal(%L, %L, 6, %L::jsonb, %L, %L, NULL)',
   pg_temp.lg(2), pg_temp.team('HW Alpha'), '{"qb:0": "hw-a-qb"}', pg_temp.act(35), '2026-10-18 16:30:00+00'));
-select pg_temp.call('w13', 2, pg_temp.cl('HW Alpha', 'hw-fa2', 3, 36, '2026-10-18 16:30:01+00'));
-select is(format('%s | %s | %s', pg_temp.said('w13:fix'), pg_temp.said('w13'),
+select pg_temp.call('w9', 2, pg_temp.cl('HW Alpha', 'hw-fa2', 3, 36, '2026-10-18 16:30:01+00'));
+select is(format('%s | %s | %s', pg_temp.said('w9:fix'), pg_temp.said('w9'),
                  (select c.status from waiver_claims c where c.add_player_id = 'hw-fa2' and c.team_id = pg_temp.team('HW Alpha'))),
   'ok | ok | pending',
-  'W13 AFTER THE FIX (moved to the bench) W Alpha''s claim is accepted again, and stays pending');
+  'W9 AFTER THE FIX (moved to the bench) W Alpha''s claim is accepted again, and stays pending');
 
 select * from finish();
 rollback;

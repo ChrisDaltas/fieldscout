@@ -16,7 +16,7 @@ import { heroWeek } from '@/components/leagues/league-home-season-ops'
 import { splitRows } from '@/components/leagues/matchup-view-ops'
 import { formatRecord, renderedChain } from '@/components/leagues/standings-table-ops'
 import { lostClaimWinner } from '@/components/leagues/team-transactions-ops'
-import { claimOutcome, claimReasonWords, healthyIrCancelWords, isRuleCancelled } from '@/components/leagues/waiver-claims-ops'
+import { claimOutcome, claimReasonWords } from '@/components/leagues/waiver-claims-ops'
 import type { WaiverClaimPlayer, WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import { TIEBREAKERS } from '@/lib/leagues/settings/league-settings'
 import { shortPlayerName } from '@/utils/format-name'
@@ -274,14 +274,13 @@ export interface TxRow {
   text: TextPart[] | null
   commishActionId: string | null
   /** A claim of yours that didn't go through (My moves): its result, drawn
-   *  in red after the pill — "Lost" / "Didn’t go through" / "Cancelled". */
+   *  in red after the pill — "Lost" / "Didn’t go through". */
   result?: ClaimResult
 }
 
-/** The result of a claim a waiver run settled without giving you the player,
- *  or one the rule cancelled (F693 — `isRuleCancelled`). */
+/** The result of a claim a waiver run settled without giving you the player. */
 export interface ClaimResult {
-  status: 'lost' | 'invalid' | 'cancelled'
+  status: 'lost' | 'invalid'
   /** The claims panel's words. */
   label: string
 }
@@ -502,11 +501,6 @@ function claimReason(claim: WaiverClaimView, waiverType: string | null, who: Who
     const words = claimReasonWords(claim.result_reason)
     if (words) return [capitalise(words)]
   }
-  if (isRuleCancelled(claim)) {
-    // F693: "<Player> is healthy and still in your IR spot." (the red "Cancelled" is the result).
-    const words = healthyIrCancelWords(claim.result_detail) ?? claimReasonWords(claim.result_reason)
-    if (words) return [capitalise(words)]
-  }
   const detail = claimOutcome(claim, waiverType).detail
   return detail ? [detail] : null
 }
@@ -514,32 +508,29 @@ function claimReason(claim: WaiverClaimView, waiverType: string | null, who: Who
 /**
  * Your claims a waiver run settled without giving you the player, as
  * transaction rows in the read's order (newest first): LOST (another team
- * won him) or INVALID ("didn't go through" — the stored reason says why) —
- * and, F693 (Chris 2026-10-21: "No, if the player is no longer IR eligible
- * the claims are cancelled."), one the RULE cancelled ("Cancelled — <Player>
- * is healthy and still in your IR spot."). Each is the Waiver pill with the
- * result in red, when the run settled it (when it was cancelled, or made, if
- * there is no settle time) and your bid, the player you claimed and the one
- * you'd have dropped (both grey — nothing moved), then the reason in plain
- * words. A won claim is already a move in the feed; one you cancelled
- * yourself was your own doing — neither is a row (the desktop panel's rule).
+ * won him) or INVALID ("didn't go through" — the stored reason says why).
+ * Each is the Waiver pill with the result in red, when the run settled it
+ * (when it was made, if the run left no time) and your bid, the player you
+ * claimed and the one you'd have dropped (both grey — nothing moved), then
+ * the reason in plain words. A won claim is already a move in the feed; a
+ * cancelled one was your own doing — neither is a row (the desktop panel's
+ * rule).
  */
 export function claimResultRows(claims: readonly WaiverClaimView[], waiverType: string | null, who: WhoOf): TxRow[] {
   return claims.flatMap((claim): TxRow[] => {
-    if (claim.status !== 'lost' && claim.status !== 'invalid' && !isRuleCancelled(claim)) return []
-    const status = claim.status as ClaimResult['status']
+    if (claim.status !== 'lost' && claim.status !== 'invalid') return []
     return [
       {
         kind: 'transaction',
         id: `claim:${claim.id}`,
         teamId: claim.team_id,
         pill: TYPE_PILL.waiver_claim,
-        createdAt: status === 'cancelled' ? (claim.cancelled_at ?? claim.created_at) : (claim.processed_at ?? claim.created_at),
+        createdAt: claim.processed_at ?? claim.created_at,
         bid: waiverType === 'faab' ? claim.faab_bid : null,
         moves: [claimLine(claim.add, 'add', `${claim.id}:add`), ...(claim.drop ? [claimLine(claim.drop, 'drop', `${claim.id}:drop`)] : [])],
         text: claimReason(claim, waiverType, who),
         commishActionId: null,
-        result: { status, label: claimOutcome(claim, waiverType).label },
+        result: { status: claim.status, label: claimOutcome(claim, waiverType).label },
       },
     ]
   })
