@@ -29,6 +29,7 @@ import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import type { LeagueStandings, StandingsRow } from '@/lib/leagues/api/standings-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
+import { COMMISH_ENTRY_NOTE } from '@/components/leagues/activity-page-ops'
 import { NO_MATCHUPS_COPY, OVERRIDDEN_TITLE, PLAYOFF_ROUND_PENDING_COPY } from '@/components/leagues/matchup-view-ops'
 import type { LiveScoringFlags } from '@/lib/sync/ingest-flags'
 
@@ -70,10 +71,12 @@ vi.mock('./league-tab-store', async (importActual) => {
   const actual = await importActual<typeof import('./league-tab-store')>()
   return { ...actual, useKeptWeek: () => [kept.week, () => {}] }
 })
+// The address's query string (`''` = none); reset before every test.
+const search = vi.hoisted(() => ({ value: '' }))
 vi.mock('next/navigation', () => ({
   usePathname: () => '/app/leagues/league-1',
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(search.value),
 }))
 
 const LEAGUE = 'league-1'
@@ -240,6 +243,7 @@ function render(
 beforeEach(() => {
   useLeagueTabStore.setState({ segments: {}, weeks: {}, filters: {} })
   kept.week = undefined
+  search.value = ''
 })
 
 describe('League tab — header and segmented control', () => {
@@ -1146,5 +1150,39 @@ describe('League tab — @handle everywhere (gap list §4 item 12)', () => {
     // The sentence's plain stretches are spans (its player names are doors too).
     expect(line).toMatch(new RegExp(`<span>made </span>${handleLink('dalton').source}<span> a co-commissioner</span>`))
     expect(line).not.toMatch(/>(marcus|dalton)</)
+  })
+
+  it('the commissioner log opened at one action: the note says so, and that row is drawn like the rest — no tint', () => {
+    const OPENED = 'cccccccc-0000-4000-8000-0000000000a2'
+    const OLDER = 'cccccccc-0000-4000-8000-0000000000a1'
+    const item = (id: string, at: string): CommishLogItem => ({
+      id,
+      action_type: 'promote_member',
+      actor: { id: 'user-opp', username: 'marcus' },
+      target_type: 'member',
+      target_id: null,
+      reason: null,
+      before: { role: 'manager' },
+      after: { role: 'co_commissioner' },
+      metadata: { user_id: 'user-me' },
+      acting_as_team_id: null,
+      reverts_action_id: null,
+      created_at: at,
+    })
+    search.value = `?entry=${OPENED}`
+    const html = render(
+      createElement(ActivitySubscreenRoute, { leagueId: LEAGUE, initial: { tab: 'commissioner', week: null, team: null, entry: OPENED } }),
+      {},
+      (qc) =>
+        qc.setQueryData(commishLogKeys.list(LEAGUE, { limit: 50, entry: OPENED }), {
+          pages: [{ items: [item(OPENED, '2099-10-11T18:00:00.000Z'), item(OLDER, '2099-10-10T18:00:00.000Z')], limit: 50, filters: {}, has_more: false, next_cursor: null }],
+          pageParams: [undefined],
+        }),
+    )
+    expect(html).toContain(COMMISH_ENTRY_NOTE)
+    const rowClass = (id: string) => html.match(new RegExp(`<div class="([^"]*)" data-commish-line="${id}"`))?.[1]
+    expect(rowClass(OPENED)).toBeDefined()
+    expect(rowClass(OPENED)).toBe(rowClass(OLDER))
+    expect(rowClass(OPENED)).not.toMatch(/m-gb|rounded/)
   })
 })

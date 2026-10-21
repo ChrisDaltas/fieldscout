@@ -194,7 +194,11 @@ export function CommishLogScreen({ leagueId, detail, route }: { leagueId: string
                 ref={hit ? highlighted : undefined}
                 leagueId={leagueId}
                 line={line}
-                className={cn('border-b border-m-b2 px-1', hit && 'rounded-[12px] border-transparent bg-m-gb px-3')}
+                // The action you opened is the first row (the note above
+                // says so) and is drawn like the rest: the handoff's
+                // activity row is unfilled over a b2 hairline (m-league
+                // §2.5) — its blue tint is for pills, chips and icon tiles.
+                className="border-b border-m-b2 px-1"
               />
             )
           })
