@@ -289,7 +289,8 @@ function main(): void {
 
     // ---- D299 matrix coverage ---------------------------------------------
     const modes = new Set(report.leagues.map((l) => l.scheduleMode))
-    const offLeagues = report.leagues.filter((l) => !l.allowIllegalLineups)
+    // D591 (migration 201): the `allow_illegal_lineups = false` legality arm is
+    // RETIRED with the setting — no OFF league is drawn, so none is checked.
     // READ BACK from `leagues.scoring_system_id` -> `scoring_systems`, not
     // echoed from the plan: `matrixLine` is what the ROW holds.
     const scoringNames = report.leagues.map((l) => {
@@ -303,25 +304,12 @@ function main(): void {
     const forked = report.leagues.filter((l) => l.matrixLine.includes('FORKED')).length
     console.log(
       `   D299 MATRIX: schedule_mode {${[...modes].sort().join(', ')}} · ` +
-        `allow_illegal_lineups OFF in ${offLeagues.length} league(s), ${offLeagues.reduce((n, l) => n + l.benchedForLegality, 0)} passed over for §7.3.6 · ` +
+        `allow_illegal_lineups retired (D591) · ` +
         `${templates.size}/${SEASON_SCORING_TEMPLATES.length} shipped scoring templates ` +
         `{${[...templates].sort().join(', ')}} · ` +
         `${forked} §7.3.3.1 custom-fork league(s)`,
     )
     if (modes.size < 2) fail(problems, `${scenario}: the matrix drew only one schedule_mode`)
-    if (offLeagues.length === 0) {
-      fail(problems, `${scenario}: no allow_illegal_lineups = false league — §7.3.6 was policed nowhere`)
-    }
-    for (const off of offLeagues) {
-      if (off.lineupsSeated === 0) {
-        fail(problems, `${scenario}: the OFF league ${off.leagueLabel} seated NOTHING — decorative coverage (D267/F286)`)
-      }
-      // R1266 (D423(10)): an OFF league that passed nobody over for §7.3.6
-      // policed nothing — the arm is only evidence with a population.
-      if (off.benchedForLegality === 0) {
-        fail(problems, `${scenario}: the OFF league ${off.leagueLabel} passed over 0 players for §7.3.6 — the legality arm is vacuous (R1266)`)
-      }
-    }
     if (templates.size < SEASON_SCORING_TEMPLATES.length) {
       fail(
         problems,

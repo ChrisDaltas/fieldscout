@@ -125,9 +125,7 @@ import { BOT_POOL_SIZE } from './plan'
 import {
   censusLine,
   cleanupSweep,
-  plantDesignations,
   runDraftSim,
-  SIM_PLANTED_STATUS,
   simBotEmail,
   simCensus,
   SIM_BOT_PASSWORD,
@@ -226,10 +224,6 @@ export interface LeagueState {
   leagueId: string
   teamCount: number
   scheduleMode: 'h2h' | 'total_points'
-  /** `settings.allow_illegal_lineups` AS STORED. FALSE is the D299 legality
-   *  arm: §7.3.6 refuses a bye/OUT starter at the door, so `seedLineups` has
-   *  to seat a lineup the server will actually accept (F286 / D328). */
-  allowIllegalLineups: boolean
   /** `leagues.regular_season_weeks` AS STORED — invariant 5's window (R920). */
   regularSeasonWeeks: number
   matrixLine: string
@@ -433,7 +427,6 @@ export async function runSeasonSim(
     autopilotOffSeatWeeksAsserted: 0,
     autopilotSelection: { picksGraded: 0, byPointsKey: 0, discriminating: 0, byKey: {}, chainLines: [] },
     lawfulOverride: null,
-    legalityPlants: [],
     externalCalls: 0,
     workerErrors: [],
     reconcileSummary: { leagues: 0, cells: 0, counts: {}, alerts: 0, warns: 0, infos: 0 },
@@ -571,16 +564,9 @@ export async function runSeasonSim(
       }
     }
 
-    // ---- Phase 3e: the sim's OWN §7.3.6 designations (R1266, D423(10)) ---
-    // F374 masked the real injury report, which left the legality arm with
-    // nothing to police. Up to two synthetic `Out`s per OFF league, each on a player the
-    // harness would START for a managed seat, chosen so that EVERY seat that
-    // rosters him in ANY `allow_illegal_lineups = false` league holds a
-    // healthy man at his position (so no OFF seat is left with an empty slot —
-    // F374's failure can never be re-created by a plant). ON leagues need no
-    // check: 142 seats a blocked man there LAST, never leaves the slot empty.
-    // After the transactions, before the first week opens.
-    report.legalityPlants = await plantLegalityDesignations(service, leagueStates, bridgedIds, log)
+    // (Phase 3e — the sim's own §7.3.6 designations, R1266 — is gone: D591 /
+    // migration 201 retired `allow_illegal_lineups`, so there is no legality
+    // arm left to police and the run plants nothing.)
 
     // ---- Phase 4: drive the season --------------------------------------
     const driven = await driveSeason(service, botClients, cfg, deps, base, bridge, leagueStates, {
@@ -599,20 +585,6 @@ export async function runSeasonSim(
       log(`BREAK PROBE PLANTED — ${probeDetail}`)
     }
     report.autopilotSelection.chainLines = driven.chainLines
-    // R1266 (D423(10)): the legality arm is never vacuous again. Every OFF
-    // league must have passed over at least one player for §7.3.6 on a seat
-    // the harness set — the plant above guarantees one when a safe candidate
-    // exists; when none does, this names the league instead of passing.
-    for (const state of leagueStates) {
-      if (state.allowIllegalLineups) continue
-      const benched = driven.seatingByLeague.get(state.leagueId)?.benchedForLegality ?? 0
-      if (benched === 0) {
-        report.problems.push(
-          `LEGALITY PREMISE: ${state.label} (allow_illegal_lineups = false) passed over 0 players for §7.3.6 — ` +
-            `the arm had nothing to police (plants: ${report.legalityPlants.filter((pl) => pl.leagueLabel === state.label).length})`,
-        )
-      }
-    }
     if (driven.weeksDriven.length === 0) {
       report.reason = 'no_weeks_driven'
       report.problems.push('no week reached its open instant — the calendar or the plan is empty')
@@ -676,7 +648,6 @@ export async function runSeasonSim(
         refused: 0,
         emptySlots: 0,
         emptySlotKeys: {},
-        benchedForLegality: 0,
         slotsFilled: 0,
         unmanagedSeats: 0,
         autopiloted: 0,
@@ -704,13 +675,11 @@ export async function runSeasonSim(
         leagueId: state.leagueId,
         teamCount: state.teamCount,
         scheduleMode: state.scheduleMode,
-        allowIllegalLineups: state.allowIllegalLineups,
         lineupsSeated: seating.seated,
         lineupsRefused: seating.refused,
         lineupSlotsFilled: seating.slotsFilled,
         lineupSlotsLeftEmpty: seating.emptySlots,
         lineupEmptySlotKeys: { ...seating.emptySlotKeys },
-        benchedForLegality: seating.benchedForLegality,
         unmanagedSeats: audit.unmanagedSeats.length,
         lineupsAutopiloted: seating.autopiloted,
         autopilotOnSeats: state.autopilotOn.size,
@@ -1169,9 +1138,6 @@ export async function readLeagueState(
   const scoringName = scoring?.name ?? '(unnamed)'
   const scoringForked = scoring?.is_template === false
   const scheduleMode = settings.schedule_mode === 'total_points' ? 'total_points' : 'h2h'
-  // The column's DEFAULT is TRUE (§7.3.6), so only an explicit `false` turns
-  // legality enforcement ON — read exactly the way `matrixLine` renders it.
-  const allowIllegalLineups = settings.allow_illegal_lineups !== false
   const { data: teams, error: teamsError } = await service
     .from('teams')
     .select('id, owner_id')
@@ -1184,12 +1150,10 @@ export async function readLeagueState(
     ownerId: league!.owner_id,
     teamCount,
     scheduleMode,
-    allowIllegalLineups,
     regularSeasonWeeks,
     matrixLine:
       `${teamCount} teams · ${scheduleMode} · median ${settings.median_game === true ? 'on' : 'off'} · ` +
       `second ${settings.second_opponent === true ? 'on' : 'off'} · ` +
-      `illegal-lineups ${settings.allow_illegal_lineups === false ? 'off' : 'on'} · ` +
       `scoring ${scoringName}${scoringForked ? ' (FORKED §7.3.3.1)' : ''}`,
     teams: (teams ?? []).map((t) => ({ id: t.id, ownerId: t.owner_id })),
     irKeys: (roster.ir_slots ?? []).map((s) => s.key),
@@ -2670,126 +2634,12 @@ function measureCorrectionArms(
 // Re-exported here: every existing importer and every pin is unmoved.
 export { BLOCKING_DESIGNATIONS, simDesignation }
 
+// D591 (migration 201): the R1266 legality plants — `LegalityPlant`,
+// `chooseLegalityPlants`, `plantLegalityDesignations` — are gone with the
+// retired `allow_illegal_lineups` setting (no league refuses a bye / OUT
+// starter, so there is no arm for a synthetic `Out` to police).
+
 /** A roster player as the seating chooser reads him. */
-/** One synthetic designation the run planted (R1266, D423(10)). */
-export interface LegalityPlant {
-  leagueLabel: string
-  teamId: string
-  playerId: string
-  position: string
-  /** The healthy teammate(s) at his position in every OFF-league seat that rosters him. */
-  offHolders: number
-}
-
-/**
- * R1266: choose and plant up to TWO synthetic `Out`s per `allow_illegal_lineups =
- * false` league, on different managed seats. The candidate is the man the harness would START at a
- * position where a MANAGED seat holds two healthy players (the best-ADP one —
- * `seedLineups` seats in ADP order), never a §23.6 bridged player, and only
- * when every OFF-league seat that rosters him (managed or autopiloted; an OFF
- * commissioner-managed seat is seated by nobody) keeps a healthy, unplanted
- * man at that position after every plant so far. Pure choice over reads;
- * `plantDesignations` does the one write per player, and the sweep restores.
- */
-/** A few per OFF league — two, on two different managed seats — so one
- *  unlucky roster cannot leave the arm at a population of one. */
-export const LEGALITY_PLANTS_PER_OFF_LEAGUE = 2
-
-export function chooseLegalityPlants(input: {
-  leagues: ReadonlyArray<{ label: string; leagueId: string; allowIllegalLineups: boolean; managedTeams: ReadonlySet<string>; offSeats: ReadonlySet<string> }>
-  rosters: ReadonlyArray<{ leagueId: string; teamId: string; playerId: string; position: string; adp: number | null; status: string | null }>
-  bridged: ReadonlySet<string>
-}): LegalityPlant[] {
-  const offLeague = new Map(input.leagues.filter((l) => !l.allowIllegalLineups).map((l) => [l.leagueId, l]))
-  const byTeam = new Map<string, typeof input.rosters[number][]>()
-  const holders = new Map<string, Array<{ leagueId: string; teamId: string }>>()
-  for (const r of input.rosters) {
-    byTeam.set(r.teamId, [...(byTeam.get(r.teamId) ?? []), r])
-    if (offLeague.has(r.leagueId) && !offLeague.get(r.leagueId)!.offSeats.has(r.teamId)) {
-      holders.set(r.playerId, [...(holders.get(r.playerId) ?? []), { leagueId: r.leagueId, teamId: r.teamId }])
-    }
-  }
-  const planted = new Set<string>()
-  const healthy = (r: { playerId: string; status: string | null }): boolean => simDesignation(r.status) === null && !planted.has(r.playerId)
-  const order = (a: { adp: number | null; playerId: string }, b: { adp: number | null; playerId: string }): number =>
-    (a.adp ?? Number.POSITIVE_INFINITY) - (b.adp ?? Number.POSITIVE_INFINITY) || (a.playerId < b.playerId ? -1 : 1)
-  /** Every OFF-league seat rostering any planted man keeps a healthy one at his position. */
-  const safe = (): boolean => {
-    for (const pid of planted) {
-      for (const h of holders.get(pid) ?? []) {
-        const mine = (byTeam.get(h.teamId) ?? []).find((r) => r.playerId === pid)!
-        if (!(byTeam.get(h.teamId) ?? []).some((r) => r.position === mine.position && healthy(r))) return false
-      }
-    }
-    return true
-  }
-  const out: LegalityPlant[] = []
-  for (const league of [...offLeague.values()].sort((a, b) => (a.label < b.label ? -1 : 1))) {
-    let inLeague = 0
-    for (const teamId of [...league.managedTeams].sort()) {
-      if (inLeague >= LEGALITY_PLANTS_PER_OFF_LEAGUE) break
-      const roster = (byTeam.get(teamId) ?? []).filter((r) => r.leagueId === league.leagueId)
-      for (const position of [...new Set(roster.map((r) => r.position))].sort()) {
-        const at = roster.filter((r) => r.position === position && healthy(r)).sort(order)
-        if (at.length < 2) continue
-        const starter = at[0]!
-        if (input.bridged.has(starter.playerId)) continue
-        planted.add(starter.playerId)
-        if (!safe()) {
-          planted.delete(starter.playerId)
-          continue
-        }
-        out.push({ leagueLabel: league.label, teamId, playerId: starter.playerId, position, offHolders: (holders.get(starter.playerId) ?? []).length })
-        inLeague += 1
-        break // one per team; the next managed team may take the league's second
-      }
-    }
-  }
-  return out
-}
-
-async function plantLegalityDesignations(
-  service: Supabase,
-  leagues: readonly LeagueState[],
-  bridged: ReadonlySet<string>,
-  log: (line: string) => void,
-): Promise<LegalityPlant[]> {
-  const off = leagues.filter((l) => !l.allowIllegalLineups)
-  if (off.length === 0) return []
-  const rows = await pageByLeague<{ id: string; league_id: string; team_id: string; player_id: string; players: unknown }>(
-    leagues.map((l) => l.leagueId),
-    'legality plants: roster read',
-    (part, from, to) =>
-      service
-        .from('league_rosters')
-        .select('id, league_id, team_id, player_id, players!inner(position, adp, status)', { count: 'exact' })
-        .in('league_id', part)
-        .order('id')
-        .range(from, to) as never,
-  )
-  const rosters = rows.map((r) => {
-    const p = r.players as { position: string; adp: number | null; status: string | null }
-    const raw = String(p.position).toUpperCase()
-    return { leagueId: r.league_id, teamId: r.team_id, playerId: r.player_id, position: raw === 'DEF' ? 'DST' : raw, adp: p.adp === null ? null : Number(p.adp), status: p.status }
-  })
-  const shaped = []
-  for (const l of leagues) {
-    if (l.allowIllegalLineups) {
-      shaped.push({ label: l.label, leagueId: l.leagueId, allowIllegalLineups: true, managedTeams: new Set<string>(), offSeats: l.autopilotOff })
-      continue
-    }
-    const { managerByTeam } = await readSeatManagers(service, l, 'legality plants')
-    shaped.push({ label: l.label, leagueId: l.leagueId, allowIllegalLineups: false, managedTeams: new Set(managerByTeam.keys()), offSeats: l.autopilotOff })
-  }
-  const plants = chooseLegalityPlants({ leagues: shaped, rosters, bridged })
-  await plantDesignations(service, plants.map((pl) => pl.playerId))
-  log(
-    `SIM WORLD (R1266): ${plants.length} synthetic '${SIM_PLANTED_STATUS}' planted over ${off.length} OFF league(s) — ` +
-      (plants.map((pl) => `${pl.leagueLabel} team ${pl.teamId.slice(0, 8)} ${pl.position} ${pl.playerId} (${pl.offHolders} OFF seat(s) hold him, each with a healthy teammate there)`).join(' · ') || 'none'),
-  )
-  return plants
-}
-
 export interface SeatCandidate {
   id: string
   /** The roster vocabulary (DEF is normalised to DST by the caller). */
@@ -2800,8 +2650,6 @@ export interface SeatCandidate {
 
 export interface Seating {
   slotMap: Record<string, string>
-  /** Players passed over because §7.3.6 would refuse them by DESIGNATION. */
-  benchedForLegality: string[]
   /** Starting slots left EMPTY — lawful (114:585-588 flags an empty slot and
    *  never blocks on it), and named rather than silently absent. */
   emptySlots: string[]
@@ -2812,33 +2660,21 @@ export interface Seating {
  * by eligibility over the roster in the caller's order (best ADP first).
  *
  * NOT a mirror of `lineup_fit_internal`: the SERVER decides the canonical
- * placement and the sim keeps what came back (D327(5)/D289/D33). The one
- * thing this does encode is F286's residual necessary condition: in a league
- * with `allow_illegal_lineups = false`, §7.3.6 refuses a starter carrying an
- * OUT/IR/PUP/NFI/Suspended designation, so those players are passed over and
- * the slot goes to the next eligible man — or stays EMPTY, which is lawful.
- * The OTHER §7.3.6 arm — `on_bye` — is not encoded here on purpose: the run
- * publishes a FULL SLATE (`withFullSlate`), so no club is on bye, and
- * `uncoveredClubs` REFUSES the run loudly if that ever stops being true.
- * Encoding a bye skip here as well would hide exactly that gap.
- *
- * In a league where illegal lineups are ALLOWED nothing is passed over: an
- * OUT starter there is lawful, and seating him is coverage of that arm.
+ * placement and the sim keeps what came back (D327(5)/D289/D33). Nobody is
+ * passed over for a designation: D591 / migration 201 retired
+ * `allow_illegal_lineups` (F286's residual condition — an OFF league refusing
+ * an OUT starter — no longer exists), so an OUT starter is always lawful and
+ * the server just flags him. A bye is not encoded either: the run publishes a
+ * FULL SLATE (`withFullSlate`), and `uncoveredClubs` REFUSES the run loudly if
+ * that ever stops being true.
  */
 export function chooseStarterSlots(
   roster: readonly SeatCandidate[],
   slots: readonly { key: string; eligible: string[] }[],
-  opts: { allowIllegalLineups: boolean },
 ): Seating {
   const slotMap: Record<string, string> = {}
-  const benchedForLegality: string[] = []
   const taken = new Set<string>()
   for (const player of roster) {
-    const designation = simDesignation(player.status)
-    if (!opts.allowIllegalLineups && designation !== null && BLOCKING_DESIGNATIONS.has(designation)) {
-      benchedForLegality.push(`${player.id} (${designation})`)
-      continue
-    }
     const slot = slots.find((sl) => !taken.has(sl.key) && sl.eligible.includes(player.position))
     if (slot === undefined) continue
     taken.add(slot.key)
@@ -2846,7 +2682,6 @@ export function chooseStarterSlots(
   }
   return {
     slotMap,
-    benchedForLegality,
     emptySlots: slots.filter((sl) => !taken.has(sl.key)).map((sl) => sl.key),
   }
 }
@@ -2862,8 +2697,6 @@ export interface LeagueSeating {
   /** …named by slot key, so an unreachable POSITION is distinguishable from
    *  one odd board (F288). */
   emptySlotKeys: Record<string, number>
-  /** Players passed over for a blocking designation (OFF leagues only). */
-  benchedForLegality: number
   /** Slots actually filled across the league's accepted lineups. */
   slotsFilled: number
   /** Seats with NO manager (D339's predicate, from `league_members`). The
@@ -2910,7 +2743,6 @@ async function seedLineups(
       refused: 0,
       emptySlots: 0,
       emptySlotKeys: {},
-      benchedForLegality: 0,
       slotsFilled: 0,
       unmanagedSeats: 0,
       autopiloted: 0,
@@ -3024,7 +2856,6 @@ async function seedLineups(
           status: p.status,
         })),
         league.slots,
-        { allowIllegalLineups: league.allowIllegalLineups },
       )
       const slotMap = seat.slotMap
       if (Object.keys(slotMap).length === 0) continue
@@ -3065,7 +2896,6 @@ async function seedLineups(
       for (const key of seat.emptySlots) {
         seating.emptySlotKeys[key] = (seating.emptySlotKeys[key] ?? 0) + 1
       }
-      seating.benchedForLegality += seat.benchedForLegality.length
     }
   }
   return out
@@ -3795,7 +3625,6 @@ export async function collectSeasonAudit(
     weeks: (weeks ?? []).map((w) => ({ week: w.week, status: String(w.status) })),
     finalCells,
     commissionerActions,
-    allowIllegalLineups: state.allowIllegalLineups,
     startingSlots: state.slots.map((s) => ({ key: s.key, eligible: [...s.eligible] })),
     unmanagedSeats,
     autopilotUnfillable: [...state.autopilotUnfillable.values()],
@@ -4494,7 +4323,7 @@ function seasonCoverageGaps(scenario: ScenarioId, transact = false): string[] {
       'Widening the licence (e.g. to the receipt\'s affected_team_ids) is an Architect call. PROGRESS F373.',
     'INVARIANT 2 (lineup legality) has NO provenance channel: a lawful commish_edit_lineup and a corrupt ' +
       'lineup write are indistinguishable to it. Harmless while Q59 stands (a commissioner lifts TIMING, never ' +
-      'positional LEGALITY, so every lawful map is its own fit). Recorded, not fixed — PROGRESS Q59 / F324.',
+      'positional LEGALITY, so every lawful map is its own fit). Recorded, not fixed — PROGRESS Q59 (F324 discharged by D591).',
   ]
   if (scenario === 'charted_late' || scenario === 'charted_revision') {
     gaps.push(
@@ -4558,18 +4387,14 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
       `  ${league.leagueLabel}: ${league.matrixLine} · bridged ${league.bridgeRostered} rostered / ${league.bridgeStarted} started · ` +
         `no_stat_row starters ${league.noStatRowStarters} · held [${league.heldWeeks.map((h) => `w${h.week} ${h.status}`).join(', ')}]`,
     )
-    // The seating line is printed for EVERY league and named for the OFF one:
-    // a green run whose `allow_illegal_lineups = false` league seated nothing
-    // is the decorative outcome F286/D328 exists to prevent, so the number is
-    // on the transcript, not inferred from the absence of a 409.
+    // The seating line is printed for EVERY league, so the number is on the
+    // transcript, not inferred from the absence of a 409 (F286 / D328).
     lines.push(
       `      lineups week 1: ${league.lineupsSeated}/${league.teamCount} seated · ${league.lineupsRefused} refused · ` +
         `${league.lineupSlotsFilled} slots filled / ${league.lineupSlotsLeftEmpty} left empty` +
         (league.lineupSlotsLeftEmpty === 0
-          ? ' · '
-          : ` [${Object.entries(league.lineupEmptySlotKeys).map(([k, n]) => `${k}×${n}`).join(' ')}] · `) +
-        `benched for legality ${league.benchedForLegality}` +
-        (league.allowIllegalLineups ? '' : '   <- §7.3.6 ENFORCED (D299 legality arm)'),
+          ? ''
+          : ` [${Object.entries(league.lineupEmptySlotKeys).map(([k, n]) => `${k}×${n}`).join(' ')}]`),
     )
     // WHICH HAND set them (M6A L.E1.14 / F335): the harness sets a MANAGED
     // seat through its manager's own door and never touches an unmanaged one.
@@ -4608,14 +4433,6 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
           `${report.lawfulOverride.matchupId} — ${report.lawfulOverride.detail}`,
   )
   lines.push(...transactionReportLines(report))
-  const off = report.leagues.filter((l) => !l.allowIllegalLineups)
-  if (off.length > 0) {
-    lines.push(
-      `LEGALITY ARM (allow_illegal_lineups = false): ${off.length} league(s) — ` +
-        off.map((l) => `${l.leagueLabel} ${l.lineupsSeated}/${l.teamCount} lineups seated, ${l.lineupsRefused} refused, ${l.benchedForLegality} passed over for §7.3.6`).join(' · ') +
-        ` · plants (R1266): ${report.legalityPlants.length}`,
-    )
-  }
   lines.push(`WORKER ERRORS: ${report.workerErrors.length}`)
   for (const line of report.workerErrors.slice(0, 10)) lines.push(`  ${line}`)
   lines.push(`WORKER NOTES (named lawful states, not errors — §23.2): ${report.workerNotes.length} kinds`)

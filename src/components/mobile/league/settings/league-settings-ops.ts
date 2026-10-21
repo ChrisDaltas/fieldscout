@@ -276,7 +276,6 @@ export function generalGroups(input: GeneralInput): SettingsGroup<GeneralGroupId
     ...irRows(r.ir_slots),
     { key: 'size', label: 'Roster spots', value: `${deriveRosterSize(r)} per team` },
     { key: 'lock', label: 'Lineup lock', value: 'Each player’s kickoff' },
-    { key: 'illegal', label: 'Allow illegal lineups', value: onOff(s.allow_illegal_lineups) },
     { key: 'autosub', label: 'Auto-sub inactives', value: onOff(s.auto_sub_inactives) },
     { key: 'corrections', label: 'Stat corrections', value: 'Until next week’s first game' },
   ]
