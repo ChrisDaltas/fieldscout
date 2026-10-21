@@ -30,8 +30,13 @@ const inter = Inter({
 
 // Phone layout only (gap list §4 item 4): the full Inter 4.1 build (rsms,
 // SIL OFL 1.1 — the licence text and copyright ship beside it in
-// fonts/LICENSE-inter.txt; converted TTF → WOFF2 with every table
-// unchanged). Google's copy above strips the
+// fonts/LICENSE-inter.txt; converted TTF → WOFF2). L.F1.4 subset it to the
+// characters the app draws — Google's Latin range plus the arrows, math and
+// symbols used in src/ plus Latin Extended-A (the list sits beside it in
+// inter-variable.unicodes.txt) — keeping every OpenType feature, both axes
+// and the name table: 367 KB → 126 KB, which was costing a phone ~1.8 s of first
+// paint. Anything outside it falls back to the Google Inter, which carries
+// every subset lazily. Google's copy above strips the
 // character variants, so it can't draw the design's single-storey "a"
 // (cv11). globals.css puts it first in the font stack for
 // `html[data-layout='mobile']` only, so desktop never downloads it (hence no
