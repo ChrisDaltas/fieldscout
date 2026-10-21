@@ -131,6 +131,6 @@ export function createFallbackPoller(deps: FallbackPollerDeps): FallbackPoller {
  */
 export function invalidateForFallbackPoll(queryClient: QueryClient, keys: ReadonlyArray<QueryKey>): void {
   for (const queryKey of keys) {
-    void queryClient.invalidateQueries({ queryKey }, { cancelRefetch: true })
+    void queryClient.invalidateQueries({ queryKey }, { cancelRefetch: false })
   }
 }
