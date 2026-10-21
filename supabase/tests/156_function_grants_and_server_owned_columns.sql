@@ -18,6 +18,9 @@
 --     insert and edit; service_role may resolve.
 -- §G  expert_profiles: a claimed expert's edit lands; follower count and the
 --     AI label refused; an expert follow still moves the count.
+-- §H  link tables (follows, list_likes, list_tags, expert_follows): UPDATE
+--     refused, insert → delete leaves the counts exact; start_sit_votes
+--     results refused; a question's players frozen once anyone has voted.
 --
 -- OWN FIXTURE: users 92060000-…-01 (A) and -02 (B); lists 92061…; tag
 -- 92062…; expert 92063…; question 92064…; players pgtap-g3-p1/p2. One
@@ -29,7 +32,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(57);
+select plan(86);
 
 -- ---------------------------------------------------------------------------
 -- Fixture (as postgres)
@@ -44,7 +47,8 @@ from generate_series(1, 2) i;
 
 insert into players (id, full_name, position) values
   ('pgtap-g3-p1', 'PgTap G3 RB', 'RB'),
-  ('pgtap-g3-p2', 'PgTap G3 WR', 'WR');
+  ('pgtap-g3-p2', 'PgTap G3 WR', 'WR'),
+  ('pgtap-g3-p3', 'PgTap G3 TE', 'TE');
 
 insert into lists (id, owner_id, title, slug) values
   ('92061000-0000-4000-8000-000000000001', '92060000-0000-4000-8000-000000000001', 'g3 list', 'g3-list');
@@ -104,7 +108,7 @@ select is(
        and p.proname like '%server_owned_guard_internal'
        and not p.prosecdef
        and p.proconfig = array['search_path=""']),
-  5, 'B1 five guard functions, all SECURITY INVOKER with search_path pinned to empty');
+  6, 'B1 six guard functions, all SECURITY INVOKER with search_path pinned to empty');
 select is(
   (select count(*)::int from pg_proc p
      where p.pronamespace = 'public'::regnamespace
@@ -119,8 +123,9 @@ select is(
         'lists:trg_lists_server_owned_guard',
         'profiles:trg_profiles_server_owned_guard',
         'start_sit_questions:trg_start_sit_server_owned_guard',
+        'start_sit_votes:trg_start_sit_votes_server_owned_guard',
         'tags:trg_tags_server_owned_guard'],
-  'B3 the five guard triggers are installed on their tables');
+  'B3 the six guard triggers are installed on their tables');
 
 -- ===========================================================================
 -- §C  profiles
@@ -198,6 +203,10 @@ select throws_ok(
   $$ insert into lists (owner_id, title, slug, view_count)
        values ('92060000-0000-4000-8000-000000000001', 'g3 y', 'g3-y', 500) $$,
   '23514', 'List counts are managed by the system.', 'D3 a list inserted with a view_count is refused');
+select throws_ok(
+  $$ insert into lists (owner_id, title, slug, player_count)
+       values ('92060000-0000-4000-8000-000000000001', 'g3 z', 'g3-z', 500) $$,
+  '23514', 'List counts are managed by the system.', 'D3b a list inserted with a player_count is refused');
 with u as (update lists set title = 'g3 list renamed'
                 where id = '92061000-0000-4000-8000-000000000001' returning 1)
 select is(count(*)::int, 1, 'D4 an own-list edit lands') from u;
@@ -332,6 +341,177 @@ with u as (update expert_profiles set is_ai_generated = false
                 where id = '92063000-0000-4000-8000-000000000001' returning 1)
 select is(count(*)::int, 1, 'G5 service_role may change the AI label') from u;
 reset role;
+
+-- ===========================================================================
+-- §H  link tables (review R1650 / R1653): insert → update refused → delete,
+--     counts exact both ways; start_sit_votes results + the player freeze
+--     (R1651). Fresh rows so earlier sections' counts don't carry in.
+-- ===========================================================================
+insert into lists (id, owner_id, title, slug) values
+  ('92061000-0000-4000-8000-000000000003', '92060000-0000-4000-8000-000000000001', 'g3 three', 'g3-three');
+insert into tags (id, name, slug, is_system_tag) values
+  ('92062000-0000-4000-8000-000000000002', 'g3tagtwo', 'g3tagtwo', true);
+insert into expert_profiles (id, slug, display_name) values
+  ('92063000-0000-4000-8000-000000000002', 'g3-expert-two', 'G3 Expert Two');
+
+select is(
+  (select count(*)::int from (values ('follows'), ('list_likes'), ('list_tags'), ('expert_follows')) t(n)
+     cross join (values ('anon'), ('authenticated')) r(rol)
+    where has_table_privilege(r.rol, 'public.' || t.n, 'UPDATE')),
+  0, 'H1 no API client role holds UPDATE on follows / list_likes / list_tags / expert_follows');
+select is(
+  (select count(*)::int from (values ('follows'), ('list_likes'), ('list_tags'), ('expert_follows')) t(n)
+     cross join (values ('INSERT'), ('DELETE')) p(priv)
+    where has_table_privilege('authenticated', 'public.' || t.n, p.priv)),
+  8, 'H2 authenticated still holds INSERT and DELETE on all four');
+
+-- follows: A follows B, tries to move the row, unfollows; B unfollows A (C9's row)
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+insert into follows (follower_id, following_id)
+  values ('92060000-0000-4000-8000-000000000001', '92060000-0000-4000-8000-000000000002');
+reset role;
+select is(
+  (select array[(select follower_count from profiles where id = '92060000-0000-4000-8000-000000000002'),
+                (select following_count from profiles where id = '92060000-0000-4000-8000-000000000001')]),
+  array[1, 1], 'H3 a follow raises B''s follower_count and A''s following_count to 1');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_ok(
+  $$ update follows set following_id = '92060000-0000-4000-8000-000000000001'
+      where follower_id = '92060000-0000-4000-8000-000000000001' $$,
+  '42501', null, 'H4 moving a follow row is refused (no UPDATE grant)');
+delete from follows where follower_id = '92060000-0000-4000-8000-000000000001'
+  and following_id = '92060000-0000-4000-8000-000000000002';
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+delete from follows where follower_id = '92060000-0000-4000-8000-000000000002'
+  and following_id = '92060000-0000-4000-8000-000000000001';
+reset role;
+select is(
+  (select array[(select follower_count from profiles where id = '92060000-0000-4000-8000-000000000002'),
+                (select following_count from profiles where id = '92060000-0000-4000-8000-000000000001')]),
+  array[0, 0], 'H5 unfollowing brings both counts back to 0');
+select is(
+  (select array[(select follower_count from profiles where id = '92060000-0000-4000-8000-000000000001'),
+                (select following_count from profiles where id = '92060000-0000-4000-8000-000000000002')]),
+  array[0, 0], 'H6 B''s unfollow of A (C9''s row) brings those two counts back to 0');
+
+-- list_likes: B likes, tries to move the like, unlikes
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+insert into list_likes (user_id, list_id)
+  values ('92060000-0000-4000-8000-000000000002', '92061000-0000-4000-8000-000000000003');
+reset role;
+select is((select like_count from lists where id = '92061000-0000-4000-8000-000000000003'),
+  1, 'H7 a like raises like_count to 1');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+select throws_ok(
+  $$ update list_likes set list_id = '92061000-0000-4000-8000-000000000002'
+      where list_id = '92061000-0000-4000-8000-000000000003' $$,
+  '42501', null, 'H8 moving a like to another list is refused');
+delete from list_likes where user_id = '92060000-0000-4000-8000-000000000002'
+  and list_id = '92061000-0000-4000-8000-000000000003';
+reset role;
+select is((select like_count from lists where id = '92061000-0000-4000-8000-000000000003'),
+  0, 'H9 unliking brings like_count back to 0');
+
+-- list_tags + list_players: the owner tags and untags, adds and removes
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+insert into list_tags (list_id, tag_id)
+  values ('92061000-0000-4000-8000-000000000003', '92062000-0000-4000-8000-000000000002');
+insert into list_players (list_id, player_id, position)
+  values ('92061000-0000-4000-8000-000000000003', 'pgtap-g3-p2', 1);
+reset role;
+select is((select use_count from tags where id = '92062000-0000-4000-8000-000000000002'),
+  1, 'H10 tagging a list raises use_count to 1');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_ok(
+  $$ update list_tags set list_id = '92061000-0000-4000-8000-000000000002'
+      where tag_id = '92062000-0000-4000-8000-000000000002' $$,
+  '42501', null, 'H11 moving a tag link to another list is refused');
+delete from list_tags where list_id = '92061000-0000-4000-8000-000000000003'
+  and tag_id = '92062000-0000-4000-8000-000000000002';
+reset role;
+select is((select use_count from tags where id = '92062000-0000-4000-8000-000000000002'),
+  0, 'H12 removing the tag brings use_count back to 0');
+select is((select player_count from lists where id = '92061000-0000-4000-8000-000000000003'),
+  1, 'H13 adding a player raised player_count to 1');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+delete from list_players where list_id = '92061000-0000-4000-8000-000000000003';
+reset role;
+select is((select player_count from lists where id = '92061000-0000-4000-8000-000000000003'),
+  0, 'H14 removing the player brings player_count back to 0');
+
+-- expert_follows: B follows, tries to move it, unfollows
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+insert into expert_follows (user_id, expert_id)
+  values ('92060000-0000-4000-8000-000000000002', '92063000-0000-4000-8000-000000000002');
+reset role;
+select is((select follower_count from expert_profiles where id = '92063000-0000-4000-8000-000000000002'),
+  1, 'H15 an expert follow raises follower_count to 1');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+select throws_ok(
+  $$ update expert_follows set expert_id = '92063000-0000-4000-8000-000000000001'
+      where expert_id = '92063000-0000-4000-8000-000000000002' $$,
+  '42501', null, 'H16 moving an expert follow is refused');
+delete from expert_follows where user_id = '92060000-0000-4000-8000-000000000002'
+  and expert_id = '92063000-0000-4000-8000-000000000002';
+reset role;
+select is((select follower_count from expert_profiles where id = '92063000-0000-4000-8000-000000000002'),
+  0, 'H17 the expert unfollow brings follower_count back to 0');
+
+-- start_sit: A posts Q2; before any vote the players may change
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+insert into start_sit_questions (id, poster_id, player_a_id, player_b_id, season, week, voting_closes_at)
+  values ('92064000-0000-4000-8000-000000000002', '92060000-0000-4000-8000-000000000001',
+          'pgtap-g3-p1', 'pgtap-g3-p2', 2026, 7, now() + interval '2 days');
+with u as (update start_sit_questions set player_b_id = 'pgtap-g3-p3'
+            where id = '92064000-0000-4000-8000-000000000002' returning 1)
+select is(count(*)::int, 1, 'H18 before anyone votes, the poster may change a player') from u;
+-- B votes: results refused, a plain vote lands, a vote can't be edited
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+select throws_ok(
+  $$ insert into start_sit_votes (question_id, voter_id, voted_for, is_correct)
+       values ('92064000-0000-4000-8000-000000000002', '92060000-0000-4000-8000-000000000002', 'a', true) $$,
+  '23514', 'Vote results are managed by the system.', 'H19 a vote inserted already marked correct is refused');
+select throws_ok(
+  $$ insert into start_sit_votes (question_id, voter_id, voted_for, cred_points_earned)
+       values ('92064000-0000-4000-8000-000000000002', '92060000-0000-4000-8000-000000000002', 'a', 5) $$,
+  '23514', 'Vote results are managed by the system.', 'H20 a vote inserted with cred points is refused');
+with i as (insert into start_sit_votes (question_id, voter_id, voted_for)
+             values ('92064000-0000-4000-8000-000000000002', '92060000-0000-4000-8000-000000000002', 'a')
+             returning 1)
+select is(count(*)::int, 1, 'H21 a plain vote lands') from i;
+with u as (update start_sit_votes set is_correct = true, cred_points_earned = 5
+            where question_id = '92064000-0000-4000-8000-000000000002' returning 1)
+select is(count(*)::int, 0, 'H22 the voter updates no vote row (RETURNING count 0)') from u;
+select throws_ok(
+  $$ select public.start_sit_question_vote_exists('92064000-0000-4000-8000-000000000002') $$,
+  '42501', null, 'H23 only the poster may ask whether a question has votes');
+-- A: the players are frozen now; other edits still land
+select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_ok(
+  $$ update start_sit_questions set player_a_id = 'pgtap-g3-p3' where id = '92064000-0000-4000-8000-000000000002' $$,
+  '23514', 'The players can''t change once people have voted.', 'H24 after a vote, changing player A is refused');
+select throws_ok(
+  $$ update start_sit_questions set player_b_id = 'pgtap-g3-p2' where id = '92064000-0000-4000-8000-000000000002' $$,
+  '23514', 'The players can''t change once people have voted.', 'H25 after a vote, changing player B is refused');
+with u as (update start_sit_questions set context_note = 'g3 still editable'
+            where id = '92064000-0000-4000-8000-000000000002' returning 1)
+select is(count(*)::int, 1, 'H26 after a vote, the poster''s other edits still land') from u;
+reset role;
+select ok(not has_function_privilege('anon', 'public.start_sit_question_vote_exists(uuid)', 'EXECUTE'),
+  'H27 anon cannot EXECUTE start_sit_question_vote_exists');
+with u as (update start_sit_votes set is_correct = true, cred_points_earned = 2
+            where question_id = '92064000-0000-4000-8000-000000000002' returning 1)
+select is(count(*)::int, 1, 'H28 the server (postgres) may score a vote') from u;
 
 select * from finish();
 rollback;

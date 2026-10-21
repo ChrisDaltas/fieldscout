@@ -139,7 +139,17 @@ select is_empty(
         -- 185 (R1558, L.G1.2) — notifications UPDATE narrowed to the `read`
         -- column for authenticated, removed for anon. pgTAP 133 R3–R3c pins it.
                                                      ('notifications', 'anon', 'UPDATE'),
-                                                     ('notifications', 'authenticated', 'UPDATE'))
+                                                     ('notifications', 'authenticated', 'UPDATE'),
+        -- 206 (L.F2.8 G3, review R1650) — the four link tables are insert /
+        -- delete only for the client roles. pgTAP 156 H1–H17 pins it.
+                                                     ('follows', 'anon', 'UPDATE'),
+                                                     ('follows', 'authenticated', 'UPDATE'),
+                                                     ('list_likes', 'anon', 'UPDATE'),
+                                                     ('list_likes', 'authenticated', 'UPDATE'),
+                                                     ('list_tags', 'anon', 'UPDATE'),
+                                                     ('list_tags', 'authenticated', 'UPDATE'),
+                                                     ('expert_follows', 'anon', 'UPDATE'),
+                                                     ('expert_follows', 'authenticated', 'UPDATE'))
       order by 1, 2, 3 $$,
   'C3 every one of the SEVEN non-TRUNCATE privileges is still held by all three API roles on EVERY public table — the revoke removed nothing else (175 / F555: bar the audit log INSERT for anon / authenticated, named)'
 );
