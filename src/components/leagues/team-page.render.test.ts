@@ -470,9 +470,11 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
   it('F259(a): the page passes NO poll — the room’s `league_player_pool` event (119) refetches the lock view', () => {
     vi.mocked(useRostersLive).mockClear()
     renderTeamPage()
-    // One argument: the league id. No `{ refetchInterval }` — the 60 s poll
-    // L.D5.1 added (R822(ii)) retired at L.D5.4 with the tick's broadcast.
-    expect(vi.mocked(useRostersLive).mock.calls.at(-1)).toEqual([LEAGUE])
+    // The league id and ONLY the §24.3 outage fallback (F758 / D690 — a
+    // 10 s poll that runs while the room is DOWN and stops on SUBSCRIBED).
+    // No `{ refetchInterval }` — the always-on 60 s poll L.D5.1 added
+    // (R822(ii)) retired at L.D5.4 with the tick's broadcast.
+    expect(vi.mocked(useRostersLive).mock.calls.at(-1)).toEqual([LEAGUE, { fallbackPoll: true }])
   })
 
   it('F252(c): no lineup read for week 1 while the ladder is still pending', () => {

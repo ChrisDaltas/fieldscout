@@ -277,7 +277,7 @@ function renderHome(seed: Seed = {}): string {
   if (chat === 'error') failQuery(qc, leagueChatKeys.board(LEAGUE), new Error('chat read failed'))
   else qc.setQueryData(leagueChatKeys.board(LEAGUE), chat)
 
-  vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live' })
+  vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live', degraded: false })
   return unescapeHtml(renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(LeagueHomeStates, { leagueId: LEAGUE }))))
 }
 

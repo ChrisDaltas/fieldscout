@@ -168,7 +168,7 @@ function renderPage(seed: Seed = {}): string {
   const ps = seed.players ?? players
   if (ps === 'error') failQuery(qc, draftPoolKeys.pool('', ''), new Error('players: boom'))
   else qc.setQueryData(draftPoolKeys.pool('', ''), ps)
-  vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live' })
+  vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live', degraded: false })
   return render(qc, createElement(PlayersPage, { leagueId: LEAGUE }))
 }
 
@@ -499,7 +499,7 @@ describe('the value columns: league-scored numbers from the server, sorted by pr
       qc.setQueryData(poolValueKeys.whole(LEAGUE, WEEK), { ...values, players: poolPlayers, total: poolPlayers.length })
       qc.setQueryData(['nfl-week-games', 2099, WEEK], games)
     }
-    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live', degraded: false })
     return render(qc, createElement(PlayersPage, { leagueId: LEAGUE }))
   }
 
@@ -558,7 +558,7 @@ describe('the value columns: league-scored numbers from the server, sorted by pr
     qc.setQueryData(leaguePoolKeys.all(LEAGUE), pool)
     qc.setQueryData(scheduleKeys.all(LEAGUE), schedule)
     qc.setQueryData(poolValueKeys.whole(LEAGUE, WEEK), { ...qcValues, players: many, total: many.length })
-    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live', degraded: false })
     const html = render(qc, createElement(PlayersPage, { leagueId: LEAGUE }))
     const order = [...html.matchAll(/data-pool-row="([^"]+)"/g)].map((m) => m[1])
     expect(order[0]).toBe('bulk-399')

@@ -93,7 +93,7 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   const [pickedWeek, setPickedWeek] = useState<number | null>(null)
   const week = pickedWeek ?? defaultLineupWeek(weeks)
   const lineupWeek = schedule.data ? week : undefined
-  const rosters = useRostersLive(leagueId)
+  const rosters = useRostersLive(leagueId, { fallbackPoll: true })
   const rosterTeam = rosters.data?.teams.find((t) => t.team_id === teamId) ?? null
   const roster = useMemo(() => rosterTeam?.roster ?? [], [rosterTeam])
   const lineup = useLineup(teamId, lineupWeek)

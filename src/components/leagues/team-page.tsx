@@ -168,7 +168,7 @@ function TeamPageContent({
   // migration 119 the tick BROADCASTS its pass (`league_player_pool` on the
   // room — D319(6)); the room's refetch replaced the 60 s poll (F259(a),
   // L.D5.4). F252(c): no lineup read for a week the ladder has not named yet.
-  const rosters = useRostersLive(leagueId)
+  const rosters = useRostersLive(leagueId, { fallbackPoll: true })
   const lineup = useLineup(teamId, schedule.data ? week : undefined)
   // L.D3.12 (Q76 / Chris 2026-09-29): no Propose trade door past the trade
   // deadline — the server's `passed` (162); loading / before 162 keeps it.
@@ -245,7 +245,7 @@ function TeamPageContent({
   const box = useBoxScore(leagueId, lineupWeek, teamId)
   const rosterIds = useMemo(() => (rosterTeam?.roster ?? []).map((p) => p.player_id), [rosterTeam])
   const usage = usePlayerUsage(season, rosterIds)
-  const matchups = useMatchupsLive(leagueId, lineupWeek)
+  const matchups = useMatchupsLive(leagueId, lineupWeek, { fallbackPoll: true })
   const pairing = matchups.data?.matchups.find((m) => m.home_team_id === teamId || m.away_team_id === teamId) ?? null
   const oppTeamId = pairing ? (pairing.home_team_id === teamId ? pairing.away_team_id : pairing.home_team_id) : null
   const oppLineup = useLineup(oppTeamId ?? undefined, oppTeamId ? lineupWeek : undefined)

@@ -135,7 +135,7 @@ export function SeasonHero({
   const activeTab = tabs.find((t) => tabKeyOf(t) === tabKey) ?? tabs[0] ?? null
   const week = activeTab?.kind === 'week' ? activeTab.week : null
   const inPlay = state !== 'complete'
-  const matchups = useMatchupsLive(leagueId, inPlay && week !== null ? week : undefined)
+  const matchups = useMatchupsLive(leagueId, inPlay && week !== null ? week : undefined, { fallbackPoll: true })
   const standings = useStandingsLive(leagueId)
   const lineup = useLineup(myTeamId ?? undefined, inPlay && currentWeek !== null ? currentWeek : undefined)
   const degraded = useStatsDegraded({ enabled: inPlay && scoringLive(matchups.data?.league_week.status) })
@@ -144,7 +144,7 @@ export function SeasonHero({
   const delay = liveScoringDelay(degraded.data)
   // The bracket is the scoreboard's "Playoffs" tab — the SAME component the
   // standings page's "Playoffs" tab mounts; fetched only in that state.
-  const bracket = usePlayoffBracketLive(leagueId, state === 'playoffs')
+  const bracket = usePlayoffBracketLive(leagueId, state === 'playoffs', { fallbackPoll: true })
   const managers = useMemo(() => managersByTeam(data.members), [data.members])
 
   const connection =

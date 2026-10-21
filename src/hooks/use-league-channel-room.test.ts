@@ -510,3 +510,35 @@ describe("who's online rides the league room (gap list §3 #25)", () => {
     release()
   })
 })
+
+describe('the room says when its channel is DOWN — the §24.3 fallback poll\'s gate (F758)', () => {
+  it('raises degraded on CHANNEL_ERROR / TIMED_OUT / CLOSED, lowers it on SUBSCRIBED, and seeds a newcomer', async () => {
+    const seen: boolean[] = []
+    const a = recorder('matchups')
+    const releaseA = joinLeagueRoom(LEAGUE, { ...a.subscriber, onDegraded: (d: boolean) => seen.push(d) } as never)
+    await settle()
+    expect(seen).toEqual([false]) // seeded on join: a booting room is not an outage
+    live()
+    expect(seen).toEqual([false]) // SUBSCRIBED on a healthy room changes nothing
+
+    // A FIRST failure is already a down channel — no R263 threshold here.
+    registry[0].statusCallback?.('CHANNEL_ERROR')
+    expect(seen).toEqual([false, true])
+    registry[0].statusCallback?.('TIMED_OUT')
+    expect(seen).toEqual([false, true]) // still down: no churn
+
+    // A newcomer attaching DURING the outage is told at once.
+    const late: boolean[] = []
+    const b = recorder('transactions')
+    const releaseB = joinLeagueRoom(LEAGUE, { ...b.subscriber, onDegraded: (d: boolean) => late.push(d) } as never)
+    expect(late).toEqual([true])
+
+    // Back: every subscriber hears it, so every poll stops.
+    registry[0].statusCallback?.('SUBSCRIBED')
+    expect(seen).toEqual([false, true, false])
+    expect(late).toEqual([true, false])
+
+    releaseA()
+    releaseB()
+  })
+})

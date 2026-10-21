@@ -6,6 +6,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 import { connectionAfterJoinFailure } from './use-draft-ops'
+import { channelDegradedAfter } from './use-realtime-fallback-poll-ops'
 import {
   LEAGUE_CHANNEL_EVENTS,
   leagueChannelRegistryTopic,
@@ -114,6 +115,11 @@ export interface LeagueRoomSubscriber {
   onJoin?: () => void
   onDrop?: () => void
   onConnection?: (connection: LeagueChannelConnection) => void
+  /** The channel is DOWN (§24.3 / F758): raised on CHANNEL_ERROR /
+   *  TIMED_OUT / CLOSED, lowered on SUBSCRIBED — the fallback poll's gate.
+   *  Unlike `connection` it does not wait for the R263 banner threshold: a
+   *  first join that failed once is a down channel already. */
+  onDegraded?: (degraded: boolean) => void
   /** Who's here: the user ids tracked on the topic (the viewer's own
    *  included), on every presence sync. Emptied when the channel drops —
    *  a dead socket knows nothing, so it claims nobody. */
@@ -132,6 +138,8 @@ interface LeagueRoom {
   everSubscribed: boolean
   failedJoins: number
   connection: LeagueChannelConnection
+  /** Whether the last status was a failure (F758 — `channelDegradedAfter`). */
+  degraded: boolean
   disposed: boolean
   /** The signed-in viewer — the presence key and the tracked meta. */
   userId: string | null
@@ -150,6 +158,13 @@ const leagueRooms = new Map<string, LeagueRoom>()
 function setConnection(room: LeagueRoom, connection: LeagueChannelConnection) {
   room.connection = connection
   for (const subscriber of [...room.subscribers]) subscriber.onConnection?.(connection)
+}
+
+function setDegraded(room: LeagueRoom, status: string) {
+  const next = channelDegradedAfter(status, room.degraded)
+  if (next === room.degraded) return
+  room.degraded = next
+  for (const subscriber of [...room.subscribers]) subscriber.onDegraded?.(next)
 }
 
 const NOBODY: ReadonlySet<string> = new Set()
@@ -260,6 +275,7 @@ async function open(room: LeagueRoom) {
       room.attempt = 0
       room.everSubscribed = true
       room.failedJoins = 0
+      setDegraded(room, status)
       setConnection(room, 'live')
       // §9.3: never depend on missed broadcasts — reconcile on EVERY
       // confirmed join (boot window + reconnect gap alike).
@@ -270,6 +286,7 @@ async function open(room: LeagueRoom) {
     }
     if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
       room.failedJoins += 1
+      setDegraded(room, status)
       setConnection(room, connectionAfterJoinFailure(room.everSubscribed, room.failedJoins))
       room.tracked = false
       if (room.online.size > 0) setOnline(room, NOBODY)
@@ -303,6 +320,7 @@ export function joinLeagueRoom(
       everSubscribed: false,
       failedJoins: 0,
       connection: 'connecting',
+      degraded: false,
       disposed: false,
       userId: null,
       online: NOBODY,
@@ -311,6 +329,7 @@ export function joinLeagueRoom(
     leagueRooms.set(topic, room)
     room.subscribers.add(subscriber)
     subscriber.onConnection?.(room.connection)
+    subscriber.onDegraded?.(room.degraded)
     wireVisibility()
     void open(room)
   } else {
@@ -319,6 +338,7 @@ export function joinLeagueRoom(
     // already joined — give it the confirmed-join reconcile the SUBSCRIBED
     // callback gave everyone else. Its own cache may predate this room.
     subscriber.onConnection?.(room.connection)
+    subscriber.onDegraded?.(room.degraded)
     if (room.connection === 'live') subscriber.onJoin?.()
     if (room.connection === 'live') subscriber.onPresence?.(room.online)
     syncTracking(room)
@@ -352,8 +372,9 @@ export function useLeagueChannel(
   leagueId: string | undefined,
   handlers: LeagueChannelHandlers,
   opts?: UseLeagueChannelOptions,
-): { connection: LeagueChannelConnection } {
+): { connection: LeagueChannelConnection; degraded: boolean } {
   const [connection, setConnectionState] = useState<LeagueChannelConnection>('connecting')
+  const [degraded, setDegradedState] = useState(false)
 
   // Handlers/callbacks live in refs so the subscribe effect depends ONLY on
   // the league id: a caller passing an inline handler map (every caller)
@@ -372,8 +393,14 @@ export function useLeagueChannel(
       onJoin: () => onJoinRef.current?.(),
       onDrop: () => onDropRef.current?.(),
       onConnection: setConnectionState,
+      onDegraded: setDegradedState,
     })
   }, [leagueId])
 
-  return { connection }
+  // A released room (league change / unmount) is nobody's outage.
+  useEffect(() => {
+    if (!leagueId) setDegradedState(false)
+  }, [leagueId])
+
+  return { connection, degraded }
 }
