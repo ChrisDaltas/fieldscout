@@ -319,7 +319,7 @@ function RemixPlan({
   return (
     <>
       <p
-        className={cn('rounded-message px-3 py-2.5 text-[13px] font-medium leading-[1.4]', plan.window.free ? 'bg-m-gb text-m-tb' : 'bg-m-go text-m-to')}
+        className={cn('rounded-message px-3 py-2.5 text-[13px] font-medium leading-[1.4]', plan.window.free ? 'bg-m-b1 text-m-t1' : 'bg-m-go text-m-to')}
         data-window={plan.window.free ? 'free' : 'override'}
       >
         <span className="font-semibold">{copy.title}</span> — {copy.body}

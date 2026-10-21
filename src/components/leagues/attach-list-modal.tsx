@@ -274,8 +274,8 @@ export function AttachListInline({
     return place(
       <div className="flex flex-col gap-3">
         {suggestion && (
-          <div className="flex items-center gap-3 rounded-[14px] bg-m-gb px-3 py-2.5">
-            <span className="min-w-0 flex-1 text-[12px] font-semibold text-m-tb">
+          <div className="flex items-center gap-3 rounded-[14px] bg-m-b1 px-3 py-2.5">
+            <span className="min-w-0 flex-1 text-[12px] font-semibold text-m-t1">
               {suggestion.is_big_board && !suggestion.scoring_system_id
                 ? 'Your Big Board fits any draft.'
                 : `“${suggestion.title}” matches this league’s scoring.`}
