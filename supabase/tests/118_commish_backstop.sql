@@ -1827,7 +1827,7 @@ select is(
   || 'trade_respond_internal=allowlisted trade_vote_internal=allowlisted update_league_profile=receipt update_league_settings=receipt '
   || 'waiver_claim_cancel_internal=receipt waiver_claim_edit_internal=receipt waiver_claim_reorder_internal=receipt '
   || 'waiver_claim_submit_internal=receipt',
-  'C4 THE CENSUS (stored literal): 59 commissioner-gated writers — 53 reach the receipt, 6 are allowlisted (171 added the two draft-room manager verbs, F521; 174 took the commissioner arm off trade_propose / trade_respond — ruled 2026-09-30 — so both are allowlisted beside trade_vote; 192 added the commissioner note; re-pinned by 208: 60 writers, 7 allowlisted — the operator''s op_set_commissioner_internal, F750)');
+  'C4 THE CENSUS (stored literal): 60 commissioner-gated writers — 53 reach the receipt, 7 are allowlisted (history: 59 / 6 before 208; 171 added the two draft-room manager verbs, F521; 174 took the commissioner arm off trade_propose / trade_respond — ruled 2026-09-30 — so both are allowlisted beside trade_vote; 192 added the commissioner note; re-pinned by 208: 60 writers, 7 allowlisted — the operator''s op_set_commissioner_internal, F750)');
 
 -- C5: THE BACKSTOP CELL. A gated writer that reaches no receipt and is not
 -- on the allowlist is an OFFENDER, named here. ***The task probe target.***

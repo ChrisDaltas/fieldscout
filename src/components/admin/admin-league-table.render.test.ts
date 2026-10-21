@@ -179,7 +179,7 @@ describe('League page: Make commissioner (F750, migration 208)', () => {
   it('the dialog words: Now / After in plain words, the old commissioner stays a co-commissioner with his team', () => {
     expect(commissionerBeforeAfter(withCo.members[1], withCo.members)).toEqual({
       before: 'chris is the commissioner. jason is a manager.',
-      after: 'jason is the commissioner. chris is a co-commissioner and keeps their team. The league sees “FieldScout made jason the commissioner.”',
+      after: 'jason is the commissioner. chris is a co-commissioner and keeps their team. The league sees “FieldScout made jason the commissioner. chris is now a co-commissioner.”',
     })
     expect(commissionerBeforeAfter(withCo.members[3], withCo.members).before).toBe('chris is the commissioner. sam is a co-commissioner.')
     const headless = withCo.members.filter((m) => m.role !== 'commissioner')

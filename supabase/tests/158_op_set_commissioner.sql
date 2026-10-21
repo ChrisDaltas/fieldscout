@@ -38,7 +38,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(46);
+select plan(47);
 
 create or replace function pg_temp.err(p_sql text) returns text language plpgsql as $$
 begin
@@ -116,6 +116,8 @@ insert into league_members (id, league_id, user_id, team_id, role, is_placeholde
  ('d1580000-0000-4000-8000-000000000003', 'b1580000-0000-4000-8000-000000000001', '99158000-0000-4000-8000-000000000003', 'c1580000-0000-4000-8000-000000000003', 'co_commissioner', false),
  ('d1580000-0000-4000-8000-000000000004', 'b1580000-0000-4000-8000-000000000001', null, 'c1580000-0000-4000-8000-000000000004', 'manager', true),
  ('d1580000-0000-4000-8000-000000000006', 'b1580000-0000-4000-8000-000000000002', '99158000-0000-4000-8000-000000000006', 'c1580000-0000-4000-8000-000000000006', 'commissioner', false),
+ -- R1677: a seat flagged placeholder that nonetheless carries a user_id.
+ ('d1580000-0000-4000-8000-000000000009', 'b1580000-0000-4000-8000-000000000002', '99158000-0000-4000-8000-000000000005', null, 'manager', true),
  ('d1580000-0000-4000-8000-0000000000d1', 'b1580000-0000-4000-8000-0000000000dd', '99158000-0000-4000-8000-000000000001', null, 'commissioner', false),
  ('d1580000-0000-4000-8000-0000000000d2', 'b1580000-0000-4000-8000-0000000000dd', '99158000-0000-4000-8000-000000000002', null, 'manager', false),
  ('d1580000-0000-4000-8000-000000000007', 'b1580000-0000-4000-8000-0000000000ee', '99158000-0000-4000-8000-000000000007', 'c1580000-0000-4000-8000-000000000007', 'co_commissioner', false),
@@ -261,6 +263,8 @@ select is(pg_temp.err($$select op_set_commissioner('b1580000-0000-4000-8000-0000
   'P0002: set_commissioner: member d1580000-0000-4000-8000-0000000000ff is not in this league', 'N4 an unknown member id is refused');
 select is(pg_temp.err($$select op_set_commissioner('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-000000000004', 'a1580000-0000-4000-8000-000000000006')$$),
   '22023: set_commissioner: that seat has no person in it — only a member who has joined can be the commissioner', 'N5 a placeholder seat is refused');
+select is(pg_temp.err($$select op_set_commissioner('b1580000-0000-4000-8000-000000000002', 'd1580000-0000-4000-8000-000000000009', 'a1580000-0000-4000-8000-00000000000a')$$),
+  '22023: set_commissioner: that seat has no person in it — only a member who has joined can be the commissioner', 'N5b a seat flagged placeholder is refused even with a user_id on it (R1677)');
 select alike(pg_temp.err($$select op_set_commissioner('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-000000000003')$$),
   '22023: set_commissioner: p_action_id is required%', 'N6 no action id is refused');
 select alike(pg_temp.err($$select op_set_commissioner('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-000000000003', 'a1580000-0000-4000-8000-000000000007', E' \t')$$),
