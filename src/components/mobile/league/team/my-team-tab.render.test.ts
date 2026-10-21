@@ -175,7 +175,9 @@ describe('MyTeamTab (mobile League › Team)', () => {
     }
     const blocked = render(SCHEDULE, detail, withIr('Active'))
     expect(blocked).toContain('data-healthy-ir-notice')
-    expect(blocked).toContain('Nick Chubb is healthy — move him out of your IR spot to add players')
+    // Chris 2026-10-21: the headline is exactly his sentence; the name is the line under it.
+    expect(blocked).toContain('<span class="block font-semibold">You have an ineligible player in your IR spot.</span>')
+    expect(blocked).toContain('Nick Chubb is healthy.')
     expect(blocked).toContain('Move him to your bench — drop someone too if your roster is full.')
     expect(blocked).toContain('Or swap another IR-eligible player into the spot.')
     expect(blocked).toContain('Lineup moves, drops and trades still work as usual.')
@@ -195,7 +197,8 @@ describe('MyTeamTab (mobile League › Team)', () => {
     }
     const over: LeagueSchedule = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => (w.week === 5 ? { ...w, status: 'correction_window' } : w)) }
     const out = render(over, detail, seed)
-    expect(out).toContain('Nick Chubb is healthy — he can’t leave your IR spot until next week, so adds stay closed unless you drop him')
+    expect(out).toContain('You have an ineligible player in your IR spot.')
+    expect(out).toContain('Nick Chubb is healthy — he can’t leave the spot until next week, so adds stay closed unless you drop him.')
     expect(out).toContain('You can drop him now.')
     expect(out).toContain('Or move him out of the spot once next week starts.')
     expect(out).not.toContain('Move him to your bench — drop someone too if your roster is full.')

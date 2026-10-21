@@ -12,6 +12,7 @@ import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { IrSlot } from '@/lib/leagues/settings/league-settings'
 
 import {
+  HEALTHY_IR_HEADLINE,
   HEALTHY_IR_MOVE_NEXT_WEEK,
   HEALTHY_IR_STILL_OPEN,
   HEALTHY_IR_WAYS,
@@ -85,42 +86,46 @@ describe('who blocks — 205’s rule, mirrored', () => {
 })
 
 describe('the words', () => {
-  it('the notice: his name and the fix; the two ways out; what still works', () => {
-    expect(healthyIrHeadline([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null })])).toBe(
-      'Jalen Hurts is healthy — move him out of your IR spot to add players',
-    )
-    expect(healthyIrHeadline([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: 'Doubtful' })])).toBe(
-      'Jalen Hurts is listed Doubtful — move him out of your IR spot to add players',
-    )
-    expect(
-      healthyIrHeadline([
-        free({ player_id: 'a', full_name: 'A One', label: 'IR', designation: null }),
-        free({ player_id: 'b', full_name: 'B Two', label: 'DL', designation: null }),
-      ]),
-    ).toBe('A One and B Two can’t stay in your IR spots — move them out to add players')
+  it('the notice: Chris’s headline (2026-10-21), then his name, the two ways out, and what still works', () => {
+    // Chris, 2026-10-21, verbatim: "Change that message to say "You have an ineligible player in your IR spot.""
+    expect(HEALTHY_IR_HEADLINE).toBe('You have an ineligible player in your IR spot.')
+    const fmt = (iso: string) => iso
+    const hurts = free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null })
+    expect(healthyIrHeadline([hurts])).toBe(HEALTHY_IR_HEADLINE)
+    expect(healthyIrWays([hurts], fmt)).toEqual(['Jalen Hurts is healthy.', ...HEALTHY_IR_WAYS])
+    const doubtful = free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: 'Doubtful' })
+    expect(healthyIrHeadline([doubtful])).toBe(HEALTHY_IR_HEADLINE)
+    expect(healthyIrWays([doubtful], fmt)).toEqual(['Jalen Hurts is listed Doubtful.', ...HEALTHY_IR_WAYS])
+    const two = [
+      free({ player_id: 'a', full_name: 'A One', label: 'IR', designation: null }),
+      free({ player_id: 'b', full_name: 'B Two', label: 'DL', designation: null }),
+    ]
+    // The same sentence for two, word for word — the names are the line under it.
+    expect(healthyIrHeadline(two)).toBe(HEALTHY_IR_HEADLINE)
+    expect(healthyIrWays(two, fmt)).toEqual(['A One and B Two can’t stay in your IR spots — move them out to add players.', ...HEALTHY_IR_WAYS])
     expect(healthyIrHeadline([])).toBeNull()
     expect(HEALTHY_IR_WAYS).toEqual(['Move him to your bench — drop someone too if your roster is full.', 'Or swap another IR-eligible player into the spot.'])
     expect(HEALTHY_IR_STILL_OPEN).toBe('Lineup moves, drops and trades still work as usual.')
   })
-  it('the closed Add / Claim says why', () => {
+  it('the closed Add / Claim leads with the headline, then the short fix', () => {
     expect(healthyIrAddTitle([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null })])).toBe(
-      'Your IR spot still holds Jalen Hurts, who is healthy — move him out of it to add players.',
+      'You have an ineligible player in your IR spot. Move Jalen Hurts out of the spot to add players.',
     )
     expect(healthyIrAddTitle([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: 'Doubtful' })])).toBe(
-      'Your IR spot still holds Jalen Hurts, listed Doubtful — move him out of it to add players.',
+      'You have an ineligible player in your IR spot. Move Jalen Hurts out of the spot to add players.',
     )
     expect(
       healthyIrAddTitle([
         free({ player_id: 'a', full_name: 'A One', label: 'IR', designation: null }),
         free({ player_id: 'b', full_name: 'B Two', label: 'DL', designation: null }),
       ]),
-    ).toBe('Your IR spots still hold players who aren’t IR-eligible — move them out to add players.')
+    ).toBe('You have an ineligible player in your IR spot. Move A One and B Two out of your IR spots to add players.')
     expect(healthyIrAddTitle([])).toBeNull()
   })
   it('the + door’s name keeps his name capitalised (acquireLabel lower-cases only the reason’s first word)', () => {
     const title = healthyIrAddTitle([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null })])!
     expect(acquireLabel('none', 'Puka Nacua', title)).toBe(
-      'Can’t pick up Puka Nacua — your IR spot still holds Jalen Hurts, who is healthy — move him out of it to add players',
+      'Can’t pick up Puka Nacua — you have an ineligible player in your IR spot. Move Jalen Hurts out of the spot to add players',
     )
   })
 })
@@ -160,31 +165,39 @@ describe('F690 — when his game has started, the way out is locked too (the cop
   const fmt = (iso: string) => `<${iso}>`
   it('the notice while he is in his game: no move, no drop yet — when the drop opens, and that the move waits for next week', () => {
     const b = [hurts({ kind: 'in_game', dropsOpenAt: UNTIL })]
-    expect(healthyIrHeadline(b)).toBe('Jalen Hurts is healthy, but his game has started — he’s locked in your IR spot, so you can’t add players yet')
-    expect(healthyIrWays(b, fmt)).toEqual([`You can drop him once this week’s games end (<${UNTIL}>).`, HEALTHY_IR_MOVE_NEXT_WEEK])
-    expect(healthyIrWays([hurts({ kind: 'in_game', dropsOpenAt: null })], fmt)).toEqual(['You can drop him once this week’s games end.', HEALTHY_IR_MOVE_NEXT_WEEK])
+    const locked = 'Jalen Hurts is healthy, but his game has started — he’s locked in the spot, so you can’t add players yet.'
+    expect(healthyIrHeadline(b)).toBe(HEALTHY_IR_HEADLINE)
+    expect(healthyIrWays(b, fmt)).toEqual([locked, `You can drop him once this week’s games end (<${UNTIL}>).`, HEALTHY_IR_MOVE_NEXT_WEEK])
+    expect(healthyIrWays([hurts({ kind: 'in_game', dropsOpenAt: null })], fmt)).toEqual([locked, 'You can drop him once this week’s games end.', HEALTHY_IR_MOVE_NEXT_WEEK])
     expect(HEALTHY_IR_MOVE_NEXT_WEEK).toBe('Or move him out of the spot once next week starts.')
     expect(healthyIrAddTitle(b)).toBe(
-      'Your IR spot still holds Jalen Hurts, who is healthy, and his game has started — no adds until you can drop him (after this week’s games) or move him out (next week).',
+      'You have an ineligible player in your IR spot. Jalen Hurts’s game has started — no adds until you can drop him (after this week’s games) or move him out (next week).',
     )
   })
   it('the notice once the week’s games are over: a drop of him works now, the move waits', () => {
     const b = [hurts({ kind: 'week_over' })]
-    expect(healthyIrHeadline(b)).toBe('Jalen Hurts is healthy — he can’t leave your IR spot until next week, so adds stay closed unless you drop him')
-    expect(healthyIrWays(b, fmt)).toEqual(['You can drop him now.', HEALTHY_IR_MOVE_NEXT_WEEK])
-    expect(healthyIrAddTitle(b)).toBe('Your IR spot still holds Jalen Hurts, who is healthy — no adds until he leaves it: drop him now, or move him out next week.')
+    expect(healthyIrHeadline(b)).toBe(HEALTHY_IR_HEADLINE)
+    expect(healthyIrWays(b, fmt)).toEqual([
+      'Jalen Hurts is healthy — he can’t leave the spot until next week, so adds stay closed unless you drop him.',
+      'You can drop him now.',
+      HEALTHY_IR_MOVE_NEXT_WEEK,
+    ])
+    expect(healthyIrAddTitle(b)).toBe(
+      'You have an ineligible player in your IR spot. No adds until Jalen Hurts leaves the spot: drop him now, or move him out next week.',
+    )
   })
   it('nothing locked: the two ways out Chris named, unchanged', () => {
-    expect(healthyIrWays([hurts(null)], fmt)).toBe(HEALTHY_IR_WAYS)
+    expect(healthyIrWays([hurts(null)], fmt)).toEqual(['Jalen Hurts is healthy.', ...HEALTHY_IR_WAYS])
     expect(healthyIrWays([], fmt)).toEqual([])
   })
   it('two blockers, one locked: a line each, saying what works for him', () => {
     const b = [hurts({ kind: 'in_game', dropsOpenAt: null }), { player_id: 'b', full_name: 'B Two', label: 'DL', designation: null, stuck: null }]
-    expect(healthyIrHeadline(b)).toBe('Jalen Hurts and B Two can’t stay in your IR spots — adds stay closed until they leave them')
+    expect(healthyIrHeadline(b)).toBe(HEALTHY_IR_HEADLINE)
     expect(healthyIrWays(b, fmt)).toEqual([
+      'Jalen Hurts and B Two can’t stay in your IR spots — adds stay closed until they leave them.',
       'Jalen Hurts: you can drop him once this week’s games end, or move him out once next week starts.',
       'B Two: move him to your bench, or swap an IR-eligible player into his spot.',
     ])
-    expect(healthyIrAddTitle(b)).toBe('Your IR spots still hold players who aren’t IR-eligible — no adds until they leave them.')
+    expect(healthyIrAddTitle(b)).toBe('You have an ineligible player in your IR spot. No adds until Jalen Hurts and B Two leave your IR spots.')
   })
 })

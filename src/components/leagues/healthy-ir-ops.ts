@@ -109,20 +109,37 @@ function standing(b: HealthyIrBlocker): string {
   return b.designation === null ? 'is healthy' : `is listed ${b.designation}`
 }
 
-/** The notice's headline: "<Player> is healthy — move him out of your IR spot to add players"
- *  (or, while his game has him locked there, what is true instead). */
+/** "A One, B Two and C Three". */
+function nameList(blockers: readonly HealthyIrBlocker[]): string {
+  const names = blockers.map((b) => b.full_name)
+  return names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+}
+
+/** The notice's headline — Chris, 2026-10-21, verbatim: "Change that message
+ *  to say "You have an ineligible player in your IR spot."" The same sentence
+ *  for one blocker or several, locked or not: who he is, and what works now,
+ *  are the lines under it (`healthyIrWays`). The closed Add / Claim's reason
+ *  (`healthyIrAddTitle`) and the server's refusal in plain words
+ *  (friendly-messages) lead with it too. */
+export const HEALTHY_IR_HEADLINE = 'You have an ineligible player in your IR spot.'
+
+/** The notice's headline (`HEALTHY_IR_HEADLINE`) — null when nothing blocks. */
 export function healthyIrHeadline(blockers: readonly HealthyIrBlocker[]): string | null {
+  return blockers.length > 0 ? HEALTHY_IR_HEADLINE : null
+}
+
+/** The first line under the headline: who, and why adds are closed (or,
+ *  while his game has him locked there, what is true instead). */
+function healthyIrWho(blockers: readonly HealthyIrBlocker[]): string | null {
   const [first, ...rest] = blockers
   if (!first) return null
   if (rest.length === 0) {
-    if (first.stuck?.kind === 'in_game') return `${first.full_name} ${standing(first)}, but his game has started — he’s locked in your IR spot, so you can’t add players yet`
-    if (first.stuck?.kind === 'week_over') return `${first.full_name} ${standing(first)} — he can’t leave your IR spot until next week, so adds stay closed unless you drop him`
-    return `${first.full_name} ${standing(first)} — move him out of your IR spot to add players`
+    if (first.stuck?.kind === 'in_game') return `${first.full_name} ${standing(first)}, but his game has started — he’s locked in the spot, so you can’t add players yet.`
+    if (first.stuck?.kind === 'week_over') return `${first.full_name} ${standing(first)} — he can’t leave the spot until next week, so adds stay closed unless you drop him.`
+    return `${first.full_name} ${standing(first)}.`
   }
-  const names = blockers.map((b) => b.full_name)
-  const list = `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
-  if (blockers.some((b) => b.stuck)) return `${list} can’t stay in your IR spots — adds stay closed until they leave them`
-  return `${list} can’t stay in your IR spots — move them out to add players`
+  if (blockers.some((b) => b.stuck)) return `${nameList(blockers)} can’t stay in your IR spots — adds stay closed until they leave them.`
+  return `${nameList(blockers)} can’t stay in your IR spots — move them out to add players.`
 }
 
 /** The two ways out Chris names, in the order he said them (nothing locked). */
@@ -134,44 +151,47 @@ export const HEALTHY_IR_WAYS: readonly string[] = [
 /** The move out waits for the next week once his game has started (set_lineup's IR timing). */
 export const HEALTHY_IR_MOVE_NEXT_WEEK = 'Or move him out of the spot once next week starts.'
 
-/** The notice's lines under the headline: the ways out that work NOW, and
- *  when the locked ones open. `formatInstant` renders the drop's opening
- *  instant (the tick's `until`) in the viewer's time. */
+/** The notice's lines under the headline: who and why (`healthyIrWho`), then
+ *  the ways out that work NOW, and when the locked ones open. `formatInstant`
+ *  renders the drop's opening instant (the tick's `until`) in the viewer's time. */
 export function healthyIrWays(blockers: readonly HealthyIrBlocker[], formatInstant: (iso: string) => string): readonly string[] {
   const dropWhen = (s: HealthyIrStuck): string =>
     s.kind === 'week_over' ? 'now' : `once this week’s games end${s.dropsOpenAt ? ` (${formatInstant(s.dropsOpenAt)})` : ''}`
+  const who = healthyIrWho(blockers)
   const [first, ...rest] = blockers
-  if (!first) return []
-  if (rest.length === 0) return first.stuck ? [`You can drop him ${dropWhen(first.stuck)}.`, HEALTHY_IR_MOVE_NEXT_WEEK] : HEALTHY_IR_WAYS
-  if (!blockers.some((b) => b.stuck)) return HEALTHY_IR_WAYS
-  return blockers.map((b) =>
-    b.stuck
-      ? `${b.full_name}: you can drop him ${dropWhen(b.stuck)}, or move him out once next week starts.`
-      : `${b.full_name}: move him to your bench, or swap an IR-eligible player into his spot.`,
-  )
+  if (!first || who === null) return []
+  if (rest.length === 0) return first.stuck ? [who, `You can drop him ${dropWhen(first.stuck)}.`, HEALTHY_IR_MOVE_NEXT_WEEK] : [who, ...HEALTHY_IR_WAYS]
+  if (!blockers.some((b) => b.stuck)) return [who, ...HEALTHY_IR_WAYS]
+  return [
+    who,
+    ...blockers.map((b) =>
+      b.stuck
+        ? `${b.full_name}: you can drop him ${dropWhen(b.stuck)}, or move him out once next week starts.`
+        : `${b.full_name}: move him to your bench, or swap an IR-eligible player into his spot.`,
+    ),
+  ]
 }
 
 /** The line under the ways: what still works while he is there. */
 export const HEALTHY_IR_STILL_OPEN = 'Lineup moves, drops and trades still work as usual.'
 
-/** The disabled Add / Claim's reason (its title / the card's closed line).
- *  It opens with "Your…", never his name: the + door's accessible name
- *  lower-cases a reason's first letter (`acquireLabel`), which must not
- *  touch a proper name. */
+/** The disabled Add / Claim's reason (its title / the card's closed line):
+ *  the headline sentence, then the short fix. It opens with "You…", never his
+ *  name: the + door's accessible name lower-cases a reason's first letter
+ *  (`acquireLabel`), which must not touch a proper name. */
 export function healthyIrAddTitle(blockers: readonly HealthyIrBlocker[]): string | null {
   const [first, ...rest] = blockers
   if (!first) return null
   if (rest.length > 0) {
     return blockers.some((b) => b.stuck)
-      ? 'Your IR spots still hold players who aren’t IR-eligible — no adds until they leave them.'
-      : 'Your IR spots still hold players who aren’t IR-eligible — move them out to add players.'
+      ? `${HEALTHY_IR_HEADLINE} No adds until ${nameList(blockers)} leave your IR spots.`
+      : `${HEALTHY_IR_HEADLINE} Move ${nameList(blockers)} out of your IR spots to add players.`
   }
-  const who = first.designation === null ? 'who is healthy' : `listed ${first.designation}`
   if (first.stuck?.kind === 'in_game') {
-    return `Your IR spot still holds ${first.full_name}, ${who}, and his game has started — no adds until you can drop him (after this week’s games) or move him out (next week).`
+    return `${HEALTHY_IR_HEADLINE} ${first.full_name}’s game has started — no adds until you can drop him (after this week’s games) or move him out (next week).`
   }
   if (first.stuck?.kind === 'week_over') {
-    return `Your IR spot still holds ${first.full_name}, ${who} — no adds until he leaves it: drop him now, or move him out next week.`
+    return `${HEALTHY_IR_HEADLINE} No adds until ${first.full_name} leaves the spot: drop him now, or move him out next week.`
   }
-  return `Your IR spot still holds ${first.full_name}, ${who} — move him out of it to add players.`
+  return `${HEALTHY_IR_HEADLINE} Move ${first.full_name} out of the spot to add players.`
 }

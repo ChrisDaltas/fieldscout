@@ -164,8 +164,11 @@ const pick = (msg: string, re: RegExp, fill: (m: RegExpExecArray) => string): st
 const s = (n: string) => (n === '1' ? '' : 's')
 
 const GAME_STARTED_ADD = 'That player’s game has started — you can pick him up after the week’s games end.'
-/** D593 (migration 205): the two ways out of a healthy-IR block, as the team screen says them. */
-const HEALTHY_IR_FIX = 'move him out of your IR spot to add players: move him to your bench, or swap another IR-eligible player into the spot.'
+/** D593 (migration 205): a healthy-IR refusal leads with the team screen's headline (Chris 2026-10-21, verbatim:
+ *  "Change that message to say "You have an ineligible player in your IR spot."" — `HEALTHY_IR_HEADLINE`), then the
+ *  two ways out. */
+const HEALTHY_IR_LEAD = 'You have an ineligible player in your IR spot.'
+const HEALTHY_IR_FIX = 'move him to your bench, or swap another IR-eligible player into the spot.'
 
 export const PHRASES: Phrase[] = [
   // Lineup (set_lineup_internal / commish_edit_lineup_internal — newest definer 201, D591)
@@ -254,15 +257,15 @@ export const PHRASES: Phrase[] = [
     id: 'add-healthy-ir',
     migration: '205_healthy_ir_blocks_adds.sql',
     fragments: ['and still in', "'s IR spot — no adds while a player who isn't IR-eligible holds an IR spot"],
-    render: (m) => pick(m, at('(.+?) is (healthy|listed \\S+) and still in'), (x) => `${x[1]} is ${x[2]} — ${HEALTHY_IR_FIX}`),
-    generic: `A player who isn’t IR-eligible is in your IR spot — ${HEALTHY_IR_FIX}`,
+    render: (m) => pick(m, at('(.+?) is (healthy|listed \\S+) and still in'), (x) => `${HEALTHY_IR_LEAD} ${x[1]} is ${x[2]} — ${HEALTHY_IR_FIX}`),
+    generic: `${HEALTHY_IR_LEAD} Move him to your bench, or swap another IR-eligible player into the spot.`,
   },
   {
     id: 'claim-healthy-ir',
     migration: '205_healthy_ir_blocks_adds.sql',
     fragments: ['and still in', "'s IR spot — no claims while a player who isn't IR-eligible holds an IR spot"],
-    render: (m) => pick(m, at('(.+?) is (healthy|listed \\S+) and still in'), (x) => `${x[1]} is ${x[2]} — ${HEALTHY_IR_FIX}`),
-    generic: `A player who isn’t IR-eligible is in your IR spot — ${HEALTHY_IR_FIX}`,
+    render: (m) => pick(m, at('(.+?) is (healthy|listed \\S+) and still in'), (x) => `${HEALTHY_IR_LEAD} ${x[1]} is ${x[2]} — ${HEALTHY_IR_FIX}`),
+    generic: `${HEALTHY_IR_LEAD} Move him to your bench, or swap another IR-eligible player into the spot.`,
   },
   {
     id: 'add-locked',

@@ -253,13 +253,15 @@ describe('D593 — a healthy man left in my IR spot closes every + (prevent, don
     }
     const html = renderPage({ rosters: blocked })
     expect(html).toContain('data-healthy-ir')
-    expect(html).toContain('Mine IR is healthy — move him out of your IR spot to add players.')
+    // Chris 2026-10-21: the headline is exactly his sentence (no doubled full stop), then the way to the fix.
+    expect(html).toContain('<span class="text-negative-strong">You have an ineligible player in your IR spot.</span>')
+    expect(html).not.toContain('IR spot..')
     expect(html).toContain(`href="/app/leagues/${LEAGUE}/team/${MINE}"`)
     for (const id of ['fa-open', 'fa-norow', 'fa-waivers']) {
       const at = html.indexOf(`data-pool-row="${id}"`)
       const row = html.slice(at, html.indexOf('</tr>', at))
       expect(row, id).toMatch(/disabled=""/)
-      expect(row, id).toContain('title="Your IR spot still holds Mine IR, who is healthy — move him out of it to add players."')
+      expect(row, id).toContain('title="You have an ineligible player in your IR spot. Move Mine IR out of the spot to add players."')
     }
     // Still OUT (fits the spot): nothing changes.
     const fits: LeagueRosters = {

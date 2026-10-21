@@ -291,7 +291,7 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
       {irHeadline && (
         <StatusBanner tone="negative">
           <span data-healthy-ir>
-            <span className="text-negative-strong">{irHeadline}.</span>{' '}
+            <span className="text-negative-strong">{irHeadline}</span>{' '}
             {myTeamId && (
               <Link href={`/app/leagues/${leagueId}/team/${myTeamId}`} className="font-semibold underline underline-offset-2">
                 Fix it on your team

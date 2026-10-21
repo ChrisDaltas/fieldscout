@@ -176,7 +176,7 @@ describe('F425 — Claim beside Add, as the server’s window allows', () => {
     })
   })
   it('D593: a player who isn’t IR-eligible in my IR spot closes Add AND Claim with his reason — whatever the window or the lock', () => {
-    const irBlockTitle = 'Jalen Hurts is healthy — move him out of your IR spot to add players.'
+    const irBlockTitle = 'You have an ineligible player in your IR spot. Move Jalen Hurts out of the spot to add players.'
     for (const window of [WINDOW, { ...WINDOW, free_agency_open: true, why: 'open' as const }, null]) {
       expect(pickupActions(free, { ...ctx(window), irBlockTitle })).toEqual({
         add: { show: true, disabled: true, title: irBlockTitle },

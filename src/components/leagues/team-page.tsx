@@ -486,9 +486,10 @@ function TeamPageContent({
   )
 }
 
-/** D593: "<Player> is healthy — move him out of your IR spot to add players",
- *  the ways out that work now (`healthyIrWays` — the two Chris named, or,
- *  while his game has him locked, the drop and when the move opens), and
+/** D593: "You have an ineligible player in your IR spot." (Chris
+ *  2026-10-21), who he is and the ways out that work now (`healthyIrWays` —
+ *  the two Chris named, or, while his game has him locked, the drop and when
+ *  the move opens), and
  *  what still works — a soft-red system message (the bright red is its
  *  headline's words only). Exported for the render test. */
 export function HealthyIrNotice({ headline, ways }: { headline: string; ways: readonly string[] }) {

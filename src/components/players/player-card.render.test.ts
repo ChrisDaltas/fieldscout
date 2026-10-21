@@ -232,7 +232,7 @@ describe('cardLeagueView — where he is, and the one move that fits', () => {
     const blocked = { teams: [team('mine', [rp('p-mine'), rp('p-irh', { full_name: 'Jalen Hurts', slot_key: 'ir:0', ir_placed_week: 5 })]), team('them', [rp('p-theirs')])] }
     const v = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6 }))
     if (v.kind !== 'available') throw new Error('kind')
-    const why = 'Your IR spot still holds Jalen Hurts, who is healthy — move him out of it to add players.'
+    const why = 'You have an ineligible player in your IR spot. Move Jalen Hurts out of the spot to add players.'
     expect(v.add).toEqual({ show: true, disabled: true, title: why })
     expect(v.acquire).toEqual({ kind: 'none', disabled: true, title: why })
     const drop = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6, player: player('p-mine') }))
@@ -252,13 +252,13 @@ describe('cardLeagueView — where he is, and the one move that fits', () => {
     expect(locked.kind === 'available' && locked.add).toEqual({
       show: true,
       disabled: true,
-      title: 'Your IR spot still holds Jalen Hurts, who is healthy, and his game has started — no adds until you can drop him (after this week’s games) or move him out (next week).',
+      title: 'You have an ineligible player in your IR spot. Jalen Hurts’s game has started — no adds until you can drop him (after this week’s games) or move him out (next week).',
     })
     const over = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6, weekGamesOver: true }))
     expect(over.kind === 'available' && over.add).toEqual({
       show: true,
       disabled: true,
-      title: 'Your IR spot still holds Jalen Hurts, who is healthy — no adds until he leaves it: drop him now, or move him out next week.',
+      title: 'You have an ineligible player in your IR spot. No adds until Jalen Hurts leaves the spot: drop him now, or move him out next week.',
     })
   })
 })

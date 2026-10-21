@@ -23,6 +23,8 @@ import { describe, expect, it } from 'vitest'
 
 import { readdirSync } from 'node:fs'
 
+import { HEALTHY_IR_HEADLINE } from '@/components/leagues/healthy-ir-ops'
+
 import census from './friendly-messages.census.json'
 import reviewed from './friendly-messages.census-reviewed.json'
 import { FALLBACK_MESSAGE, PHRASES, type Phrase, cleanServerText, explainingClause, friendlyMessage, matchPhrase } from './friendly-messages'
@@ -138,10 +140,10 @@ const CASES: ReadonlyArray<readonly [string, string, string]> = [
   // 205 / D593: a player who isn't IR-eligible left in an IR spot blocks adds and claims.
   ['add-healthy-ir',
     "roster_add_drop: Jalen Hurts is healthy and still in Alpha's IR spot — no adds while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), or swap an IR-eligible player into his spot (§7.3.2)",
-    'Jalen Hurts is healthy — move him out of your IR spot to add players: move him to your bench, or swap another IR-eligible player into the spot.'],
+    'You have an ineligible player in your IR spot. Jalen Hurts is healthy — move him to your bench, or swap another IR-eligible player into the spot.'],
   ['claim-healthy-ir',
     "waiver_claim_submit: Jalen Hurts is listed Doubtful and still in Alpha's IR spot — no claims while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), or swap an IR-eligible player into his spot (§7.3.2)",
-    'Jalen Hurts is listed Doubtful — move him out of your IR spot to add players: move him to your bench, or swap another IR-eligible player into the spot.'],
+    'You have an ineligible player in your IR spot. Jalen Hurts is listed Doubtful — move him to your bench, or swap another IR-eligible player into the spot.'],
 ]
 
 describe('phrase map — renders the member’s sentence from the server’s own values', () => {
@@ -154,6 +156,17 @@ describe('phrase map — renders the member’s sentence from the server’s own
     const odd = 'roster_add_drop: ??? is locked for adds — kicked off at x; no in-game pickups'
     expect(matchPhrase(odd)?.id).toBe('add-locked')
     expect(friendlyMessage(odd)).toBe('That player’s game has started — you can pick him up after the week’s games end.')
+  })
+})
+
+describe('D593 — a healthy-IR refusal leads with the team screen’s headline (Chris 2026-10-21)', () => {
+  it('both refusals, rendered and generic, open with exactly HEALTHY_IR_HEADLINE', () => {
+    for (const id of ['add-healthy-ir', 'claim-healthy-ir']) {
+      const phrase = PHRASES.find((p) => p.id === id)!
+      expect(phrase.generic.startsWith(`${HEALTHY_IR_HEADLINE} `), id).toBe(true)
+      const raw = CASES.find((c) => c[0] === id)![1]
+      expect(friendlyMessage(raw).startsWith(`${HEALTHY_IR_HEADLINE} `), id).toBe(true)
+    }
   })
 })
 
