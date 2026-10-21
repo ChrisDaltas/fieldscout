@@ -1,6 +1,7 @@
 import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 
 import type { FeedLine } from './activity-feed-ops'
+import { isRuleCancelled } from './waiver-claims-ops'
 
 /**
  * My Team's Transactions feed (Chris 2026-10-04: "Waivers should be a panel
@@ -25,17 +26,24 @@ export type TransactionEntry =
 
 /** One list, newest at the top. PENDING claims join at the time they were
  *  made; LOST and INVALID ones (Chris 2026-10-05) at the time the run settled
- *  them. A claim that WON is already a move (a `waiver_claim` transaction) and
- *  a cancelled one was the manager's own doing — neither joins. An entry with
- *  no instant sorts last; equal instants keep a stable order (claims first). */
+ *  them; one the RULE cancelled (F693 — a player who isn't IR-eligible in the
+ *  IR spot: `isRuleCancelled`) at the time it was cancelled. A claim that WON
+ *  is already a move (a `waiver_claim` transaction) and one the manager
+ *  cancelled himself was his own doing — neither joins. An entry with no
+ *  instant sorts last; equal instants keep a stable order (claims first). */
 export function mergeTransactions(claims: readonly WaiverClaimView[], lines: readonly FeedLine[]): TransactionEntry[] {
   const entries: TransactionEntry[] = [
     ...claims
-      .filter((c) => c.status === 'pending' || c.status === 'lost' || c.status === 'invalid')
+      .filter((c) => c.status === 'pending' || c.status === 'lost' || c.status === 'invalid' || isRuleCancelled(c))
       .map((claim): TransactionEntry => ({
         kind: 'claim',
         id: `claim:${claim.id}`,
-        at: claim.status === 'pending' ? claim.created_at : (claim.processed_at ?? claim.created_at),
+        at:
+          claim.status === 'pending'
+            ? claim.created_at
+            : claim.status === 'cancelled'
+              ? (claim.cancelled_at ?? claim.created_at)
+              : (claim.processed_at ?? claim.created_at),
         claim,
       })),
     ...lines

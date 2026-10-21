@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 
+import { systemTime } from '@/lib/leagues/time/time-provider'
+import { cancelHealthyIrClaims } from '@/lib/leagues/waivers/healthy-ir-cancel'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncPlayers } from '@/lib/sync/players'
 
@@ -13,9 +15,16 @@ import { syncPlayers } from '@/lib/sync/players'
  * change, a new signing, a player the projection feed leaves out) every day
  * instead of once a week.
  *
- * Status: 200 with the summary; 500 when the sync throws, or when the feed
+ * Right after it, F693 (Chris 2026-10-21: "No, if the player is no longer IR
+ * eligible the claims are cancelled."): `cancelHealthyIrClaims` — migration
+ * 205's door cancels the pending claims of every team with a player who
+ * isn't IR-eligible in an IR spot (idempotent; one notice per team); its
+ * report is `healthyIr` in the body and the log.
+ *
+ * Status: 200 with the summary; 500 when the sync throws, when the feed
  * mapped ZERO players — an empty Sleeper answer is a failed fetch, never a
- * quiet day (CLAUDE.md: "nothing happened" is not "it worked").
+ * quiet day (CLAUDE.md: "nothing happened" is not "it worked") — or when the
+ * cancel failed (named).
  */
 
 export const maxDuration = 120
@@ -28,14 +37,23 @@ export async function GET(request: Request) {
   }
 
   try {
-    const summary = await syncPlayers(createAdminClient())
+    const db = createAdminClient()
+    const summary = await syncPlayers(db)
     console.log('[sync-players]', JSON.stringify(summary))
     if ((summary.counts.mapped ?? 0) === 0) {
       const error = 'the Sleeper player feed mapped 0 players — nothing written; read as a failed fetch, not a quiet day'
       console.error('[sync-players] FAILURE', error)
       return NextResponse.json({ ...summary, error }, { status: 500 })
     }
-    return NextResponse.json(summary, { status: 200 })
+    // F693: after the tags are written.
+    const healthyIr = await cancelHealthyIrClaims(db, systemTime)
+    for (const w of healthyIr.warnings) console.warn('[sync-players]', w)
+    for (const f of healthyIr.failures) console.error('[sync-players] FAILURE', f)
+    console.log('[sync-players] healthy-IR claim cancel', JSON.stringify({ deployed: healthyIr.deployed, paused: healthyIr.paused, leaguesChecked: healthyIr.leaguesChecked, cancelled: healthyIr.cancelled, notified: healthyIr.notified, leagues: healthyIr.leagues, why: healthyIr.why }))
+    if (!healthyIr.ok) {
+      return NextResponse.json({ ...summary, healthyIr, error: healthyIr.failures.join('; ') }, { status: 500 })
+    }
+    return NextResponse.json({ ...summary, healthyIr }, { status: 200 })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[sync-players] failed:', message)

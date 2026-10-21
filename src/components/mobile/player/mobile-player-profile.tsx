@@ -30,6 +30,7 @@ import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MPosChip, posLabel } from '@/components/mobile/ui/m-pos-chip'
 import { ScoringSheet } from '@/components/mobile/ui/scoring-sheet'
 import { useCardLeagueView } from '@/components/players/player-card-actions'
+import { dropOffered } from '@/components/players/player-card-league-ops'
 import { scheduleRows, thisWeek } from '@/components/players/player-page-ops'
 import { useDefenseSplits } from '@/hooks/use-defense-splits'
 import { useLeague } from '@/hooks/use-league'
@@ -680,7 +681,10 @@ function ProfileHeader({
  * Propose trade (another team's — the builder opens over the profile),
  * Claim off waivers / Add (available) — the player card's gates
  * (`cardLeagueView`). A closed door is shown dimmed and says why when
- * tapped; it never sends.
+ * tapped; it never sends. F692 (Chris 2026-10-21: "…should have "Drop" as an
+ * option if they are droppable. Not if they are locked for the week
+ * though."): one of yours shows Drop only while he is droppable
+ * (`dropOffered`) — locked, there is no Drop at all.
  */
 function HeaderAction({
   pool,
@@ -714,7 +718,7 @@ function HeaderAction({
       {label}
     </button>
   )
-  if (v.kind === 'mine') return pill('Drop', cn('bg-m-gr text-m-tr', PRESS.danger), v.drop.open, v.drop.open ? undefined : v.drop.reason, () => onMove('drop', leagueId))
+  if (v.kind === 'mine') return dropOffered(v) ? pill('Drop', cn('bg-m-gr text-m-tr', PRESS.danger), true, undefined, () => onMove('drop', leagueId)) : null
   if (v.kind === 'theirs') {
     return pill('Propose trade', cn('bg-accent text-white', PRESS.accent), v.trade.open, v.trade.open ? undefined : v.trade.reason, () => onTrade(leagueId, v.teamId))
   }

@@ -19,8 +19,10 @@
  * he can't leave, so nothing is asked of him). With the current week unknown
  * a Restricted occupant is not counted (the server decides).
  *
- * WHEN THE WAY OUT IS LOCKED TOO (F690 — the block stands; Chris's
- * call is open): once his own game has kicked off, set_lineup refuses moving
+ * WHEN THE WAY OUT IS LOCKED TOO (F690 — the block stands; Chris ruled
+ * 2026-10-21, verbatim: "Nothing changes if the player is locked. that's
+ * tough luck. but that's why we have ai roster automations coming."): once
+ * his own game has kicked off, set_lineup refuses moving
  * him out of the spot (or swapping someone in) until the NEXT week starts,
  * and a drop of him is refused until the week's last game ends. So the copy
  * must not tell him to do what the app refuses (never demand the
@@ -35,6 +37,13 @@
  *     (The ladder flips at the hourly :00 job, the drop lock at the games-
  *     over instant — the server decides inside that hour.)
  *   - null — nothing stops the move: the two ways out Chris named.
+ *
+ * F692 (Chris 2026-10-21, verbatim: "Yes the user can click on the player and
+ * drop them directly. the player detail page, mini modal or card should have
+ * "Drop" as an option if they are droppable. Not if they are locked for the
+ * week though."): dropping him is a way out too — the card's own Drop
+ * (`cardLeagueView`'s drop gate, closed while he is locked), and the server
+ * lets an add + drop whose drop is him through (205). The ways below name it.
  *
  * What it never blocks: drops, lineup / bench moves (they are the ways out),
  * trades, the commissioner's roster tools. Pure: no clock, no fetch.
@@ -139,13 +148,15 @@ function healthyIrWho(blockers: readonly HealthyIrBlocker[]): string | null {
     return `${first.full_name} ${standing(first)}.`
   }
   if (blockers.some((b) => b.stuck)) return `${nameList(blockers)} can’t stay in your IR spots — adds stay closed until they leave them.`
-  return `${nameList(blockers)} can’t stay in your IR spots — move them out to add players.`
+  return `${nameList(blockers)} can’t stay in your IR spots — move them out, or drop them, to add players.`
 }
 
-/** The two ways out Chris names, in the order he said them (nothing locked). */
+/** The ways out (nothing locked): the two Chris named, in the order he said
+ *  them, then dropping him from his card (F692, ruled 2026-10-21). */
 export const HEALTHY_IR_WAYS: readonly string[] = [
   'Move him to your bench — drop someone too if your roster is full.',
   'Or swap another IR-eligible player into the spot.',
+  'Or tap him and choose Drop.',
 ]
 
 /** The move out waits for the next week once his game has started (set_lineup's IR timing). */
@@ -167,7 +178,7 @@ export function healthyIrWays(blockers: readonly HealthyIrBlocker[], formatInsta
     ...blockers.map((b) =>
       b.stuck
         ? `${b.full_name}: you can drop him ${dropWhen(b.stuck)}, or move him out once next week starts.`
-        : `${b.full_name}: move him to your bench, or swap an IR-eligible player into his spot.`,
+        : `${b.full_name}: move him to your bench, swap an IR-eligible player into his spot, or drop him.`,
     ),
   ]
 }
@@ -185,7 +196,7 @@ export function healthyIrAddTitle(blockers: readonly HealthyIrBlocker[]): string
   if (rest.length > 0) {
     return blockers.some((b) => b.stuck)
       ? `${HEALTHY_IR_HEADLINE} No adds until ${nameList(blockers)} leave your IR spots.`
-      : `${HEALTHY_IR_HEADLINE} Move ${nameList(blockers)} out of your IR spots to add players.`
+      : `${HEALTHY_IR_HEADLINE} Move ${nameList(blockers)} out of your IR spots, or drop them, to add players.`
   }
   if (first.stuck?.kind === 'in_game') {
     return `${HEALTHY_IR_HEADLINE} ${first.full_name}’s game has started — no adds until you can drop him (after this week’s games) or move him out (next week).`
@@ -193,5 +204,5 @@ export function healthyIrAddTitle(blockers: readonly HealthyIrBlocker[]): string
   if (first.stuck?.kind === 'week_over') {
     return `${HEALTHY_IR_HEADLINE} No adds until ${first.full_name} leaves the spot: drop him now, or move him out next week.`
   }
-  return `${HEALTHY_IR_HEADLINE} Move ${first.full_name} out of the spot to add players.`
+  return `${HEALTHY_IR_HEADLINE} Move ${first.full_name} out of the spot, or drop him, to add players.`
 }

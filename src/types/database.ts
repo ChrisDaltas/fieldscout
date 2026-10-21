@@ -5261,6 +5261,7 @@ export type Database = {
           priority: number | null
           process_at: string | null
           processed_at: string | null
+          result_detail: Json | null
           result_reason: string | null
           status: string
           team_id: string
@@ -5280,6 +5281,7 @@ export type Database = {
           priority?: number | null
           process_at?: string | null
           processed_at?: string | null
+          result_detail?: Json | null
           result_reason?: string | null
           status?: string
           team_id: string
@@ -5299,6 +5301,7 @@ export type Database = {
           priority?: number | null
           process_at?: string | null
           processed_at?: string | null
+          result_detail?: Json | null
           result_reason?: string | null
           status?: string
           team_id?: string
@@ -7460,6 +7463,10 @@ export type Database = {
           p_reason: string
           p_team_id: string
         }
+        Returns: Json
+      }
+      waiver_claims_cancel_healthy_ir: {
+        Args: { p_league_id?: string; p_now?: string }
         Returns: Json
       }
       waiver_last_open_internal: {

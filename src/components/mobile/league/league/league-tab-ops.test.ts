@@ -296,8 +296,8 @@ describe('lost and failed waiver claims in My moves (gap list §3 #12)', () => {
     expect(reasonOf('own_claim_won').text).toEqual(['One of your other claims went through first and made this one impossible.'])
     expect(reasonOf('no_waivers').text).toEqual(['The league turned waivers off — he can be picked up directly now.'])
     expect(reasonOf('team_retired').text).toEqual(['This team was retired before the run.'])
-    // D593 (migration 205): failed at the run while a player who isn't IR-eligible held an IR spot.
-    expect(reasonOf('healthy_in_ir').text).toEqual(['A player who isn’t IR-eligible was still in your IR spot — move him out of it to add players.'])
+    // D593 (migration 205): the reason's own words (205 now CANCELS these claims — F693, below).
+    expect(reasonOf('healthy_in_ir').text).toEqual(['A player who isn’t IR-eligible was still in your IR spot.'])
     // A reason the app has no words for is still said, never dropped.
     expect(reasonOf('something_new').text).toEqual(['Didn’t go through (something new).'])
     expect(reasonOf('constructor').text).toEqual(['Didn’t go through (constructor).'])
@@ -306,11 +306,34 @@ describe('lost and failed waiver claims in My moves (gap list §3 #12)', () => {
 
   it('won, pending and cancelled claims are not rows (a win is already a move)', () => {
     const rows = claimResultRows(
-      [claim({ id: 'w', status: 'won' }), claim({ id: 'p', status: 'pending' }), claim({ id: 'x', status: 'cancelled' }), claim({ id: 'l' })],
+      [claim({ id: 'w', status: 'won' }), claim({ id: 'p', status: 'pending' }), claim({ id: 'x', status: 'cancelled', result_reason: 'cancelled' }), claim({ id: 'l' })],
       'faab',
       who,
     )
     expect(rows.map((r) => r.id)).toEqual(['claim:l'])
+  })
+
+  it('F693: a claim the RULE cancelled IS a row — "Cancelled", when it was cancelled, and who was in the IR spot', () => {
+    // Chris 2026-10-21, verbatim: "No, if the player is no longer IR eligible the claims are cancelled."
+    const cancelled = (over: Partial<WaiverClaimView> = {}) =>
+      claim({
+        status: 'cancelled',
+        result_reason: 'healthy_in_ir',
+        processed_at: null,
+        cancelled_at: '2026-10-13T15:40:00.000Z',
+        result_detail: { ir_player_id: 'p-ir', ir_player: 'Jalen Hurts', why: 'healthy' },
+        ...over,
+      })
+    const [row] = claimResultRows([cancelled()], 'faab', who)
+    expect(row!.result).toEqual({ status: 'cancelled', label: 'Cancelled' })
+    expect(row!.createdAt).toBe('2026-10-13T15:40:00.000Z')
+    expect(row!.text).toEqual(['Jalen Hurts is healthy and still in your IR spot.'])
+    expect(row!.moves.every((m) => m.muted)).toBe(true)
+    const doubtful = claimResultRows([cancelled({ result_detail: { ir_player_id: 'p-ir', ir_player: 'Jalen Hurts', why: 'listed Doubtful' } })], 'faab', who)[0]!
+    expect(doubtful.text).toEqual(['Jalen Hurts is listed Doubtful and still in your IR spot.'])
+    // A database before 205 names nobody: the reason's own words.
+    const unnamed = claimResultRows([cancelled({ result_detail: null })], 'faab', who)[0]!
+    expect(unnamed.text).toEqual(['A player who isn’t IR-eligible was still in your IR spot.'])
   })
 
   const post = (id: string, createdAt: string | null) => ({ kind: 'post' as const, id, pill: { label: 'League', tone: 'league' as const }, createdAt, text: id, actorUsername: null, commishActionId: null })

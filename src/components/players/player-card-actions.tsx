@@ -35,6 +35,7 @@ import {
   bidAllowed,
   cardLeagueView,
   claimPlacedCopy,
+  dropOffered,
   droppable,
   leagueRowStatus,
   ROSTER_FULL_COPY,
@@ -176,17 +177,15 @@ function ClosedReason({ children }: { children: React.ReactNode }) {
   )
 }
 
+/** One of YOUR players: Drop while he is droppable (F692 — `dropOffered`),
+ *  through the one drop confirm (`DropConfirm`, plain words, the same verb as
+ *  the team page and the phone). Locked (or moves closed) there is NO Drop —
+ *  only why. The button is the soft red tint with red words: the bright red is
+ *  for text and small icons, never a fill (2026-10-18). */
 function MineActions({ view, leagueId, teamId }: { view: Extract<CardLeagueView, { kind: 'mine' }>; leagueId: string; teamId: string }) {
   const [confirming, setConfirming] = useState(false)
-  if (!view.drop.open) {
-    return (
-      <span className="flex flex-wrap items-center gap-2">
-        <Button variant="stroke" size="sm" disabled data-card-action="drop">
-          Drop
-        </Button>
-        <ClosedReason>{view.drop.reason}</ClosedReason>
-      </span>
-    )
+  if (!dropOffered(view)) {
+    return <ClosedReason>{view.drop.open ? null : view.drop.reason}</ClosedReason>
   }
   if (confirming) {
     return (
@@ -200,7 +199,7 @@ function MineActions({ view, leagueId, teamId }: { view: Extract<CardLeagueView,
   }
   return (
     <span>
-      <Button variant="stroke" size="sm" onClick={() => setConfirming(true)} data-card-action="drop">
+      <Button variant="destructive" size="sm" className="bg-negative-soft" onClick={() => setConfirming(true)} data-card-action="drop">
         Drop
       </Button>
     </span>

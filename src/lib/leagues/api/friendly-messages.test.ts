@@ -139,11 +139,11 @@ const CASES: ReadonlyArray<readonly [string, string, string]> = [
     'This league doesn’t allow FAAB in trades.'],
   // 205 / D593: a player who isn't IR-eligible left in an IR spot blocks adds and claims.
   ['add-healthy-ir',
-    "roster_add_drop: Jalen Hurts is healthy and still in Alpha's IR spot — no adds while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), or swap an IR-eligible player into his spot (§7.3.2)",
-    'You have an ineligible player in your IR spot. Jalen Hurts is healthy — move him to your bench, or swap another IR-eligible player into the spot.'],
+    "roster_add_drop: Jalen Hurts is healthy and still in Alpha's IR spot — no adds while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), swap an IR-eligible player into his spot, or drop him (§7.3.2)",
+    'You have an ineligible player in your IR spot. Jalen Hurts is healthy — move him to your bench, swap another IR-eligible player into the spot, or drop him.'],
   ['claim-healthy-ir',
-    "waiver_claim_submit: Jalen Hurts is listed Doubtful and still in Alpha's IR spot — no claims while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), or swap an IR-eligible player into his spot (§7.3.2)",
-    'You have an ineligible player in your IR spot. Jalen Hurts is listed Doubtful — move him to your bench, or swap another IR-eligible player into the spot.'],
+    "waiver_claim_submit: Jalen Hurts is listed Doubtful and still in Alpha's IR spot — no claims while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), swap an IR-eligible player into his spot, or drop him (§7.3.2)",
+    'You have an ineligible player in your IR spot. Jalen Hurts is listed Doubtful — move him to your bench, swap another IR-eligible player into the spot, or drop him.'],
 ]
 
 describe('phrase map — renders the member’s sentence from the server’s own values', () => {

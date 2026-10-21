@@ -170,6 +170,22 @@ export function bidAllowed(bid: number, bounds: { min: number; max: number | nul
   return Number.isInteger(bid) && bid >= bounds.min && (bounds.max === null || bid <= bounds.max)
 }
 
+/**
+ * F692 (Chris 2026-10-21, verbatim: "Yes the user can click on the player and
+ * drop them directly. the player detail page, mini modal or card should have
+ * "Drop" as an option if they are droppable. Not if they are locked for the
+ * week though."): one of YOUR players offers Drop only while his drop gate is
+ * open — moves open, and his game not started (the tick's lock view,
+ * `row.lock` — the server's own drop lock). Closed, there is NO Drop: the
+ * surface says why in words instead. The one rule for the card and mini card,
+ * the full player view, the phone profile and its move sheet, and the Players
+ * rows. A healthy man in your IR spot is droppable like anyone else (205 never
+ * blocks a drop — dropping him is a way out).
+ */
+export function dropOffered(view: CardLeagueView): view is Extract<CardLeagueView, { kind: 'mine' }> & { drop: { open: true } } {
+  return view.kind === 'mine' && view.drop.open
+}
+
 /** The roster players a drop may name — never a locked one. */
 export function droppable(roster: readonly RosterPlayer[], isLocked: (p: RosterPlayer) => boolean): RosterPlayer[] {
   return roster.filter((p) => !isLocked(p))

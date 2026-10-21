@@ -13,7 +13,7 @@
  * `waiver_window.evaluated_at` — and the only instants compared are stored
  * ones (the `fa_hold` chip: acquired + hold vs. that server instant).
  */
-import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
+import type { ClaimResultDetail, WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 import { WAIVER_PRESETS, canonicalWeekdays, type Weekday } from '@/lib/leagues/time/waiver-schedule'
@@ -99,8 +99,10 @@ const INVALID_WORDS: Record<string, string> = {
   insufficient_faab: 'the bid was more than your FAAB left by then.',
   own_claim_won: 'one of your other claims went through first and made this one impossible.',
   no_waivers: 'the league turned waivers off — he can be picked up directly now.',
-  // D593 (migration 205): failed at the run, before the decision.
-  healthy_in_ir: 'a player who isn’t IR-eligible was still in your IR spot — move him out of it to add players.',
+  // D593 / F693 (migration 205): cancelled by the injury sync or at the run.
+  // The words when the read carries no name (a database before 205) —
+  // `healthyIrCancelWords` names him otherwise.
+  healthy_in_ir: 'a player who isn’t IR-eligible was still in your IR spot.',
   seat_vacated: 'the team’s manager left the seat, so its claims were cancelled.',
   manager_left: 'the team’s manager left the league, so its claims were cancelled.',
 }
@@ -112,7 +114,29 @@ export function claimReasonWords(reason: string | null): string | null {
   return reason && Object.hasOwn(INVALID_WORDS, reason) ? INVALID_WORDS[reason] : null
 }
 
-export function claimOutcome(claim: Pick<WaiverClaimView, 'status' | 'result_reason' | 'faab_bid'>, waiverType: WaiverType | string | null): ClaimOutcome {
+/**
+ * F693 (Chris 2026-10-21, verbatim: "No, if the player is no longer IR
+ * eligible the claims are cancelled."): a claim the RULE cancelled — not the
+ * manager — is an entry in Transactions › My moves like a lost or failed one.
+ * The verb's own cancel (`cancelled`) was the manager's doing and stays out.
+ */
+export function isRuleCancelled(claim: Pick<WaiverClaimView, 'status' | 'result_reason'>): boolean {
+  return claim.status === 'cancelled' && claim.result_reason === 'healthy_in_ir'
+}
+
+/** "Jalen Hurts is healthy and still in your IR spot." — or, for a tag his
+ *  spot doesn't take, "…is listed Doubtful and still in your IR spot." Null
+ *  when the read names nobody (a database before 205). */
+export function healthyIrCancelWords(detail: ClaimResultDetail | null | undefined): string | null {
+  if (!detail?.ir_player) return null
+  const standing = !detail.why || detail.why === 'healthy' ? 'is healthy' : `is ${detail.why}`
+  return `${detail.ir_player} ${standing} and still in your IR spot.`
+}
+
+export function claimOutcome(
+  claim: Pick<WaiverClaimView, 'status' | 'result_reason' | 'faab_bid'> & Partial<Pick<WaiverClaimView, 'result_detail'>>,
+  waiverType: WaiverType | string | null,
+): ClaimOutcome {
   switch (claim.status) {
     case 'pending':
       return { label: 'Pending', tone: 'neutral', detail: null }
@@ -125,6 +149,11 @@ export function claimOutcome(claim: Pick<WaiverClaimView, 'status' | 'result_rea
         detail: claim.result_reason === 'lost_on_priority' ? 'Another team with higher waiver priority claimed him.' : 'Another team bid more.',
       }
     case 'cancelled': {
+      if (isRuleCancelled(claim)) {
+        // F693: "Cancelled — <Player> is healthy and still in your IR spot."
+        const words = healthyIrCancelWords(claim.result_detail) ?? claimReasonWords(claim.result_reason)
+        return { label: 'Cancelled', tone: 'negative', detail: `Cancelled — ${words}` }
+      }
       const words = claim.result_reason !== 'cancelled' ? claimReasonWords(claim.result_reason) : null
       return { label: 'Cancelled', tone: 'neutral', detail: words ? `Cancelled — ${words}` : null }
     }

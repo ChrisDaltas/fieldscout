@@ -33,6 +33,7 @@ import {
   cardLeagueView,
   claimPlacedCopy,
   dropConfirmCopy,
+  dropOffered,
   MOVES_AFTER_SEASON_COPY,
   MOVES_BEFORE_SEASON_COPY,
   movesGate,
@@ -232,11 +233,14 @@ describe('cardLeagueView — where he is, and the one move that fits', () => {
     const blocked = { teams: [team('mine', [rp('p-mine'), rp('p-irh', { full_name: 'Jalen Hurts', slot_key: 'ir:0', ir_placed_week: 5 })]), team('them', [rp('p-theirs')])] }
     const v = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6 }))
     if (v.kind !== 'available') throw new Error('kind')
-    const why = 'You have an ineligible player in your IR spot. Move Jalen Hurts out of the spot to add players.'
+    const why = 'You have an ineligible player in your IR spot. Move Jalen Hurts out of the spot, or drop him, to add players.'
     expect(v.add).toEqual({ show: true, disabled: true, title: why })
     expect(v.acquire).toEqual({ kind: 'none', disabled: true, title: why })
     const drop = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6, player: player('p-mine') }))
     expect(drop.kind === 'mine' && drop.drop).toEqual({ open: true })
+    // F692 (Chris 2026-10-21: "the user can click on the player and drop them directly"): HIS OWN card offers Drop.
+    const himself = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6, player: player('p-irh') }))
+    expect(dropOffered(himself)).toBe(true)
     const trade = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6, player: player('p-theirs') }))
     expect(trade.kind === 'theirs' && trade.trade).toEqual({ open: true })
     // Out of season the league's reason wins, as for every pickup.
@@ -490,11 +494,27 @@ describe('LeagueActionsBody — a render per state', () => {
   it('R1481: the closed + is named for why', () => {
     expect(body({ leagueStatus: 'drafting' })).toContain('aria-label="Can’t pick up Player p-free — roster moves open once the draft is done"')
   })
-  it('yours: Drop; locked: Drop closed with the reason shown', () => {
-    expect(body({ player: player('p-mine') })).toMatch(/data-card-action="drop">Drop<\/button>/)
+  it('F692 — yours: Drop (the soft red tint, red words); locked for the week: NO Drop, only why', () => {
+    // Chris 2026-10-21, verbatim: "…should have "Drop" as an option if they are droppable. Not if they are locked for the week though."
+    const mine = body({ player: player('p-mine') })
+    expect(mine).toMatch(/<button[^>]*bg-negative-soft[^>]*data-card-action="drop">Drop<\/button>/)
+    expect(mine).toMatch(/<button[^>]*text-negative-strong[^>]*data-card-action="drop"/)
+    expect(mine).not.toMatch(/bg-negative-strong/)
     const locked = body({ player: player('p-locked') })
-    expect(locked).toMatch(/disabled=""[^>]*data-card-action="drop"/)
+    expect(locked).not.toContain('data-card-action="drop"')
+    expect(locked).not.toContain('>Drop<')
     expect(locked).toContain(LOCKED_DROP_TITLE)
+    // Moves closed (before the draft is done): no Drop either — the league's reason.
+    const drafting = body({ player: player('p-mine'), leagueStatus: 'drafting' })
+    expect(drafting).not.toContain('data-card-action="drop"')
+    expect(drafting).toContain(MOVES_BEFORE_SEASON_COPY)
+  })
+  it('F692 — dropOffered: one of mine with the gate open, and nothing else', () => {
+    expect(dropOffered(cardLeagueView(input({ player: player('p-mine') })))).toBe(true)
+    expect(dropOffered(cardLeagueView(input({ player: player('p-locked') })))).toBe(false)
+    expect(dropOffered(cardLeagueView(input({ player: player('p-theirs') })))).toBe(false)
+    expect(dropOffered(cardLeagueView(input()))).toBe(false)
+    expect(dropOffered(cardLeagueView(input({ player: player('p-mine'), leagueStatus: 'complete' })))).toBe(false)
   })
   it('theirs: Propose trade opens the builder toward his team with him picked; past the deadline, the reason instead', () => {
     const out = body({ player: player('p-theirs') })

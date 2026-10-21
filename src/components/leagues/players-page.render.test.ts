@@ -261,7 +261,7 @@ describe('D593 — a healthy man left in my IR spot closes every + (prevent, don
       const at = html.indexOf(`data-pool-row="${id}"`)
       const row = html.slice(at, html.indexOf('</tr>', at))
       expect(row, id).toMatch(/disabled=""/)
-      expect(row, id).toContain('title="You have an ineligible player in your IR spot. Move Mine IR out of the spot to add players."')
+      expect(row, id).toContain('title="You have an ineligible player in your IR spot. Move Mine IR out of the spot, or drop him, to add players."')
     }
     // Still OUT (fits the spot): nothing changes.
     const fits: LeagueRosters = {
@@ -280,15 +280,17 @@ describe('PoolTable — the rostered scope: Drop for mine (disabled by the view�
   const html = unescapeHtml(
     renderToStaticMarkup(createElement(PoolTable, { leagueId: LEAGUE, rows: rostered, scope: 'rostered', hadSearch: false, canAct: true, intent: { add: null, drop: null }, leagueTimeZone: null, onAdd: () => {}, onDrop: () => {} })),
   )
-  it('mine, unlocked → Drop; mine, locked → Drop disabled with the reason; theirs → Trade, a link to the builder (L.D3.7)', () => {
+  it('mine, unlocked → Drop (soft red tint); mine, locked → NO Drop, the lock tag says so (F692); theirs → Trade, a link to the builder (L.D3.7)', () => {
     const open = html.slice(html.indexOf('data-pool-row="mine-open"'), html.indexOf('</tr>', html.indexOf('data-pool-row="mine-open"')))
     expect(open).toContain('data-action="drop"')
     expect(open).not.toMatch(/data-action="drop"[^>]*disabled/)
+    expect(open).toMatch(/<button[^>]*bg-negative-soft[^>]*data-action="drop">Drop<\/button>/)
     expect(open).toContain('Your team')
+    // F692 (Chris 2026-10-21): "…Drop as an option if they are droppable. Not if they are locked for the week though."
     const locked = html.slice(html.indexOf('data-pool-row="mine-locked"'), html.indexOf('</tr>', html.indexOf('data-pool-row="mine-locked"')))
     expect(locked).toMatch(/data-lock-tag[^]*locked/)
-    expect(locked).toContain(LOCKED_DROP_TITLE)
-    expect(locked).toMatch(/disabled=""/)
+    expect(locked).not.toContain('data-action="drop"')
+    expect(locked).not.toContain(LOCKED_DROP_TITLE)
     const theirs = html.slice(html.indexOf('data-pool-row="theirs"'), html.indexOf('</tr>', html.indexOf('data-pool-row="theirs"')))
     expect(theirs).toContain('Their Team')
     expect(theirs).not.toMatch(/data-action="(add|drop|claim)"/)

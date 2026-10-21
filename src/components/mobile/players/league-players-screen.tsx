@@ -15,7 +15,7 @@ import { signedDelta } from '@/components/mobile/home/home-ops'
 import { MobileLeagueHeader } from '@/components/mobile/league/league/league-header'
 import { PlayerMoveSheet, type MoveSheetKind } from '@/components/mobile/player/player-move-sheet'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
-import { acquireLabel, cardLeagueView, type CardLeagueView } from '@/components/players/player-card-league-ops'
+import { acquireLabel, cardLeagueView, dropOffered, type CardLeagueView } from '@/components/players/player-card-league-ops'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import { useDebounced } from '@/hooks/use-debounced'
@@ -454,12 +454,14 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
     const v = viewOf(player)
     const name = player.full_name
     if (v.kind === 'mine') {
-      const reason = v.drop.open ? null : v.drop.reason
+      // F692 (Chris 2026-10-21): "Drop" only while he is droppable — not
+      // while he is locked for the week (`dropOffered`): no door then.
+      if (!dropOffered(v)) return null
       return {
         kind: 'drop',
-        closed: reason !== null,
-        label: reason !== null ? `Can’t drop ${name} — ${reason}` : `Drop ${name}`,
-        onPress: () => (reason === null ? setMove({ kind: 'drop', player }) : say(reason)),
+        closed: false,
+        label: `Drop ${name}`,
+        onPress: () => setMove({ kind: 'drop', player }),
       }
     }
     if (v.kind === 'theirs') {

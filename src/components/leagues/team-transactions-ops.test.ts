@@ -34,6 +34,13 @@ describe('mergeTransactions — ONE feed, newest first (Chris 2026-10-04)', () =
     )
     expect(merged.map((e) => e.id)).toEqual(['claim:c2', 'move:m1', 'claim:c1', 'move:m2'])
   })
+  it('F693: a claim the RULE cancelled (healthy_in_ir) joins at the time it was cancelled; the manager’s own cancel never does', () => {
+    const ruled = { ...claim('ruled', '2026-09-01T00:00:00.000Z', 'cancelled'), result_reason: 'healthy_in_ir', cancelled_at: '2026-10-03T15:40:00.000Z' }
+    const own = { ...claim('own', '2026-09-01T00:00:00.000Z', 'cancelled'), result_reason: 'cancelled', cancelled_at: '2026-10-04T00:00:00.000Z' }
+    const merged = mergeTransactions([ruled, own], [line('m1', '2026-10-03T16:00:00.000Z'), line('m2', '2026-10-03T12:00:00.000Z')])
+    expect(merged.map((e) => e.id)).toEqual(['move:m1', 'claim:ruled', 'move:m2'])
+    expect(merged.find((e) => e.id === 'claim:ruled')!.at).toBe('2026-10-03T15:40:00.000Z')
+  })
   it('a WON or CANCELLED claim never joins (a won claim is already a move); system posts never join', () => {
     const merged = mergeTransactions(
       [claim('won', '2026-10-04T00:00:00.000Z', 'won'), claim('gone', '2026-10-04T00:00:00.000Z', 'cancelled'), claim('open', '2026-10-01T00:00:00.000Z')],

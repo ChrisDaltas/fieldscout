@@ -894,8 +894,12 @@ function MoveButton({
         </Button>
       )
     }
+    // F692 (Chris 2026-10-21): "Drop" while he is droppable — not while he is
+    // locked for the week (the tick's lock view, the server's drop lock): no
+    // Drop then; the row's lock badge says why. Soft red tint, red words.
+    if (row.lock.locked) return null
     return (
-      <Button variant="stroke" size="sm" disabled={row.lock.locked} title={row.lock.locked ? LOCKED_DROP_TITLE : undefined} onClick={() => onDrop(rosterPlayerOf(row))} data-action="drop">
+      <Button variant="destructive" size="sm" className="bg-negative-soft" onClick={() => onDrop(rosterPlayerOf(row))} data-action="drop">
         Drop
       </Button>
     )

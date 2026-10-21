@@ -22,6 +22,8 @@ import {
   draggableIds,
   dropPlace,
   faHoldUntil,
+  healthyIrCancelWords,
+  isRuleCancelled,
   parseBid,
   pickupActions,
   presetPatch,
@@ -112,6 +114,21 @@ describe('claim results in plain words — every stored reason', () => {
   it('a plain cancel says nothing more; a system cancel says why', () => {
     expect(claimOutcome(claim('c', 1, 1, { status: 'cancelled', result_reason: 'cancelled' }), 'faab')).toEqual({ label: 'Cancelled', tone: 'neutral', detail: null })
     expect(claimOutcome(claim('c', 1, 1, { status: 'cancelled', result_reason: 'seat_vacated' }), 'faab').detail).toMatch(/left the seat/)
+    // F693 (Chris 2026-10-21: "No, if the player is no longer IR eligible the claims are cancelled."):
+    // "Cancelled — <Player> is healthy and still in your IR spot."
+    const hurts = { ir_player_id: 'p-ir', ir_player: 'Jalen Hurts', why: 'healthy' }
+    expect(claimOutcome(claim('c', 1, 1, { status: 'cancelled', result_reason: 'healthy_in_ir', result_detail: hurts }), 'faab')).toEqual({
+      label: 'Cancelled',
+      tone: 'negative',
+      detail: 'Cancelled — Jalen Hurts is healthy and still in your IR spot.',
+    })
+    expect(
+      claimOutcome(claim('c', 1, 1, { status: 'cancelled', result_reason: 'healthy_in_ir', result_detail: { ...hurts, why: 'listed Doubtful' } }), 'faab').detail,
+    ).toBe('Cancelled — Jalen Hurts is listed Doubtful and still in your IR spot.')
+    // A database before 205 names nobody: the reason's own words.
+    expect(claimOutcome(claim('c', 1, 1, { status: 'cancelled', result_reason: 'healthy_in_ir' }), 'faab').detail).toBe(
+      'Cancelled — a player who isn’t IR-eligible was still in your IR spot.',
+    )
   })
 })
 
@@ -332,5 +349,19 @@ describe('the schedule editor’s algebra', () => {
   it('the stored zone is always offered', () => {
     expect(zoneOptions('America/Chicago').some((z) => z.value === 'America/Chicago')).toBe(true)
     expect(zoneOptions('Europe/London').at(-1)).toEqual({ value: 'Europe/London', label: 'Europe/London' })
+  })
+})
+
+describe('F693 — a claim the rule cancelled', () => {
+  it('isRuleCancelled: cancelled for healthy_in_ir only — the manager’s own cancel is not', () => {
+    expect(isRuleCancelled({ status: 'cancelled', result_reason: 'healthy_in_ir' })).toBe(true)
+    expect(isRuleCancelled({ status: 'cancelled', result_reason: 'cancelled' })).toBe(false)
+    expect(isRuleCancelled({ status: 'invalid', result_reason: 'healthy_in_ir' })).toBe(false)
+    expect(isRuleCancelled({ status: 'pending', result_reason: null })).toBe(false)
+  })
+  it('healthyIrCancelWords names him, or nothing', () => {
+    expect(healthyIrCancelWords({ ir_player_id: 'x', ir_player: 'A One', why: null })).toBe('A One is healthy and still in your IR spot.')
+    expect(healthyIrCancelWords({ ir_player_id: 'x', ir_player: null, why: 'healthy' })).toBeNull()
+    expect(healthyIrCancelWords(null)).toBeNull()
   })
 })

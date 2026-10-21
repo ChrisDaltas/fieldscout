@@ -208,6 +208,16 @@ export interface WaiverClaimPlayer {
   nfl_team: string | null
 }
 
+/** F693 (migration 205): who a claim's result is about when it isn't the
+ *  add or the drop — on a claim cancelled because a player who isn't
+ *  IR-eligible held the team's IR spot (`healthy_in_ir`), who he was and why
+ *  ("healthy" / "listed Doubtful"). */
+export interface ClaimResultDetail {
+  ir_player_id: string | null
+  ir_player: string | null
+  why: string | null
+}
+
 export interface WaiverClaimView {
   id: string
   team_id: string
@@ -224,6 +234,9 @@ export interface WaiverClaimView {
   created_at: string
   created_by: string
   cancelled_at: string | null
+  /** F693 (205): see `ClaimResultDetail` — null on every other claim, and on
+   *  a database before 205 (the read leaves the column out there). */
+  result_detail?: ClaimResultDetail | null
   /** D495 (Chris 2026-10-05): on a LOST claim only, the team that won the
    *  same player in the same waiver run and what it paid — read from the
    *  winner's member-visible `waiver_claim` transaction, never from another
@@ -251,6 +264,39 @@ export interface WaiverClaimsDocument {
   /** Pending first in the team's own order (claim_order), then settled ones
    *  newest first. */
   claims: WaiverClaimView[]
+}
+
+const CLAIM_COLUMNS =
+  'id, team_id, add_player_id, drop_player_id, faab_bid, claim_order, status, result_reason, process_at, processed_at, created_at, created_by, cancelled_at'
+
+type ClaimRow = Pick<
+  Database['public']['Tables']['waiver_claims']['Row'],
+  | 'id'
+  | 'team_id'
+  | 'add_player_id'
+  | 'drop_player_id'
+  | 'faab_bid'
+  | 'claim_order'
+  | 'status'
+  | 'result_reason'
+  | 'process_at'
+  | 'processed_at'
+  | 'created_at'
+  | 'created_by'
+  | 'cancelled_at'
+>
+
+/** 205 not pushed: the select named `result_detail` and the column does not
+ *  exist (42703) — anchored on its name, so any other error still fails. */
+export function isMissingResultDetail(error: { code?: string; message?: string } | null): boolean {
+  return error !== null && error.code === '42703' && /result_detail does not exist/.test(error.message ?? '')
+}
+
+/** The stored jsonb, read field by field — anything else is null. */
+export function claimResultDetail(raw: Json | null | undefined): ClaimResultDetail | null {
+  if (raw === null || raw === undefined || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const text = (v: Json | undefined): string | null => (typeof v === 'string' && v !== '' ? v : null)
+  return { ir_player_id: text(raw.ir_player_id), ir_player: text(raw.ir_player), why: text(raw.why) }
 }
 
 export async function readClaims(
@@ -303,19 +349,25 @@ export async function readClaims(
     return { status: 404, body: { error: 'That team isn’t part of this league.' } }
   }
 
-  let claimsQuery = supabase
-    .from('waiver_claims')
-    .select(
-      'id, team_id, add_player_id, drop_player_id, faab_bid, claim_order, status, result_reason, process_at, processed_at, created_at, created_by, cancelled_at',
-    )
-    .eq('league_id', leagueId)
-    .eq('team_id', teamId)
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-  if (status === 'pending') claimsQuery = claimsQuery.eq('status', 'pending')
-  const { data: claimRows, error: claimsError } = await claimsQuery
+  // F693 / deploy before push: `result_detail` arrives with migration 205; on
+  // a database without it PostgREST answers 42703 naming it, and the read
+  // re-runs without the column (the words fall back to the reason's own).
+  const claimsQuery = (withDetail: boolean) => {
+    let q = supabase
+      .from('waiver_claims')
+      .select(`${CLAIM_COLUMNS}${withDetail ? ', result_detail' : ''}`)
+      .eq('league_id', leagueId)
+      .eq('team_id', teamId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+    if (status === 'pending') q = q.eq('status', 'pending')
+    return q
+  }
+  let claimsRes = await claimsQuery(true)
+  if (isMissingResultDetail(claimsRes.error)) claimsRes = await claimsQuery(false)
+  const { data: claimRows, error: claimsError } = claimsRes
   if (claimsError) return dbFailure('waiver_claims', claimsError)
-  const rows = claimRows ?? []
+  const rows = (claimRows ?? []) as unknown as Array<ClaimRow & { result_detail?: Json | null }>
   const capped = assertBelowPostgrestCap(rows, 'waiver_claims')
   if (capped) return capped
 
@@ -345,6 +397,7 @@ export async function readClaims(
     created_at: r.created_at,
     created_by: r.created_by,
     cancelled_at: r.cancelled_at,
+    result_detail: claimResultDetail(r.result_detail),
   }))
   const winnersRefused = await attachLostClaimWinners(supabase, leagueId, claims)
   if (winnersRefused) return winnersRefused

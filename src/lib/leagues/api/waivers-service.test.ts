@@ -13,6 +13,8 @@ import {
   WAIVER_CLAIM_ACTION_ID_REUSED_MESSAGE,
   WAIVER_CLAIM_FORBIDDEN_MESSAGE,
   cancelClaim,
+  claimResultDetail,
+  isMissingResultDetail,
   moveClaim,
   readClaims,
   reorderClaim,
@@ -266,5 +268,88 @@ describe('readClaims — another team’s claims are the commissioner’s only',
     const d = readDouble({ member: true, ownTeam: TEAM_LC, commish: false })
     expect((await readClaims(d.client, LEAGUE, 'u', { status: 'won' })).status).toBe(400)
     expect((await readClaims(d.client, LEAGUE, 'u', { bid: '1' })).status).toBe(400)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET — F693 (migration 205): result_detail, and the read before 205 is pushed
+// ---------------------------------------------------------------------------
+
+describe('readClaims — result_detail (F693), and a database before 205', () => {
+  const ROW = {
+    id: CLAIM,
+    team_id: TEAM_LC,
+    add_player_id: 'p-add',
+    drop_player_id: null,
+    faab_bid: 4,
+    claim_order: 1,
+    status: 'cancelled',
+    result_reason: 'healthy_in_ir',
+    process_at: null,
+    processed_at: null,
+    created_at: '2026-10-18T14:00:00Z',
+    created_by: 'u',
+    cancelled_at: '2026-10-18T15:10:00Z',
+  }
+  const DETAIL = { ir_player_id: 'p-ir', ir_player: 'Jalen Hurts', why: 'healthy', spot: 'IR', source: 'injury_sync' }
+
+  function double(withColumn: boolean) {
+    const selects: string[] = []
+    const from = vi.fn((table: string) => {
+      let cols = ''
+      const builder: Record<string, unknown> = {}
+      builder.select = vi.fn((c: string) => {
+        cols = c
+        if (table === 'waiver_claims') selects.push(c)
+        return builder
+      })
+      for (const m of ['eq', 'is', 'order', 'in']) builder[m] = vi.fn(() => builder)
+      builder.maybeSingle = vi.fn(async () => {
+        if (table === 'leagues') return { data: { waiver_type: 'faab', faab_budget: 100, settings: {} }, error: null }
+        if (table === 'league_members') return { data: { team_id: TEAM_LC, faab_balance: 100, waiver_priority: null }, error: null }
+        if (table === 'teams') return { data: { id: TEAM_LC }, error: null }
+        throw new Error(`unexpected maybeSingle on ${table}`)
+      })
+      builder.then = (resolve: (v: unknown) => unknown) => {
+        if (table === 'players') return Promise.resolve({ data: [{ id: 'p-add', full_name: 'Add Man', position: 'RB', team: 'PHI' }], error: null }).then(resolve)
+        if (table === 'waiver_claims') {
+          if (cols.includes('result_detail') && !withColumn) {
+            return Promise.resolve({ data: null, error: { code: '42703', message: 'column waiver_claims.result_detail does not exist' } }).then(resolve)
+          }
+          return Promise.resolve({ data: [withColumn ? { ...ROW, result_detail: DETAIL } : ROW], error: null }).then(resolve)
+        }
+        throw new Error(`unexpected read of ${table}`)
+      }
+      return builder
+    })
+    const rpc = vi.fn(async (fn: string) => ({ data: fn === 'is_league_member' || fn === 'is_league_commish' ? true : null, error: null }))
+    return { client: { from, rpc } as never, selects }
+  }
+
+  it('205 pushed: the claim carries who and why (ir_player, why) — read field by field', async () => {
+    const d = double(true)
+    const res = await readClaims(d.client, LEAGUE, 'u', { status: 'all' })
+    expect(res.status).toBe(200)
+    const claim = (res.body as { claims: Array<{ result_detail: unknown }> }).claims[0]
+    expect(claim.result_detail).toStrictEqual({ ir_player_id: 'p-ir', ir_player: 'Jalen Hurts', why: 'healthy' })
+    expect(d.selects).toHaveLength(1)
+  })
+
+  it('205 NOT pushed (42703 naming result_detail): the read re-runs without the column — a 200, result_detail null; any other error still fails', async () => {
+    const d = double(false)
+    const res = await readClaims(d.client, LEAGUE, 'u', { status: 'all' })
+    expect(res.status).toBe(200)
+    expect((res.body as { claims: Array<{ result_detail: unknown }> }).claims[0].result_detail).toBeNull()
+    expect(d.selects.map((c) => c.includes('result_detail'))).toStrictEqual([true, false])
+    expect(isMissingResultDetail({ code: '42703', message: 'column waiver_claims.result_detail does not exist' })).toBe(true)
+    expect(isMissingResultDetail({ code: '42703', message: 'column waiver_claims.something_else does not exist' })).toBe(false)
+    expect(isMissingResultDetail({ code: '42P01', message: 'result_detail does not exist' })).toBe(false)
+    expect(isMissingResultDetail(null)).toBe(false)
+  })
+
+  it('claimResultDetail: only strings survive; anything else is null', () => {
+    expect(claimResultDetail(null)).toBeNull()
+    expect(claimResultDetail(['x'])).toBeNull()
+    expect(claimResultDetail({ ir_player: 'A', why: 3, ir_player_id: '' })).toStrictEqual({ ir_player_id: null, ir_player: 'A', why: null })
   })
 })
