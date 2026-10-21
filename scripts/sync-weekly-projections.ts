@@ -42,6 +42,7 @@ syncWeeklyProjections({ db: cliClient(), time: systemTime }, { season: cliSeason
     }
     const counts = Object.entries(report.counts).map(([k, v]) => `${k}=${v}`).join(' ')
     console.log(`Done [${report.name}] ${counts}`)
+    for (const c of report.injuryChanges) console.log(`  injury ${c.kind}: ${c.player_id} ${c.from ?? '—'} → ${c.to}`)
     for (const w of report.warnings) console.warn(`  warning: ${w}`)
     for (const f of report.failures) console.error(`  FAILURE: ${f}`)
     if (!report.ok) process.exit(1)

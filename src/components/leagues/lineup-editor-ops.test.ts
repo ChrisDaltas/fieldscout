@@ -292,15 +292,22 @@ describe('hints and chips (§16.5.4 flags; D591 — "Allow illegal lineups" reti
     }
   })
 
-  it('the save outcome names no_changes, re-seats with their moves, and a flagged save (R779)', () => {
+  it('the save outcome names no_changes and re-seats with their moves; a flagged save is a plain save (R779; D592)', () => {
     const nameOf = (id: string) => players.get(id)?.full_name ?? id
     const label = (k: string) => slots.find((s) => s.key === k)?.label ?? k
     const flags = { illegal: false, bye: [], out: [], empty: [], ir_ineligible: [] }
     expect(saveOutcomeCopy({ no_changes: true, rearranged: false, moved: [], flags }, nameOf, label)).toBe('Nothing changed — this lineup was already set.')
     expect(saveOutcomeCopy({ no_changes: false, rearranged: true, moved: [{ player_id: 'te1', from: 'wr:2', to: 'te:0' }], flags }, nameOf, label))
       .toBe('Saved — we re-seated one placement so every starter fits: TE One → TE (from WR).')
-    expect(saveOutcomeCopy({ no_changes: false, rearranged: false, moved: [], flags: { ...flags, illegal: true } }, nameOf, label))
-      .toBe('Saved — flagged: a starter is on bye or out and will score 0.')
+    // D592: no repeating "will score 0" toast — a bye / OUT starter's warning
+    // stays on his row and the Lineup check card, never on every save.
+    const flagged = saveOutcomeCopy(
+      { no_changes: false, rearranged: false, moved: [], flags: { ...flags, illegal: true, bye: ['rb1'], out: ['wr1'] } },
+      nameOf,
+      label,
+    )
+    expect(flagged).toBe('Lineup saved.')
+    expect(flagged).not.toMatch(/flagged|score 0|bye|out/i)
     expect(saveOutcomeCopy({ no_changes: false, rearranged: false, moved: [], flags }, nameOf, label)).toBe('Lineup saved.')
   })
 

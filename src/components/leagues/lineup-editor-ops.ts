@@ -638,7 +638,11 @@ export function saveOutcomeCopy(
       .join(', ')
     return `Saved — we re-seated ${result.moved.length === 1 ? 'one placement' : `${result.moved.length} placements`} so every starter fits: ${moves}.`
   }
-  if (result.flags.illegal) return 'Saved — flagged: a starter is on bye or out and will score 0.'
+  // D592 (Chris 2026-10-18: "Injuries should not block roster moves and
+  // users are not required to remove injured players from their lineups."):
+  // a flagged starter (bye / OUT) is NOT re-announced on every save — that
+  // toast repeated on each move, and it is wrong for a listed player who
+  // plays. The warning lives on the player's row and the Lineup check card.
   return 'Lineup saved.'
 }
 
