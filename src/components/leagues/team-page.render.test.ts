@@ -36,7 +36,7 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 
 import { LineupEditor, railTargetProps, type LineupStats } from './lineup-editor'
 import { KEPT_STARTER_COPY, KEPT_STARTER_OTHER_WEEK_COPY, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
-import { HEALTHY_IR_HEADLINE, HEALTHY_IR_MOVE_NEXT_WEEK, HEALTHY_IR_STILL_OPEN, HEALTHY_IR_WAYS } from './healthy-ir-ops'
+import { HEALTHY_IR_BLOCKED_LINE, HEALTHY_IR_HEADLINE, HEALTHY_IR_MOVE_NEXT_WEEK, HEALTHY_IR_STILL_OPEN, HEALTHY_IR_WAYS } from './healthy-ir-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, NO_SEAT_ROW_AUTOPILOT_COPY } from './team-commish-ops'
 import { TeamPage } from './team-page'
@@ -349,7 +349,7 @@ describe('D593 — a healthy man left in my IR spot: the notice above the lineup
   it('Chris’s headline, then his name and the two ways out, on the soft red tint (the bright red is the headline’s words only)', () => {
     const html = renderTeamPage(withIr('Active'))
     expect(html).toContain('data-healthy-ir-notice')
-    expect(html).toContain('<span class="text-negative-strong">You have an ineligible player in your IR spot.</span>')
+    expect(html).toContain('<span class="text-negative-strong">You have an ineligible player in your IR spot. <span data-healthy-ir-blocked="true">Player adds and waiver claims will be blocked until that is fixed.</span></span>')
     expect(html).toContain('Render IR Man is healthy.')
     expect(html).not.toContain('move him out of your IR spot to add players')
     for (const way of HEALTHY_IR_WAYS) expect(html).toContain(way)
@@ -365,17 +365,15 @@ describe('D593 — a healthy man left in my IR spot: the notice above the lineup
     expect(html).toContain(HEALTHY_IR_MOVE_NEXT_WEEK)
     for (const way of HEALTHY_IR_WAYS) expect(html).not.toContain(way)
   })
-  it('F693 as ruled ("they should fail when waivers run"): with a pending claim the notice says the run will fail it while he is still there; none without one', () => {
-    const one = renderTeamPage({ ...withIr('Active'), claims: 'one' })
-    expect(one).toContain('data-healthy-ir-claims')
-    expect(one).toContain('Your pending claim will fail when waivers run unless he’s out of the spot by then.')
-    expect(renderTeamPage({ ...withIr('Active'), claims: 'two' })).toContain('Your pending claims will fail when waivers run unless he’s out of the spot by then.')
-    // Settled claims only (lost / cancelled), none at all, or the read still loading: no line.
-    for (const claims of ['lost', 'empty', undefined] as const) {
-      expect(renderTeamPage({ ...withIr('Active'), claims })).not.toContain('data-healthy-ir-claims')
+  it('the notice reads Chris’s two sentences (2026-10-21), with or without pending claims; no old claims line', () => {
+    for (const claims of ['one', 'two', 'lost', 'empty', undefined] as const) {
+      const html = renderTeamPage({ ...withIr('Active'), claims })
+      expect(html).toContain(HEALTHY_IR_HEADLINE)
+      expect(html).toContain(HEALTHY_IR_BLOCKED_LINE)
+      expect(html).not.toContain('will fail when waivers run')
     }
-    // A pending claim with nothing in the IR spot: no notice, so no line.
-    expect(renderTeamPage({ claims: 'one' })).not.toContain('data-healthy-ir-claims')
+    // Nothing in the IR spot: no notice at all.
+    expect(renderTeamPage({ claims: 'one' })).not.toContain(HEALTHY_IR_BLOCKED_LINE)
   })
   it('a Questionable man in the spot is named as listed, never "healthy"', () => {
     const html = renderTeamPage(withIr('Questionable'))

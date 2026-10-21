@@ -21,7 +21,6 @@ import { leaguePlayerValueKeys } from '@/hooks/use-league-player-values'
 import { leagueRosterKeys } from '@/hooks/use-rosters'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import { leagueStandingsKeys } from '@/hooks/use-standings'
-import { waiverClaimKeys } from '@/hooks/use-waiver-claims'
 import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
@@ -177,7 +176,7 @@ describe('MyTeamTab (mobile League › Team)', () => {
     const blocked = render(SCHEDULE, detail, withIr('Active'))
     expect(blocked).toContain('data-healthy-ir-notice')
     // Chris 2026-10-21: the headline is exactly his sentence; the name is the line under it.
-    expect(blocked).toContain('<span class="block font-semibold">You have an ineligible player in your IR spot.</span>')
+    expect(blocked).toContain('<span class="block font-semibold">You have an ineligible player in your IR spot. <span data-healthy-ir-blocked="true">Player adds and waiver claims will be blocked until that is fixed.</span></span>')
     expect(blocked).toContain('Nick Chubb is healthy.')
     expect(blocked).toContain('Move him to your bench — drop someone too if your roster is full.')
     expect(blocked).toContain('Or swap another IR-eligible player into the spot.')
@@ -189,40 +188,9 @@ describe('MyTeamTab (mobile League › Team)', () => {
     const questionable = render(SCHEDULE, detail, withIr('Questionable'))
     expect(questionable).toContain('Nick Chubb is listed Questionable.')
     expect(questionable).not.toContain('Nick Chubb is healthy')
-    // F693 as ruled ("they should fail when waivers run"): with a pending claim the notice says the run will fail it.
-    expect(blocked).not.toContain('data-healthy-ir-claims')
-    const withClaim = render(SCHEDULE, detail, (qc) => {
-      withIr('Active')(qc)
-      qc.setQueryData(waiverClaimKeys.team(LEAGUE, null, 'pending'), {
-        league_id: LEAGUE,
-        team_id: ME,
-        status: 'pending',
-        waiver_type: 'faab',
-        faab_budget: 100,
-        faab_min_bid: 1,
-        faab_balance: 80,
-        waiver_priority: null,
-        claims: [
-          {
-            id: 'claim-1',
-            team_id: ME,
-            add: { player_id: 'fa-1', full_name: 'Claimed Receiver', position: 'WR', nfl_team: 'AAA' },
-            drop: null,
-            faab_bid: 12,
-            claim_order: 1,
-            status: 'pending',
-            result_reason: null,
-            process_at: null,
-            processed_at: null,
-            created_at: '2099-10-08T12:00:00.000Z',
-            created_by: 'user-me',
-            cancelled_at: null,
-          },
-        ],
-      })
-    })
-    expect(withClaim).toContain('data-healthy-ir-claims')
-    expect(withClaim).toContain('Your pending claim will fail when waivers run unless he’s out of the spot by then.')
+    // Chris 2026-10-21: the notice reads "You have an ineligible player in your IR spot. Player adds and waiver claims will be blocked until that is fixed." — always, with or without pending claims.
+    expect(blocked).toContain('Player adds and waiver claims will be blocked until that is fixed.')
+    expect(blocked).not.toContain('will fail when waivers run')
   })
 
   it('F690: the week’s games are over and he played — the notice says a drop works now and the move waits for next week (never the locked move)', () => {
