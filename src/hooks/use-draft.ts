@@ -44,6 +44,8 @@ import {
 } from './use-draft-feed-sink'
 import { useLeague } from './use-league'
 import { leaguesKeys } from './use-leagues'
+import { useRealtimeFallbackPoll } from './use-realtime-fallback-poll'
+import { invalidateForFallbackPoll } from './use-realtime-fallback-poll-ops'
 
 /**
  * Draft data spine — M2 task L.B2.1 (spec §15.6; tasks-M2 D92).
@@ -190,6 +192,9 @@ export function useDraftRoom(
   const query = useDraft(draftId)
   const queryClient = useQueryClient()
   const [connection, setConnection] = useState<DraftRoomConnection>('connecting')
+  // §24.3 / F758: the channel is DOWN (a failed status since the last
+  // SUBSCRIBED) — the fallback poll's gate, below the effect.
+  const [degraded, setDegraded] = useState(false)
   const [offsetMs, setOffsetMs] = useState(0)
   const [onlineTeamIds, setOnlineTeamIds] = useState<ReadonlySet<string>>(() => new Set())
   // §8.6.9's room beat (AP.2/D199(4)). LATCHED AT THE PAYLOAD, not at the
@@ -437,6 +442,7 @@ export function useDraftRoom(
           failedJoins = 0 // R263: a successful join resets the count
           lastBeatAtRef.current = Date.now() // silence counts from the join
           setConnection('live')
+          setDegraded(false) // F758: the poll stops the moment we are back
           // §9.3: never depend on missed broadcasts — reconcile on EVERY
           // confirmed join (boot window + reconnect gap alike). Chat rides
           // the same rule: it has no gap detector, so the join refetch is
@@ -464,6 +470,7 @@ export function useDraftRoom(
           // first joins (R263 — the pure threshold in use-draft-ops.ts).
           failedJoins += 1
           setConnection(connectionAfterJoinFailure(everSubscribed, failedJoins))
+          setDegraded(true) // F758: poll every 10 s until SUBSCRIBED again
           refetchDraft()
           scheduleReopen()
         }
@@ -502,6 +509,7 @@ export function useDraftRoom(
     return () => {
       // §9.3: unsubscribe on route change — no connection leaks.
       disposed = true
+      setDegraded(false) // a released room (two-tabs guard, route change) is nobody's outage
       clearInterval(silenceTimer)
       if (retryTimer) clearTimeout(retryTimer)
       if (channel) void supabase.removeChannel(channel)
@@ -511,6 +519,21 @@ export function useDraftRoom(
       roomSink.dispose()
     }
   }, [draftId, fetched, presenceTeamId, presenceUserId, queryClient])
+
+  // §24.3's realtime-degradation fallback (F758 / D690): while THIS room's
+  // channel is down, re-read what a rejoin re-reads — the draft row + picks,
+  // the chat window and the bid feed (all direct Supabase reads, no route)
+  // — every 10 s, never while the tab is hidden, stopping on SUBSCRIBED. The
+  // 45 s watchdog above stays: it covers the LIVE-but-silent case this
+  // cannot see (a lost pause broadcast on a channel that never dropped).
+  useRealtimeFallbackPoll(degraded && Boolean(draftId), () => {
+    if (!draftId) return
+    invalidateForFallbackPoll(queryClient, [
+      draftKeys.detail(draftId),
+      draftChatKeys.room(draftId),
+      draftBidKeys.feed(draftId),
+    ])
+  })
 
   // The D102 liveness heartbeat — the room IS the caller the contract names
   // ("a tiny `draft_touch` RPC the room calls (~15s cadence + visibility

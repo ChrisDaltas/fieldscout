@@ -7,6 +7,8 @@ import type { PlayoffBracket } from '@/lib/leagues/api/playoffs-service'
 
 import { useLeagueChannel } from './use-league-channel'
 import { invalidatingHandlers, playoffBracketEventInvalidates } from './use-league-channel-ops'
+import { useRealtimeFallbackPoll } from './use-realtime-fallback-poll'
+import { invalidateForFallbackPoll } from './use-realtime-fallback-poll-ops'
 
 /**
  * The playoff bracket — M4 task L.D5.5 (spec §11.5's Playoffs bullet
@@ -50,17 +52,28 @@ export function usePlayoffBracket(leagueId: string | undefined, enabled = true) 
 }
 
 /** The fetch + subscribe half — what a mounted bracket uses. Returns the
- *  query plus the spine's `connection` for the §16.5.4 reconnecting banner. */
-export function usePlayoffBracketLive(leagueId: string | undefined, enabled = true) {
+ *  query plus the spine's `connection` for the §16.5.4 reconnecting banner.
+ *  `fallbackPoll` (§24.3 / F758): while the room is DOWN, re-read the
+ *  bracket every 10 s — League Home's scoreboard (desktop and phone) only,
+ *  where the bracket IS the scoreboard's Playoffs tab. */
+export function usePlayoffBracketLive(
+  leagueId: string | undefined,
+  enabled = true,
+  opts?: { fallbackPoll?: boolean },
+) {
   const query = usePlayoffBracket(leagueId, enabled)
   const queryClient = useQueryClient()
   const invalidate = () => {
     if (!leagueId) return
     void queryClient.invalidateQueries({ queryKey: playoffBracketKeys.all(leagueId) })
   }
-  const { connection } = useLeagueChannel(leagueId, invalidatingHandlers(playoffBracketEventInvalidates, invalidate), {
+  const { connection, degraded } = useLeagueChannel(leagueId, invalidatingHandlers(playoffBracketEventInvalidates, invalidate), {
     onJoin: invalidate,
     onDrop: invalidate,
   })
-  return { ...query, connection }
+  useRealtimeFallbackPoll(Boolean(opts?.fallbackPoll) && enabled && degraded, () => {
+    if (!leagueId) return
+    invalidateForFallbackPoll(queryClient, [playoffBracketKeys.all(leagueId)])
+  })
+  return { ...query, connection, degraded }
 }

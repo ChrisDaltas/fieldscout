@@ -258,7 +258,7 @@ function renderMatchups(seed: Seed = {}): string {
   if (seed.rosters) qc.setQueryData(leagueRosterKeys.all(LEAGUE), seed.rosters)
   if (seed.values) qc.setQueryData(leaguePlayerValueKeys.week(LEAGUE, 2099, weekNumber), seed.values)
 
-  vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live' })
+  vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live', degraded: false })
   return render(qc, createElement(MatchupPage, { leagueId: LEAGUE, matchupId: seed.matchupId ?? null, weekParam: seed.weekParam ?? null }))
 }
 

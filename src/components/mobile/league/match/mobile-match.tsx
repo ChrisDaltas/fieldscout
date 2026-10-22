@@ -227,7 +227,7 @@ function MatchContent({
     [shownId, shownWeek, schedule.data],
   )
   const currentWeek = useMemo(() => (schedule.data ? currentWeekOf(schedule.data.weeks) : null), [schedule.data])
-  const matchups = useMatchupsLive(leagueId, week ?? undefined)
+  const matchups = useMatchupsLive(leagueId, week ?? undefined, { fallbackPoll: true })
   // The flag is polled — only a week that is scoring asks (desktop's gate).
   const degraded = useStatsDegraded({ enabled: scoringLive(matchups.data?.league_week.status) })
   const delay = liveScoringDelay(degraded.data)

@@ -97,7 +97,7 @@ function rowSides(html: string, id: string): Array<[string, string]> {
 
 beforeEach(() => {
   search.value = ''
-  vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+  vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live', degraded: false })
 })
 
 /** The sticky header's markup (bar, chips, status lines) — everything
@@ -257,7 +257,7 @@ describe('the Schedule screen', () => {
   })
 
   it('the reconnecting and not-refreshing lines sit in the sticky header under the chips — in view at the current week, not atop the list', () => {
-    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'reconnecting' })
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'reconnecting', degraded: false })
     const html = render(detailWith({ role: 'commissioner' }), { stale: SCHEDULE })
     const header = stickyHeader(html)
     const status = /data-schedule-status="true">(.*?)<\/div>/.exec(header)?.[1] ?? ''
@@ -274,7 +274,7 @@ describe('the Schedule screen', () => {
     // current week's title.
     expect(html).toMatch(/class="[^"]*\[overflow-anchor:none\][^"]*" data-schedule-screen/)
     // A healthy page shows neither.
-    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live', degraded: false })
     expect(render(detailWith(), SCHEDULE)).not.toContain('data-schedule-status')
   })
 
