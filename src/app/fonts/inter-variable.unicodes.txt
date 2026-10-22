@@ -1,0 +1,52 @@
+# The characters inter-variable.woff2 is subset to (L.F1.4, D632 / R1625).
+# One code point or range per line; '#' starts a comment.
+# Regenerate the font from the full Inter 4.1 build with fontTools:
+#   pyftsubset Inter-Variable.woff2 --unicodes-file=inter-variable.unicodes.txt \
+#     --layout-features='*' --name-IDs='*' --name-languages='*' \
+#     --notdef-outline --flavor=woff2 --output-file=inter-variable.woff2
+# phone-typography.test.ts fails when a .tsx string uses a character that is
+# neither listed here nor on its named fallback allowlist.
+
+# Google Fonts' "latin" range (the same as the Google Inter behind it)
+U+0000-00FF
+U+0131
+U+0152-0153
+U+02BB-02BC
+U+02C6
+U+02DA
+U+02DC
+U+0304
+U+0308
+U+0329
+U+2000-206F
+U+20AC
+U+2122
+U+2212
+U+2215
+U+FEFF
+U+FFFD
+
+# Latin Extended-A (R1626): names like Łukasz, Dvořák, Gönül
+U+0100-017F
+
+# Symbols the app draws
+U+2190-2194
+U+21D0-21D4
+U+0394
+U+03A3
+U+03B5
+U+2080-2089
+U+2248
+U+221E
+U+2260
+U+2264
+U+2265
+U+2318
+U+25B2
+U+25BC
+U+25CF
+U+2605
+U+26A0
+U+2713
+U+27F9
+U+27FA

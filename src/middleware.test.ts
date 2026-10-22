@@ -124,6 +124,40 @@ describe('a cold load of the draft room is gated, and keeps its destination', ()
   })
 })
 
+describe('the landing page: signed-in visitors go to the app (F744)', () => {
+  // This redirect moved here from src/app/page.tsx so the landing page can be
+  // static (its metadata then renders in <head>). Same rule as before: a
+  // signed-in visitor to / lands on /app, a signed-out one sees the page.
+  it('signed out → the landing page is served', async () => {
+    const res = await middleware(request('/'))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+  })
+
+  it('signed in → /app, without the query string (as the page did)', async () => {
+    currentUser = { id: 'u1' }
+    const res = await middleware(request('/?utm_source=x'))
+    expect(res.status).toBe(307)
+    const location = new URL(res.headers.get('location')!)
+    expect(location.pathname).toBe('/app')
+    expect(location.search).toBe('')
+  })
+
+  it('signed in → the redirect keeps the refreshed cookies (D148(b))', async () => {
+    currentUser = { id: 'u1' }
+    cookiesWritten = REFRESHED
+    const res = await middleware(request('/', 'sb-127-auth-token=base64-STALE'))
+    expect(res.status).toBe(307)
+    expect(authCookie(res)).toContain('base64-REFRESHED')
+  })
+
+  it('only / itself — other public pages are not redirected', async () => {
+    currentUser = { id: 'u1' }
+    const res = await middleware(request('/u/someone'))
+    expect(res.status).toBe(200)
+  })
+})
+
 describe('a redirect never loses the cookies the refresh just minted (D148(b))', () => {
   it('the protected-path branch keeps them — this arm was always correct', async () => {
     // The control. If this ever goes red the fake is wrong, not the middleware.

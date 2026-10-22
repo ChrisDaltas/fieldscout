@@ -14,12 +14,12 @@ import type { IrSlot } from '@/lib/leagues/settings/league-settings'
 import {
   HEALTHY_IR_HEADLINE,
   HEALTHY_IR_MOVE_NEXT_WEEK,
+  HEALTHY_IR_BLOCKED_LINE,
   HEALTHY_IR_STILL_OPEN,
   HEALTHY_IR_WAYS,
   currentWeekGamesOver,
   healthyIrAddTitle,
   healthyIrBlockers,
-  healthyIrClaimsLine,
   healthyIrHeadline,
   healthyIrWays,
   type HealthyIrBlocker,
@@ -128,14 +128,10 @@ describe('the words', () => {
     ])
     expect(HEALTHY_IR_STILL_OPEN).toBe('Lineup moves, drops and trades still work as usual.')
   })
-  it('F693 as ruled ("they should fail when waivers run"): with a pending claim the notice says the run will fail it while he is still there; none without one', () => {
-    const one = [free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null, status: 'Active' })]
-    const two = [...one, free({ player_id: 'b', full_name: 'B Two', label: 'DL', designation: null, status: 'Active' })]
-    expect(healthyIrClaimsLine(one, 1)).toBe('Your pending claim will fail when waivers run unless he’s out of the spot by then.')
-    expect(healthyIrClaimsLine(one, 3)).toBe('Your pending claims will fail when waivers run unless he’s out of the spot by then.')
-    expect(healthyIrClaimsLine(two, 2)).toBe('Your pending claims will fail when waivers run unless they’re all out of your IR spots by then.')
-    expect(healthyIrClaimsLine(one, 0)).toBeNull()
-    expect(healthyIrClaimsLine([], 2)).toBeNull()
+  it('the line under the headline is Chris’s wording, verbatim (2026-10-21)', () => {
+    expect(`${HEALTHY_IR_HEADLINE} ${HEALTHY_IR_BLOCKED_LINE}`).toBe(
+      'You have an ineligible player in your IR spot. Player adds and waiver claims will be blocked until that is fixed.',
+    )
   })
   it('the closed Add / Claim leads with the headline, then the short fix', () => {
     expect(healthyIrAddTitle([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null, status: 'Active' })])).toBe(
