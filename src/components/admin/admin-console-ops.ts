@@ -310,6 +310,7 @@ export const VERB_WORDS: Record<string, string> = {
   run_job_now: 'Ran a job now',
   set_game_status: 'Marked a game',
   send_notification: 'Sent a notice',
+  set_commissioner: 'Made a commissioner',
 }
 
 export function verbWords(verb: string): string {

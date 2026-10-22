@@ -60,9 +60,14 @@ gone from their screens.
    sitting commissioner must hand it over (step 3).
 
 5. **The commissioner is gone for good** (lost their email, left
-   FieldScout, won't answer): there is **no path today** (F750). Write down
-   the league, what the record shows and what the members want, and give
-   it to Chris to rule. Do not improvise.
+   FieldScout, won't answer): open the league in **Admin → Leagues**, find
+   the member the league wants in **Members**, and press **Make
+   commissioner** (F750, migration 208). Check the dialog's Now / After,
+   add a reason if you like, and confirm. The old commissioner becomes a
+   co-commissioner and keeps their team; the league sees "FieldScout made X the
+   commissioner." Only a member who has joined can be picked — an empty
+   seat has no button. Get the members' agreement on who it should be
+   first; if they disagree, give it to Chris to rule. Do not improvise.
 
 6. **Reply to the person** in plain words: what the record shows, and what
    they (or the other member) need to do next.

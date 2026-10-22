@@ -6724,6 +6724,25 @@ export type Database = {
         }
         Returns: Json
       }
+      op_set_commissioner: {
+        Args: {
+          p_action_id?: string
+          p_league_id: string
+          p_new_member_id: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      op_set_commissioner_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_league_id: string
+          p_new_member_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
       op_set_game_status: {
         Args: {
           p_action_id?: string

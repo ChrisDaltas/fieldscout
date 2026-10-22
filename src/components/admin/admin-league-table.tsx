@@ -14,10 +14,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useAdminLeagueDetail } from '@/hooks/use-admin-league-detail'
 import { useAdminLeagueTable } from '@/hooks/use-admin-league-table'
 import {
+  canBeMadeCommissioner,
+  commissionerBeforeAfter,
   LEAGUE_PAGE_SIZE,
   pageWords,
   recordWords,
   roleWords,
+  setCommissionerUrl,
   type LeagueSort,
   type OpLeagueDetail,
   type OpLeagueList,
@@ -25,7 +28,7 @@ import {
 } from '@/lib/admin/league-table'
 import { cn } from '@/lib/utils'
 
-import { AdminEmpty, AdminError, AdminHeader, AdminLoading, AdminSection, when } from './admin-parts'
+import { AdminEmpty, AdminError, AdminHeader, AdminLoading, AdminSection, when, type ConfirmSpec } from './admin-parts'
 
 // ---------------------------------------------------------------------------
 // /app/admin/leagues — every league on the platform (193 `op_list_leagues`).
@@ -275,7 +278,14 @@ function LeagueTableRow({ league: l, onOpen }: { league: OpLeagueRow; onOpen: (i
 // The admin league page's Members + Settings sections (193 `op_league_detail`).
 // ---------------------------------------------------------------------------
 
-export function AdminLeagueDetailSections({ leagueId }: { leagueId: string }) {
+export function AdminLeagueDetailSections({
+  leagueId,
+  onConfirm,
+}: {
+  leagueId: string
+  /** Opens the console's confirm dialog (Make commissioner — F750). */
+  onConfirm?: (spec: ConfirmSpec) => void
+}) {
   const q = useAdminLeagueDetail(leagueId)
   if (q.isLoading) {
     return (
@@ -291,7 +301,7 @@ export function AdminLeagueDetailSections({ leagueId }: { leagueId: string }) {
       </AdminSection>
     )
   }
-  return q.data ? <LeagueDetailBody detail={q.data} /> : null
+  return q.data ? <LeagueDetailBody detail={q.data} onConfirm={onConfirm} /> : null
 }
 
 /** Every stored setting, flat: the columns, then the settings blob, then the roster shape. */
@@ -301,9 +311,27 @@ export function rawSettings(detail: OpLeagueDetail): [string, unknown][] {
 }
 
 /** Presentational — exported for the render tests. */
-export function LeagueDetailBody({ detail }: { detail: OpLeagueDetail }) {
+export function LeagueDetailBody({
+  detail,
+  onConfirm,
+}: {
+  detail: OpLeagueDetail
+  onConfirm?: (spec: ConfirmSpec) => void
+}) {
   const l = detail.league
   const s = l.settings_summary
+  // F750 / migration 208: FieldScout replaces a missing commissioner. Only a
+  // person who is not already the commissioner is offered the control.
+  const makeCommissioner = (m: OpLeagueDetail['members'][number]) => {
+    const who = m.username ?? m.team_name ?? 'this member'
+    onConfirm?.({
+      title: `Make ${who} the commissioner`,
+      ...commissionerBeforeAfter(m, detail.members),
+      confirmLabel: 'Make commissioner',
+      url: setCommissionerUrl(l.id),
+      body: { member_id: m.member_id },
+    })
+  }
   return (
     <>
       <AdminSection
@@ -335,6 +363,7 @@ export function LeagueDetailBody({ detail }: { detail: OpLeagueDetail }) {
                 <TableHead>Joined</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Record</TableHead>
+                {onConfirm && <TableHead className="sr-only">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -364,6 +393,15 @@ export function LeagueDetailBody({ detail }: { detail: OpLeagueDetail }) {
                     </span>
                   </TableCell>
                   <TableCell className="fs-num text-right">{recordWords(m.record)}</TableCell>
+                  {onConfirm && (
+                    <TableCell className="whitespace-nowrap text-right">
+                      {canBeMadeCommissioner(m, l) && (
+                        <Button size="sm" variant="stroke" onClick={() => makeCommissioner(m)} data-make-commissioner={m.member_id}>
+                          Make commissioner
+                        </Button>
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

@@ -69,7 +69,9 @@ select is(
        'op_platform_state_internal', 'op_cron_last_runs_internal', 'op_pause_json_internal', 'op_week_games_internal')
      -- RE-PINNED BY the 193 league table (additive, R992): its reads are pinned by pgTAP 141 A1.
      and p.proname not in ('op_list_leagues', 'op_list_leagues_internal', 'op_league_detail',
-       'op_league_detail_internal', 'op_league_row_internal')),
+       'op_league_detail_internal', 'op_league_row_internal')
+     -- RE-PINNED BY 208 (F750, additive, R992): op_set_commissioner's pair is pinned by pgTAP 158 A1.
+     and p.proname not like 'op\_set\_commissioner%'),
   'op_job_check_internal=f:search_path="":f:f op_job_words_internal=f:search_path="":f:f op_league_line_internal=f:search_path="":f:f op_pause_job=t:search_path="":f:t op_pause_job_internal=f:search_path="":f:f op_resume_job=t:search_path="":f:t op_resume_job_internal=f:search_path="":f:f op_run_job_now=t:search_path="":f:t op_run_job_now_internal=f:search_path="":f:f op_verb_prelude_internal=f:search_path="":f:f',
   'A4 the three doors DEFINER + search_path '''' + authenticated only; every internal plain and closed to anon / authenticated');
 select is(

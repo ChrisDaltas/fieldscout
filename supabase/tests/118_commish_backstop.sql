@@ -943,6 +943,8 @@ insert into _allow values
   ('trade_vote_internal',     'a manager''s own ballot for his own team (Q77 / D415(1)); is_league_commish only words the refusal a teamless commissioner meets — his power over a vote is approve / veto, receipted by commish_force_or_reverse_trade'),
   ('trade_propose_internal',  'a manager''s own offer for his own team (174, ruled 2026-09-30: the commissioner acts on a trade only once it is accepted); is_league_commish only words the by-name refusal a commissioner who does not manage the team meets — his power over a trade is veto / force, receipted by commish_force_or_reverse_trade'),
   ('trade_respond_internal',  'the two teams'' own answer to an offer (174, ruled 2026-09-30); is_league_commish only words the by-name refusal a commissioner who manages neither team meets — his power over a trade is veto / force once it is accepted, receipted by commish_force_or_reverse_trade'),
+  -- RE-PINNED BY 208 (F750, additive, R992 / D671): the operator's verb.
+  ('op_set_commissioner_internal', 'the PLATFORM OPERATOR''s verb (208, F750 — spec §24.4 v2.16.106), not a commissioner action: its role literals read and write who the commissioner is. Its record is the platform_operator_actions receipt + the "FieldScout" league line; a commissioner_actions row would carry the admin as actor and show his username to the league, which §24.4 forbids (D671)'),
   ('snapshot_league_scoring', 'derived, pre-draft only: copies the rules the league already references into leagues.scoring_rules_snapshot (setup / scheduled), which draft start re-takes before anything scores (110:1138 / 168:3190) — no commissioner input reaches game state; the rules edits themselves are receipted (fork_scoring / edit_scoring / change_settings, 169)');
 
 -- THE MATRIX (TD10 (ii)): one row per verb, filled by pg_temp.mx below.
@@ -1818,14 +1820,14 @@ select is(
   || 'draft_create_internal=receipt draft_end=receipt draft_force_pick=receipt draft_move_player=receipt draft_pause=receipt '
   || 'draft_place_bid=receipt draft_queue_replace=receipt draft_reassign_pick=receipt draft_reset=receipt draft_resume=receipt draft_reverse_won_bid=receipt draft_set_clock=receipt '
   || 'draft_set_order=receipt draft_start=receipt draft_start_internal=receipt draft_tick=receipt draft_undo=receipt '
-  || 'leave_league=allowlisted remove_manager=receipt revoke_league_invite=receipt rotate_invite_code=receipt '
+  || 'leave_league=allowlisted op_set_commissioner_internal=allowlisted remove_manager=receipt revoke_league_invite=receipt rotate_invite_code=receipt '
   || 'schedule_edit_matchup=receipt schedule_remix_confirm=receipt scoring_fork_template=receipt scoring_update_rules=receipt '
   || 'set_league_invite_slug=receipt set_league_status=receipt set_lineup_internal=receipt set_member_role=receipt '
   || 'set_team_autodraft=receipt snapshot_league_scoring=allowlisted soft_delete_league=receipt trade_propose_internal=allowlisted '
   || 'trade_respond_internal=allowlisted trade_vote_internal=allowlisted update_league_profile=receipt update_league_settings=receipt '
   || 'waiver_claim_cancel_internal=receipt waiver_claim_edit_internal=receipt waiver_claim_reorder_internal=receipt '
   || 'waiver_claim_submit_internal=receipt',
-  'C4 THE CENSUS (stored literal): 59 commissioner-gated writers — 53 reach the receipt, 6 are allowlisted (171 added the two draft-room manager verbs, F521; 174 took the commissioner arm off trade_propose / trade_respond — ruled 2026-09-30 — so both are allowlisted beside trade_vote; 192 added the commissioner note)');
+  'C4 THE CENSUS (stored literal): 60 commissioner-gated writers — 53 reach the receipt, 7 are allowlisted (history: 59 / 6 before 208; 171 added the two draft-room manager verbs, F521; 174 took the commissioner arm off trade_propose / trade_respond — ruled 2026-09-30 — so both are allowlisted beside trade_vote; 192 added the commissioner note; re-pinned by 208: 60 writers, 7 allowlisted — the operator''s op_set_commissioner_internal, F750)');
 
 -- C5: THE BACKSTOP CELL. A gated writer that reaches no receipt and is not
 -- on the allowlist is an OFFENDER, named here. ***The task probe target.***
@@ -1840,8 +1842,8 @@ select is(
 select is(
   (select string_agg(a.fn || ':' || coalesce((c.writes is not null and not c.receipt)::text, 'absent'), ' ' order by a.fn)
    from _allow a left join _census c on c.fn = a.fn),
-  'claim_league_invite:true leave_league:true snapshot_league_scoring:true trade_propose_internal:true trade_respond_internal:true trade_vote_internal:true',
-  'C6 the allowlist is six entries (two added by 174), each still a gated writer with no receipt — none stale');
+  'claim_league_invite:true leave_league:true op_set_commissioner_internal:true snapshot_league_scoring:true trade_propose_internal:true trade_respond_internal:true trade_vote_internal:true',
+  'C6 the allowlist is seven entries (two added by 174, one by 208), each still a gated writer with no receipt — none stale');
 select is((select count(*)::int from _allow where length(why) < 60), 0,
   'C7 every allowlist entry says why, in a sentence (no bare names)');
 -- C8: gated functions that write nothing are outside the census, named.
