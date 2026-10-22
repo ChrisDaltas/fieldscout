@@ -1293,13 +1293,22 @@ function LeaderboardWeek({
           {rows.length === 0 && <p className="px-3 pb-4 pt-2 text-center text-[13px] font-medium text-m-t3">{NO_LEADERBOARD_ROWS_COPY}</p>}
           {rows.map((r) => {
             const on = r.team_id === selectedId
+            // The picked team (yours until you tap another) wears the
+            // handoff's selected-picker look — the blue tint WITH its 1.5px
+            // blue inset ring, as on the Match tab's selected game card
+            // (m-match §2.3, "Selected: bg gb plus inset 0 0 0 1.5px #0088FF")
+            // and the trade builder's picked tile (m-team). The tint alone is
+            // never a selection mark — nor a "you" mark (m-league §2.2).
             return (
               <button
                 key={r.team_id}
                 type="button"
                 onClick={() => setPicked(r.team_id)}
                 aria-pressed={on}
-                className={cn('flex h-12 w-full items-center gap-2.5 border-t border-m-b3s px-3 text-left', on ? 'bg-m-gb' : 'active:bg-m-b2h')}
+                className={cn(
+                  'flex h-12 w-full items-center gap-2.5 border-t border-m-b3s px-3 text-left',
+                  on ? 'bg-m-gb ring-[1.5px] ring-inset ring-accent' : 'active:bg-m-b2h',
+                )}
                 data-leaderboard-row={r.team_id}
               >
                 <span className="w-5 flex-none text-right text-[11px] font-semibold text-m-t3">{r.rank ?? '–'}</span>

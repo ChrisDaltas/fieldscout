@@ -795,6 +795,11 @@
   "text": "roster_add_drop: %'s roster holds % players after the move, expected % (roster_size %) — refusing"
  },
  {
+  "loc": "205_healthy_ir_blocks_adds.sql:433",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: % is % and still in %'s IR spot — no adds while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), swap an IR-eligible player into his spot, or drop him (§7.3.2)"
+ },
+ {
   "loc": "199_remove_retire_schema.sql:8129",
   "fn": "waiver_claim_submit_internal",
   "text": "waiver_claim_submit: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
@@ -833,6 +838,11 @@
   "loc": "199_remove_retire_schema.sql:8241",
   "fn": "waiver_claim_submit_internal",
   "text": "waiver_claim_submit: % has no FAAB balance on record, so it can't bid — ask the commissioner to set the team's FAAB"
+ },
+ {
+  "loc": "205_healthy_ir_blocks_adds.sql:928",
+  "fn": "waiver_claim_submit_internal",
+  "text": "waiver_claim_submit: % is % and still in %'s IR spot — no claims while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), swap an IR-eligible player into his spot, or drop him (§7.3.2)"
  },
  {
   "loc": "157_played_lock.sql:3190",
@@ -1310,11 +1320,6 @@
   "text": "set_lineup: % entered restricted IR spot % in week % and may not leave it before week % (min_weeks stint, §11.2/§7.3.2) — the current week is %; commissioner override is M6's"
  },
  {
-  "loc": "199_remove_retire_schema.sql:6108",
-  "fn": "set_lineup_internal",
-  "text": "set_lineup: % is % for week % and allow_illegal_lineups is off — slot \"%\" is blocked at submit (§7.3.6); bench him or start someone who plays"
- },
- {
   "loc": "199_remove_retire_schema.sql:6210",
   "fn": "set_lineup_internal",
   "text": "set_lineup: wrote slot_key for % starters, expected %"
@@ -1363,11 +1368,6 @@
   "loc": "199_remove_retire_schema.sql:2974",
   "fn": "commish_edit_lineup_internal",
   "text": "commish_edit_lineup: % holds designation % — IR spot % accepts only % (§7.3.2 IR slot rules)"
- },
- {
-  "loc": "199_remove_retire_schema.sql:3074",
-  "fn": "commish_edit_lineup_internal",
-  "text": "commish_edit_lineup: % is % for week % and this league doesn't allow illegal lineups — slot \"%\" can't be saved like this; bench him, start someone who plays, or turn on illegal lineups in the league settings"
  },
  {
   "loc": "199_remove_retire_schema.sql:3289",

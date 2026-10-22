@@ -62,11 +62,9 @@ export interface SeasonNeedContext {
   rounds: number
   /** Roster-vocabulary position of an available id (DEF normalised to DST). */
   positionOf: (playerId: string) => string | null
-  /** TRUE when §7.3.6 would refuse this player as a STARTER in THIS league —
-   *  a blocking designation in an `allow_illegal_lineups = false` league. Such
-   *  a player never counts as filling a need and is never taken as a need
-   *  pick, because the seat has ONE bench seat and no cover for him. */
-  blockedAsStarter: (playerId: string) => boolean
+  // D591 (migration 201): `blockedAsStarter` is gone — "Allow illegal lineups"
+  // is retired, so no league refuses a starter over a designation and every
+  // drafted player can fill a need.
 }
 
 export type PickDecision =
@@ -88,8 +86,7 @@ const ADP_REACH = 3
 /**
  * Which starting slots this seat still cannot seat — a greedy first fit of the
  * roster's positions over the slots in canonical order, the same shape
- * `chooseStarterSlots` uses when the sim actually seats the lineup. A player
- * the league would refuse as a starter fills nothing.
+ * `chooseStarterSlots` uses when the sim actually seats the lineup.
  *
  * Pure and exported so the sweep can falsify it directly.
  */
@@ -98,7 +95,6 @@ export function unfilledStartingSlots(
 ): readonly { key: string; eligible: readonly string[] }[] {
   const taken = new Set<string>()
   for (const playerId of need.rosterPlayerIds) {
-    if (need.blockedAsStarter(playerId)) continue
     const position = need.positionOf(playerId)
     if (position === null) continue
     const slot = need.slots.find((sl) => !taken.has(sl.key) && sl.eligible.includes(position))
@@ -120,7 +116,6 @@ export function bestForNeed(ctx: PickContext, need: SeasonNeedContext): string |
   if (unfilled.length === 0) return null
   const wanted = new Set(unfilled.flatMap((sl) => [...sl.eligible]))
   for (const playerId of ctx.availableByAdp) {
-    if (need.blockedAsStarter(playerId)) continue
     const position = need.positionOf(playerId)
     if (position !== null && wanted.has(position)) return playerId
   }

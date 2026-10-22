@@ -39,20 +39,9 @@ import { MobileBracket } from './mobile-bracket'
 // name on a 375px phone, cutting the @manager and the extra records.
 const GRID = 'grid grid-cols-[30px_minmax(0,1fr)_64px_50px] gap-2'
 
-// Your own row (gap list §4 item 11): a resting blue-tint FILL — the
-// desktop table's accent-soft, never a shadow — rounded like the v7
-// league-home rows, its own divider hidden. The tint reaches 4px past the
-// other rows' edges and pads 4px more inside, so every column still lines
-// up with the header and the rows around it.
-const MINE_ROW = '-mx-1 bg-m-gb px-2'
-
-/** The rule under a standings row: the 2px blue playoff cutoff under the
- *  last seed (kept under your own row too — the tint then squares off its
- *  bottom onto the line), a hairline between the rest, none under yours. */
-function standingsRowRule(cutoff: boolean, mine: boolean): string {
-  if (cutoff) return cn('border-b-2 border-accent', mine && 'rounded-t-[12px]')
-  return mine ? 'rounded-[12px] border-b border-transparent' : 'border-b border-m-b2'
-}
+// Your own row looks like every other row: the handoff draws "No row
+// highlight for your own team" (m-league §2.3). It is told apart by its
+// blue avatar alone (the handoff's #0088FF "you" avatar).
 
 type StandingsView = 'final' | 'projected'
 const VIEWS: ReadonlyArray<{ value: StandingsView; label: string }> = [
@@ -205,7 +194,7 @@ export function StandingsSegment({
               return (
                 <li
                   key={row.team_id}
-                  className={cn(GRID, 'relative items-center py-2.5', mine ? MINE_ROW : 'px-1', standingsRowRule(cutoff, mine))}
+                  className={cn(GRID, 'relative items-center px-1 py-2.5', cutoff ? 'border-b-2 border-accent' : 'border-b border-m-b2')}
                   data-standings-row={row.team_id}
                   data-mine={mine || undefined}
                 >
@@ -218,13 +207,7 @@ export function StandingsSegment({
                     <span className="text-[15px] font-semibold tabular-nums text-m-t1">{row.rank}</span>
                   </span>
                   <span className="flex min-w-0 items-center gap-[9px]">
-                    <TeamAvatar
-                      name={row.name}
-                      size={32}
-                      className={teamAvatarClass(row.team_id, teamIds, myTeamId)}
-                      online={teamOnline(row.team_id)}
-                      onlineRingClass={mine ? 'ring-m-gb' : undefined}
-                    />
+                    <TeamAvatar name={row.name} size={32} className={teamAvatarClass(row.team_id, teamIds, myTeamId)} online={teamOnline(row.team_id)} />
                     <span className="flex min-w-0 flex-col gap-px">
                       <span className="flex min-w-0 items-center gap-1">
                         <span className="truncate text-[13.5px] font-semibold text-m-t1">{row.name}</span>

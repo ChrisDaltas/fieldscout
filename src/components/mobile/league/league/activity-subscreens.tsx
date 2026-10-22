@@ -171,8 +171,8 @@ export function CommishLogScreen({ leagueId, detail, route }: { leagueId: string
         <p className="px-1 pb-2 text-[12px] font-medium leading-[1.35] text-m-t3">{TAB_INTRO_COPY.commissioner}</p>
         {route.week !== null && <p className="px-1 pb-2 text-[12px] font-medium leading-[1.35] text-m-t3">{COMMISH_WEEK_NOTE}</p>}
         {route.entry && (
-          <div className="mb-2 flex items-center gap-3 rounded-[12px] bg-m-gb px-3 py-2.5">
-            <span className="min-w-0 flex-1 text-[12px] font-semibold text-m-tb">{COMMISH_ENTRY_NOTE}</span>
+          <div className="mb-2 flex items-center gap-3 rounded-[12px] bg-m-b1 px-3 py-2.5">
+            <span className="min-w-0 flex-1 text-[12px] font-semibold text-m-t1">{COMMISH_ENTRY_NOTE}</span>
             <button type="button" onClick={() => go({ ...route, entry: null })} className="flex-none text-[13px] font-semibold text-accent">
               {SHOW_NEWEST_LABEL}
             </button>
@@ -194,7 +194,11 @@ export function CommishLogScreen({ leagueId, detail, route }: { leagueId: string
                 ref={hit ? highlighted : undefined}
                 leagueId={leagueId}
                 line={line}
-                className={cn('border-b border-m-b2 px-1', hit && 'rounded-[12px] border-transparent bg-m-gb px-3')}
+                // The action you opened is the first row (the note above
+                // says so) and is drawn like the rest: the handoff's
+                // activity row is unfilled over a b2 hairline (m-league
+                // §2.5) — its blue tint is for pills, chips and icon tiles.
+                className="border-b border-m-b2 px-1"
               />
             )
           })

@@ -438,6 +438,59 @@ describe('mobile player profile — leagues on', () => {
     expect(out).toMatch(/data-strip="rank"[^>]*><span[^>]*>#24</)
   })
 
+  // F692 (Chris 2026-10-21, verbatim: "…the player detail page, mini modal or card should have "Drop" as an
+  // option if they are droppable. Not if they are locked for the week though.")
+  function lockedInLeague(): QueryClient {
+    const qc = inLeague()
+    qc.setQueryData(['league-rosters', 'L1'], {
+      league_id: 'L1',
+      season: 2026,
+      teams: [
+        {
+          team_id: 't1',
+          name: 'Touchdown Tacos',
+          owner_id: 'u1',
+          status: 'active',
+          manager_user_id: 'u1',
+          autopilot: false,
+          faab_balance: null,
+          waiver_priority: 1,
+          roster: [{ ...rosterPlayer, game_lock: { state: 'locked_until', until: '2026-10-20T07:00:00Z' } }],
+        },
+      ],
+    })
+    return qc
+  }
+
+  it('F692: locked for the week, the header offers NO Drop (and nothing else in its place)', () => {
+    const out = html(createElement(ProfileLoaded, { data, target: { ...target, leagueId: 'L1' }, onClose: () => {} }), lockedInLeague())
+    expect(out).not.toContain('data-profile-action="mine"')
+    expect(out).not.toMatch(/>Drop</)
+    expect(out).toContain('Touchdown Tacos · your team')
+  })
+
+  it('F692: the Leagues tab row of one of mine offers Drop (red words on the red tint) — none while he is locked', () => {
+    const tab = (qc: QueryClient) =>
+      html(
+        createElement(LeaguesTab, {
+          player,
+          pool: { id: 'p1', full_name: 'Bijan Robinson', position: 'RB', team: 'ATL', adp: 3, headshot_url: null, status: null },
+          leagues: [league],
+          pending: false,
+          error: false,
+          onMove: () => {},
+          onTrade: () => {},
+        }),
+        qc,
+      )
+    const open = tab(inLeague())
+    expect(open).toMatch(/data-profile-league-action="Drop" class="[^"]*bg-m-gr text-m-tr active:bg-m-gr\/70[^"]*">Drop</)
+    expect(open).not.toMatch(/data-profile-league-action="Drop" class="[^"]*text-white/)
+    const locked = tab(lockedInLeague())
+    expect(locked).toContain('On your team · Touchdown Tacos')
+    expect(locked).not.toContain('data-profile-league-action')
+  })
+
   it('leagues tab: his row in each league', () => {
     const qc = inLeague()
     const out = html(

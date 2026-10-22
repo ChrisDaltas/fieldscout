@@ -1,25 +1,24 @@
 import type { Metadata } from 'next'
-import { redirect } from 'next/navigation'
 
 import { LandingPage } from '@/components/landing/landing-page'
-import { createServerClient } from '@/lib/supabase/server'
+
+const title = 'FieldScout — AI powered fantasy football'
+const description =
+  'Full leagues, live drafts, expert and consensus rankings, waiver wire reports, start or sit and advanced stats. All powered by Scout AI.'
 
 export const metadata: Metadata = {
-  title: 'FieldScout — AI powered fantasy football',
-  description:
-    'Full leagues, live drafts, expert and consensus rankings, waiver wire reports, start or sit and advanced stats. All powered by Scout AI.',
+  title,
+  description,
+  openGraph: { title, description, type: 'website', siteName: 'FieldScout' },
 }
 
-/** Public landing page for signed-out visitors; signed-in users go to the app. */
-export default async function GuestHomePage() {
-  const supabase = await createServerClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (user) {
-    redirect('/app')
-  }
-
+/**
+ * Public landing page for signed-out visitors. Signed-in users are sent to
+ * the app by `src/middleware.ts` before this renders (F744): this page must
+ * stay static — no cookies, headers or session reads here — so Next puts its
+ * <title>, description and Open Graph tags in <head>. A per-request render
+ * streams them into <body> instead. `page-metadata.test.ts` pins that.
+ */
+export default function GuestHomePage() {
   return <LandingPage />
 }

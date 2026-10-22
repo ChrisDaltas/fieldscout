@@ -1885,13 +1885,9 @@ export function LineupsGroup({
         <span className={ruleText}>Per-player kickoff</span>
       </FieldRow>
 
-      <ToggleRow
-        id="set-illegal-lineups"
-        label="Allow illegal lineups"
-        hint="Off blocks empty/OUT slots at submit."
-        checked={s.allow_illegal_lineups}
-        onCheckedChange={(allow_illegal_lineups) => onSettings({ allow_illegal_lineups })}
-      />
+      {/* D591 (Chris 2026-10-20; migration 201): "Allow illegal lineups" is RETIRED — a lineup
+          always saves with a bye / injured starter or an empty slot, so there is nothing to
+          choose. A value already stored is ignored. */}
       <ToggleRow
         id="set-auto-sub"
         label="Auto-sub inactives"

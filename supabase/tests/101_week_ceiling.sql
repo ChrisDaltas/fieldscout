@@ -510,6 +510,15 @@ $o199$);
 end
 $un199$;
 
+-- pg_temp.un205 — migration 205's inserted lines removed (each ends
+-- `-- 205 / D593`; 205 changes no line of 199's text); an identity on every
+-- other body (pgTAP 155 A5). RE-PINNED by D593: applied INNERMOST in the cells
+-- that fingerprint roster_add_drop / waiver_claim_submit / process_waivers /
+-- waiver_claim_notify, so they pin exactly what they pinned (additive, R992).
+create function pg_temp.un205(p_src text) returns text language sql as $un205$
+  select regexp_replace(p_src, E'\n[^\n]*   -- 205 / D593', '', 'g')
+$un205$;
+
 -- RE-PINNED BY 180 (F569 part 2 / F573 — wording only): the golden md5s
 -- below read the live bodies with 180's hunks reversed (pg_temp.un180);
 -- pgTAP 128 pins 180's own.
@@ -779,13 +788,13 @@ create function pg_temp.unhunk(p_src text, p_indent text) returns text language 
     p_indent || 'SELECT w.last_game_ends_at INTO v_week_end FROM public.nfl_weeks w' || E'\n')
 $$;
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.unhunk(pg_temp.un156(pg_temp.un157(pg_temp.un160(pg_temp.un164(pg_temp.un170(pg_temp.un180(pg_temp.un199(p.prosrc))))))), case when p.proname = 'commish_roster_override_internal' then '    ' else '  ' end)), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.unhunk(pg_temp.un156(pg_temp.un157(pg_temp.un160(pg_temp.un164(pg_temp.un170(pg_temp.un180(pg_temp.un199(pg_temp.un205(p.prosrc)))))))), case when p.proname = 'commish_roster_override_internal' then '    ' else '  ' end)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('roster_add_drop_internal', 'commish_roster_override_internal', 'process_waivers_internal', 'trade_execute_internal')),
   'commish_roster_override_internal=42e165a610082723c1124d1dc872d648 process_waivers_internal=faaca7fba5fff976f4fa811678e553aa roster_add_drop_internal=a30621f38adb8b114a4a903b068eeb8e trade_execute_internal=ef4648770bd5c18127e5c2270d8aec14',
   'A12 D137 the four roster writers: each live body with 153''s substitutions reversed is its newest definer''s FILE TEXT (152:103-638 / 152:646-1643 / 152:1651-2203 / 151:755-1209 — stored md5 literals)');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un156(pg_temp.un157(pg_temp.un160(pg_temp.un164(pg_temp.un170(pg_temp.un180(pg_temp.un199(p.prosrc)))))))), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un156(pg_temp.un157(pg_temp.un160(pg_temp.un164(pg_temp.un170(pg_temp.un180(pg_temp.un199(pg_temp.un205(p.prosrc))))))))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('pool_game_lock_internal', 'pool_game_lock_any_internal', 'waiver_window_internal',
                                                  'roster_add_drop_internal', 'commish_roster_override_internal',

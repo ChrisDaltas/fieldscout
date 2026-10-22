@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
-import { formatInstantWithDate } from '@/components/leagues/lineup-editor-ops'
+import { currentWeekGamesOver } from '@/components/leagues/healthy-ir-ops'
+import { currentWeekOf, formatInstantWithDate } from '@/components/leagues/lineup-editor-ops'
 import { oprkOf, oprkRankedCount, oprkTone, statusTag, type Tone } from '@/components/leagues/my-team-ops'
 import { NO_SEAT_COPY, VALUES_PROBLEM_COPY, poolRows, valueCells, valueWeekOf, type PoolPlayerRow } from '@/components/leagues/players-page-ops'
 import { STALE_LEAGUE_COPY } from '@/components/leagues/status-banners'
@@ -14,7 +15,7 @@ import { signedDelta } from '@/components/mobile/home/home-ops'
 import { MobileLeagueHeader } from '@/components/mobile/league/league/league-header'
 import { PlayerMoveSheet, type MoveSheetKind } from '@/components/mobile/player/player-move-sheet'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
-import { acquireLabel, cardLeagueView, type CardLeagueView } from '@/components/players/player-card-league-ops'
+import { acquireLabel, cardLeagueView, dropOffered, type CardLeagueView } from '@/components/players/player-card-league-ops'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import { useDebounced } from '@/hooks/use-debounced'
@@ -440,6 +441,10 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
       minBid: detail.settings.faab_min_bid,
       nextRunLocal: nextRun ? formatInstantWithDate(nextRun, tz).local : null,
       formatInstant: (iso) => formatInstantWithDate(iso, tz).local,
+      // D593: a player who isn't IR-eligible in an IR spot closes every + door.
+      irSlots: detail.settings.roster_settings.ir_slots,
+      currentWeek: currentWeekOf(weeks),
+      weekGamesOver: currentWeekGamesOver(weeks, currentWeekOf(weeks)),
     })
 
   const say = (reason: string | undefined) => toast({ title: reason ?? 'Not available right now.' })
@@ -449,12 +454,14 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
     const v = viewOf(player)
     const name = player.full_name
     if (v.kind === 'mine') {
-      const reason = v.drop.open ? null : v.drop.reason
+      // F692 (Chris 2026-10-21): "Drop" only while he is droppable — not
+      // while he is locked for the week (`dropOffered`): no door then.
+      if (!dropOffered(v)) return null
       return {
         kind: 'drop',
-        closed: reason !== null,
-        label: reason !== null ? `Can’t drop ${name} — ${reason}` : `Drop ${name}`,
-        onPress: () => (reason === null ? setMove({ kind: 'drop', player }) : say(reason)),
+        closed: false,
+        label: `Drop ${name}`,
+        onPress: () => setMove({ kind: 'drop', player }),
       }
     }
     if (v.kind === 'theirs') {

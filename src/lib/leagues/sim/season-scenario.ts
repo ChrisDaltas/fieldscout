@@ -97,11 +97,14 @@
  * all thirty-two clubs, and §7.3.6 (114:605-615) refuses a submit that starts
  * a player whose club has NO GAME that week (`lineup_kickoff_internal`
  * returns `on_bye = TRUE` when no `nfl_games` row for the week carries the
- * club — 112:417-422). The D299 matrix guarantees one
+ * club — 112:417-422). The D299 matrix guaranteed one
  * `allow_illegal_lineups = false` league at n >= 5 leagues, and in that
  * league a team would have to fill all six starting slots from six clubs out
  * of seven players drafted from thirty-two — which essentially never happens.
  * Measured: every run at n >= 5 ended RED on `set_lineup` 409s (F286).
+ * (D591 / migration 201 retired the setting — a bye starter no longer refuses
+ * a save — but the full slate stays: the sim's teams should start players
+ * who play.)
  *
  * THE FIX IS TO MAKE THE SIM'S WORLD COMPLETE, not to soften the assertion.
  * The three options F286 recorded were (a) seat only players whose club has a

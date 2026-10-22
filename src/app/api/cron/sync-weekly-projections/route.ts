@@ -14,9 +14,13 @@ import { syncWeeklyProjections } from '@/lib/sync/weekly-projections'
  *
  * Plans the current + next calendar week from `nfl_weeks` at the injected
  * instant (§23.3), fetches Sleeper's weekly projections, and refuses to call
- * a zero-projection or partial week a success. Status: 200 when every
- * planned week landed (or the season is over — named in `plan.reason`), 500
- * otherwise, with every failure named in the body and the log.
+ * a zero-projection or partial week a success. The same run keeps
+ * `players`' injury tags fresh from the feed's `player.injury_*` (PROGRESS
+ * D592 — the Tuesday player sync alone left a cleared player tagged all
+ * week); every change is in `injuryChanges` and the counts. Status: 200 when
+ * every planned week landed (or the season is over — named in
+ * `plan.reason`), 500 otherwise, with every failure named in the body and
+ * the log.
  */
 
 export const maxDuration = 60
@@ -35,7 +39,7 @@ export async function GET(request: Request) {
     const report = await syncWeeklyProjections({ db: createAdminClient(), time: systemTime }, { season })
     for (const w of report.warnings) console.warn('[sync-weekly-projections]', w)
     for (const f of report.failures) console.error('[sync-weekly-projections] FAILURE', f)
-    console.log('[sync-weekly-projections]', JSON.stringify({ season, plan: report.plan, counts: report.counts, ok: report.ok }))
+    console.log('[sync-weekly-projections]', JSON.stringify({ season, plan: report.plan, counts: report.counts, injuryChanges: report.injuryChanges, ok: report.ok }))
     return NextResponse.json(report, { status: report.ok ? 200 : 500 })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

@@ -1493,9 +1493,17 @@ function ManualEditSection({
       )}
 
       {armed && !gate.blocked && (
-        <div className="flex flex-col gap-1.5" aria-label="Drafted players by team">
+        // L.F1.1 (F55's L.C3.2 member, D623): the armed grid is a named
+        // group of named per-team groups — a bare `aria-label` on a plain
+        // div names nothing, and the cells read as one flat button run.
+        <div className="flex flex-col gap-1.5" role="group" aria-label="Drafted players by team">
           {columns.map((column) => (
-            <div key={column.teamId} className="flex flex-col gap-1">
+            <div
+              key={column.teamId}
+              className="flex flex-col gap-1"
+              role="group"
+              aria-label={column.name}
+            >
               <span className="fs-overline text-n-6">
                 {column.name}
                 {column.budget ? ` · $${column.budget.remaining} left` : ''}
@@ -1925,7 +1933,13 @@ function BudgetSection({
           refusal, with its own numbers and remedy, is what a commissioner
           reads if a floor is really breached. */}
       {preview.before && (
-        <div className="flex flex-col gap-0.5 rounded-xl bg-surface-sunken px-3 py-2 text-[11px] font-medium">
+        // L.F1.1 (F55's L.C3.2 member, D623): the preview updates as the
+        // delta is typed, so it is a polite live region — a screen-reader
+        // user hears what the adjustment would leave.
+        <div
+          role="status"
+          className="flex flex-col gap-0.5 rounded-xl bg-surface-sunken px-3 py-2 text-[11px] font-medium"
+        >
           <span className="fs-overline text-n-6">
             {parsedDelta === null || parsedDelta === 0 ? 'Now' : 'After this adjustment'}
           </span>

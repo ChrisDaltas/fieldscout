@@ -12,6 +12,7 @@ import {
   AuthSwitchLink,
 } from '@/components/landing/auth-modal'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { safeRedirectPath } from '@/utils/safe-redirect-path'
 
 /** Sign-in modal over the landing page (`/login`; see AuthModal). */
 export function SignInModal() {
@@ -26,7 +27,8 @@ export function SignInModal() {
 
 function SignInForm() {
   const searchParams = useSearchParams()
-  const redirect = searchParams.get('redirect') ?? '/app'
+  // Same-origin paths only (validated, normalized); anything else → /app.
+  const redirect = safeRedirectPath(searchParams.get('redirect'))
   const supabase = createBrowserClient()
 
   const [email, setEmail] = useState('')

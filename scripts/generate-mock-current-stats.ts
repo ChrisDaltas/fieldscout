@@ -8,6 +8,8 @@ import { createClient } from '@supabase/supabase-js'
 import { config } from 'dotenv'
 import { resolve } from 'node:path'
 
+import { isLocalSupabaseUrl } from '../src/utils/local-supabase-url'
+
 config({ path: resolve(process.cwd(), '.env.local') })
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -15,6 +17,13 @@ const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   console.error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local')
+  process.exit(1)
+}
+
+// LOCAL ONLY: `.env.local` points at the hosted project, so refuse any URL
+// that is not the local stack (scripts/restore-dev.sh exports the local one).
+if (!isLocalSupabaseUrl(SUPABASE_URL)) {
+  console.error('refusing: this script writes mock stats and runs against the local Supabase stack only')
   process.exit(1)
 }
 

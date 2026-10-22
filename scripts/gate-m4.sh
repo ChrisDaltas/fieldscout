@@ -182,8 +182,8 @@
 #     fails only on a write it cannot explain, or one to a `final` week.
 #   - D299's "strict/lax locks" axis, which is a RETIREMENT and not a gap:
 #     Q34(A)/114 collapsed `lineup_lock` to one value and Q35/115 stripped
-#     `player_game_lock` from settings. The surviving lock axis is
-#     `allow_illegal_lineups`, which the matrix draws (sim-types.ts:86-102).
+#     `player_game_lock` from settings, and D591 / migration 201 retired the
+#     last one, `allow_illegal_lineups` — the matrix draws no lock axis.
 #
 # FLAKE POLICY (the F113/F132 doctrine — a red is investigated against the
 # NAMED mechanisms, never blanket-retried; an UNNAMED red FAILS the gate).

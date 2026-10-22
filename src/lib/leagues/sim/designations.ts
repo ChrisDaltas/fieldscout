@@ -4,13 +4,13 @@
  * import without a cycle (L.D6.3; extracted from `season-runner.ts`, which
  * re-exports it so every existing importer and its pins are unmoved).
  *
- * It lives alone because two callers now need it at two different times: the
- * SEASON RUNNER when it chooses what to submit as a lineup, and — since F288 —
- * the DRAFT RUNNER's need-aware season personas, which must not draft a player
- * into a starting slot that §7.3.6 would refuse in an
- * `allow_illegal_lineups = false` league (that seat has one bench spot and no
- * cover for him). `season-runner.ts` imports `runner.ts`, so the reverse
- * import would have been a module cycle.
+ * It lives alone because several callers read it: the sim-world mask (F374),
+ * the transaction harness's free-agent choice and the seating reads. (Until
+ * D591 the season runner and the draft runner's need-aware personas also used
+ * it to pass over a starter §7.3.6 refused in an `allow_illegal_lineups =
+ * false` league; migration 201 retired the setting, so nobody is passed over
+ * now.) `season-runner.ts` imports `runner.ts`, so the reverse import would
+ * have been a module cycle.
  */
 
 /**
