@@ -20,10 +20,14 @@ to reload to see changes.
   shows **"Reconnecting — syncing the room…"** and reloads the room.
 - A pick, bid, lineup change or claim is saved by the server whether or not
   live updates are working. Nothing is lost. People just see it late.
-- The spec says clients fall back to polling every 10 seconds. That is
-  **not built**: pages reload on reconnect, not on a timer (F758). So while
-  the connection stays down, a page catches up only when it reconnects or
-  is reloaded.
+- While the connection is down, the **draft room** and the **live scoring
+  screens** (League Home's scoreboard, Matchup and My Team, on desktop and
+  phone) reload their data **every 10 seconds** (F758 / D690). They stop
+  the moment the connection is back, and skip it while the tab is in the
+  background. If a reload fails, the page keeps what it last showed, behind
+  its "… isn't refreshing — showing the last state we read" banner. Every
+  other league page (standings, activity, schedule, players, trades) still
+  catches up only when it reconnects or is reloaded.
 
 ## What you cannot do (not built in 2026)
 

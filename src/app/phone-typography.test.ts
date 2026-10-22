@@ -3,6 +3,7 @@ import path from 'node:path'
 import { brotliDecompressSync } from 'node:zlib'
 
 import postcss, { type Declaration, type Rule } from 'postcss'
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 /**
@@ -99,6 +100,32 @@ describe('the phone font file', () => {
     expect(licence).toMatch(/PERMISSION & CONDITIONS[\s\S]*TERMINATION[\s\S]*DISCLAIMER/)
   })
 
+  it('stays subset (L.F1.4): the full 367 KB build cost a phone ~1.8 s of first paint; the subset is 125,676 bytes', () => {
+    // A re-export of the full build (every script, 2,937 glyphs) fails here.
+    expect(statSync(path.join(ROOT, 'src/app/fonts/inter-variable.woff2')).size).toBeLessThanOrEqual(130_000)
+  })
+
+  it('covers every non-ASCII character a .tsx string or JSX text draws (R1625), bar the named fallbacks', () => {
+    const covered = subsetCodePoints(readFileSync(path.join(ROOT, 'src/app/fonts/inter-variable.unicodes.txt'), 'utf8'))
+    // Sanity: the list parsed, and holds Latin Extended-A (R1626).
+    expect(covered.has(0x41)).toBe(true)
+    expect(covered.has(0x0141)).toBe(true) // Ł
+    const uncovered = new Map<string, string>()
+    for (const file of sourceFiles(path.join(ROOT, 'src')).filter((f) => f.endsWith('.tsx'))) {
+      for (const text of stringTexts(readFileSync(file, 'utf8'))) {
+        for (const ch of text) {
+          const cp = ch.codePointAt(0)!
+          if (cp <= 0x7e || covered.has(cp) || FALLBACK_ALLOWLIST.has(ch)) continue
+          if (!uncovered.has(ch)) uncovered.set(ch, `U+${cp.toString(16).toUpperCase().padStart(4, '0')} in ${path.relative(ROOT, file)}`)
+        }
+      }
+    }
+    // Add a new character to inter-variable.unicodes.txt and re-cut the font
+    // (command in the file's header) — or, if Inter can't draw it, to
+    // FALLBACK_ALLOWLIST with the reason.
+    expect([...uncovered.values()]).toEqual([])
+  })
+
   it('layout.tsx loads it as --font-inter-phone without a preload, so desktop never downloads it', () => {
     const layout = readFileSync(path.join(ROOT, 'src/app/layout.tsx'), 'utf8')
     const call = /localFont\(\{([\s\S]*?)\}\)/.exec(layout)?.[1] ?? ''
@@ -110,6 +137,49 @@ describe('the phone font file', () => {
 })
 
 // ---------------------------------------------------------------------------
+
+/**
+ * Characters the app draws that the phone font deliberately does NOT carry —
+ * each falls back to the Google Inter (every script, loaded on demand) or the
+ * system font. Keep it small and say why.
+ */
+const FALLBACK_ALLOWLIST = new Map<string, string>([
+  // Not in Inter at all (not even the full 367 KB build), so these always fell
+  // back to the system font — the subset changed nothing for them.
+  ['\u{1F512}', 'lock emoji — claim dialog; system emoji font'],
+  ['✸', 'heavy eight-pointed star — matchup view; not an Inter glyph'],
+  ['⇄', 'right-over-left arrows — trade center; not an Inter glyph'],
+])
+
+/** inter-variable.unicodes.txt → its code points (`U+XXXX` or `U+XXXX-YYYY`, `#` comments). */
+function subsetCodePoints(list: string): Set<number> {
+  const out = new Set<number>()
+  for (const raw of list.split('\n')) {
+    const line = raw.replace(/#.*/, '').trim()
+    if (!line) continue
+    const m = /^U\+([0-9A-F]{4,6})(?:-([0-9A-F]{4,6}))?$/i.exec(line)
+    expect(m, `bad line in inter-variable.unicodes.txt: ${raw}`).not.toBeNull()
+    const lo = parseInt(m![1], 16)
+    const hi = m![2] ? parseInt(m![2], 16) : lo
+    for (let cp = lo; cp <= hi; cp++) out.add(cp)
+  }
+  return out
+}
+
+/** The text of every string literal, template piece and JSX text run in a
+ *  source file — comments are never tokens, so they are skipped for free. */
+function stringTexts(source: string): string[] {
+  const out: string[] = []
+  const sf = ts.createSourceFile('x.tsx', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX)
+  const visit = (node: ts.Node): void => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) out.push(node.text)
+    else if (ts.isJsxText(node)) out.push(node.text)
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  return out
+}
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = []

@@ -7,6 +7,8 @@ import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 
 import { useLeagueChannel } from './use-league-channel'
 import { matchupsHandlers, matchupsInvalidationKeys } from './use-matchups-ops'
+import { useRealtimeFallbackPoll } from './use-realtime-fallback-poll'
+import { invalidateForFallbackPoll } from './use-realtime-fallback-poll-ops'
 
 /**
  * One week's matchups, live scores and results — M4 task L.D4.1 (spec
@@ -62,8 +64,18 @@ export function useMatchups(leagueId: string | undefined, week: number | undefin
  * The fetch + subscribe half — what a mounted matchup view uses. Returns
  * the query plus the spine's `connection` for the §16.5.4 reconnecting
  * banner.
+ *
+ * `fallbackPoll` (§24.3 / F758): while the room is DOWN, re-read the week's
+ * matchups and box scores every 10 s — the same keys a rejoin refetches.
+ * Only the live scoring screens pass it (League Home's scoreboard, Matchup,
+ * My Team and their phone equivalents); everywhere else the hook is
+ * unchanged.
  */
-export function useMatchupsLive(leagueId: string | undefined, week: number | undefined) {
+export function useMatchupsLive(
+  leagueId: string | undefined,
+  week: number | undefined,
+  opts?: { fallbackPoll?: boolean },
+) {
   const query = useMatchups(leagueId, week)
   const queryClient = useQueryClient()
 
@@ -76,11 +88,16 @@ export function useMatchupsLive(leagueId: string | undefined, week: number | und
     }
   }
 
-  const { connection } = useLeagueChannel(
+  const { connection, degraded } = useLeagueChannel(
     leagueId,
     matchupsHandlers(week ?? 0, invalidate),
     { onJoin: invalidate, onDrop: invalidate },
   )
 
-  return { ...query, connection }
+  useRealtimeFallbackPoll(Boolean(opts?.fallbackPoll) && degraded, () => {
+    if (!leagueId || week === undefined) return
+    invalidateForFallbackPoll(queryClient, matchupsInvalidationKeys(leagueId, week))
+  })
+
+  return { ...query, connection, degraded }
 }

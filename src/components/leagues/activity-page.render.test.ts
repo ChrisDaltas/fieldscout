@@ -172,7 +172,7 @@ function render(
   qc.setQueryData(scheduleKeys.all(LEAGUE), SCHEDULE)
   if (opts.feed) seedInfinite(qc, leagueActivityKeys.pages(LEAGUE, opts.feed.filters), opts.feed.seed)
   if (opts.log) seedInfinite(qc, commishLogKeys.list(LEAGUE, opts.log.filters), opts.log.seed)
-  vi.mocked(useLeagueChannel).mockReturnValue({ connection: opts.connection ?? 'live' })
+  vi.mocked(useLeagueChannel).mockReturnValue({ connection: opts.connection ?? 'live', degraded: false })
   const initial: ActivityRoute = { tab: 'all', week: null, team: null, entry: null, ...route }
   return renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(ActivityPage, { leagueId: LEAGUE, initial })))
     .replace(/&#x27;/g, "'")
