@@ -205,3 +205,35 @@ export function chatDraftSendable(text: string): boolean {
   const trimmed = text.trim()
   return trimmed.length >= 1 && trimmed.length <= CHAT_MAX_LENGTH
 }
+
+// ---------------------------------------------------------------------------
+// Chat pace (§22.5 — 5 messages per 10 s; migration 209's league_chat guard)
+// ---------------------------------------------------------------------------
+
+/** §22.5's chat allowance, mirrored from 209's `rate_limit_rule_internal`
+ *  (the database is the authority; this is prevent-don't-refuse). */
+export const CHAT_RATE_LIMIT = { maxMessages: 5, windowMs: 10_000 } as const
+
+/**
+ * How long until this member may post again, from the instants of his own
+ * posts that landed (ms; 0 = now). The same strict sliding window as 209: a
+ * post at t counts for [t, t + window). The composer disables Send for this
+ * long, so the server's 429 is a backstop the member should never meet.
+ */
+export function chatCooldownMs(
+  sentAtMs: readonly number[],
+  nowMs: number,
+  limit: { maxMessages: number; windowMs: number } = CHAT_RATE_LIMIT,
+): number {
+  const live = sentAtMs.filter((t) => t > nowMs - limit.windowMs).sort((a, b) => a - b)
+  if (live.length < limit.maxMessages) return 0
+  // The oldest post that must leave the window before one more fits.
+  const oldest = live[live.length - limit.maxMessages]
+  return Math.max(0, oldest + limit.windowMs - nowMs)
+}
+
+/** The composer's hint while Send waits on the pace. */
+export function chatCooldownHint(waitMs: number): string {
+  const seconds = Math.max(1, Math.ceil(waitMs / 1000))
+  return `Slow down a little — you can send again in ${seconds === 1 ? '1 second' : `${seconds} seconds`}.`
+}

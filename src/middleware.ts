@@ -1,6 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+import {
+  classifyRateLimitedRequest,
+  parseRateLimitTake,
+  rateLimitedResponseParts,
+  type RateLimitTarget,
+} from '@/lib/rate-limit/route-limits'
+
 const PROTECTED_PATHS = ['/app']
 const AUTH_PATHS = ['/login', '/signup', '/forgot-password', '/reset-password', '/username']
 
@@ -38,6 +45,53 @@ function redirectPreservingAuthCookies(
   return redirect
 }
 
+/**
+ * §22.5 route-layer rate limits (M7 L.F2.6; migration 209; PROGRESS D700–D706).
+ * One `rate_limit_take` per league / practice-draft write, as the signed-in
+ * member (the door spends only the caller's own allowance). Returns the 429
+ * to send, or `null` to let the request through.
+ *
+ * FAILS OPEN — any limiter error (the function not pushed yet: PGRST202; a
+ * database blip; an answer of the wrong shape) lets the request through and
+ * logs it. A missing limiter is today's behaviour (tasks-M7 §7 deploy
+ * safety), and a limiter fault must never stop a draft; the route's own RPC
+ * is the authority either way. A refusal is never silent: 429, plain words,
+ * `Retry-After`, and the auth cookies this request produced (the same
+ * footgun as the redirects above).
+ */
+async function rateLimitRefusal(
+  supabase: ReturnType<typeof createServerClient>,
+  target: RateLimitTarget,
+  supabaseResponse: NextResponse,
+): Promise<NextResponse | null> {
+  try {
+    const { data, error } = await supabase.rpc('rate_limit_take', {
+      p_bucket: target.bucket,
+      p_scope: target.scope,
+    })
+    if (error) {
+      console.error('[rate-limit] limiter unavailable, letting the request through:', error.code, error.message)
+      return null
+    }
+    const take = parseRateLimitTake(data)
+    if (!take) {
+      console.error('[rate-limit] limiter answered an unexpected shape, letting the request through')
+      return null
+    }
+    if (take.allowed) return null
+
+    const { body, retryAfter } = rateLimitedResponseParts(target.bucket, take.retry_after_ms)
+    const refusal = NextResponse.json(body, { status: 429, headers: { 'Retry-After': retryAfter } })
+    for (const cookie of supabaseResponse.cookies.getAll()) {
+      refusal.cookies.set(cookie)
+    }
+    return refusal
+  } catch (err) {
+    console.error('[rate-limit] limiter threw, letting the request through:', err)
+    return null
+  }
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -65,6 +119,12 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
+
+  const rateLimitTarget = user ? classifyRateLimitedRequest(request.method, pathname) : null
+  if (rateLimitTarget) {
+    const refusal = await rateLimitRefusal(supabase, rateLimitTarget, supabaseResponse)
+    if (refusal) return refusal
+  }
 
   // Redirect unauthenticated users away from protected routes
   const isProtected = PROTECTED_PATHS.some((p) => pathname.startsWith(p))

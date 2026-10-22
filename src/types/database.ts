@@ -4077,6 +4077,38 @@ export type Database = {
           },
         ]
       }
+      rate_limit_hits: {
+        Row: {
+          bucket: string
+          hits: string[]
+          scope: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bucket: string
+          hits?: string[]
+          scope: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bucket?: string
+          hits?: string[]
+          scope?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rate_limit_hits_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       research_configs: {
         Row: {
           columns: Json
@@ -6837,6 +6869,26 @@ export type Database = {
       }
       process_waivers_internal: {
         Args: { p_at: string; p_league_id: string }
+        Returns: Json
+      }
+      rate_limit_rule_internal: {
+        Args: { p_bucket: string }
+        Returns: {
+          max_hits: number
+          window_ms: number
+        }[]
+      }
+      rate_limit_take: {
+        Args: { p_bucket: string; p_scope: string }
+        Returns: Json
+      }
+      rate_limit_take_internal: {
+        Args: {
+          p_bucket: string
+          p_now: string
+          p_scope: string
+          p_user_id: string
+        }
         Returns: Json
       }
       rebuild_team_week_results: {

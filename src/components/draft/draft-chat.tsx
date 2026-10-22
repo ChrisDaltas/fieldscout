@@ -11,12 +11,16 @@ import { TextWithActor, UsernameLink } from '@/components/shared/username-link'
 import { useDraftChat, useSendDraftChat } from '@/hooks/use-draft-chat'
 import {
   CHAT_MAX_LENGTH,
+  CHAT_RATE_LIMIT,
   chatAuthorsById,
+  chatCooldownHint,
+  chatCooldownMs,
   chatDraftSendable,
   chatItemView,
   type ChatItemView,
 } from '@/hooks/use-draft-chat-ops'
 import { toast } from '@/hooks/use-toast'
+import { systemTime } from '@/lib/leagues/time/time-provider'
 import { cn } from '@/lib/utils'
 
 import type { RoomScope } from './room-scope'
@@ -89,22 +93,42 @@ export function DraftChat({ scope, draftId, userId, className }: DraftChatProps)
     if (el) el.scrollTop = el.scrollHeight
   }, [items.length])
 
-  const sendable = chatDraftSendable(text) && Boolean(userId) && !send.isPending
+  // §22.5 chat pace (L.F2.6 — 5 per 10 s; 209's league_chat guard is the
+  // authority). The instants of this member's own posts that LANDED; Send
+  // waits out the window instead of meeting the server's 429. Sampled at
+  // render through the TimeProvider seam; the timer only causes the render
+  // that re-enables Send.
+  const [sentAtMs, setSentAtMs] = useState<number[]>([])
+  const [, setPaceTick] = useState(0)
+  const waitMs = chatCooldownMs(sentAtMs, systemTime.now().getTime())
+  useEffect(() => {
+    if (waitMs <= 0) return
+    const timer = setTimeout(() => setPaceTick((n) => n + 1), waitMs)
+    return () => clearTimeout(timer)
+  }, [waitMs])
+
+  const sendable = chatDraftSendable(text) && Boolean(userId) && !send.isPending && waitMs === 0
   const handleSend = () => {
     if (!sendable) return
     const message = text
     setText('')
-    send.mutateAsync(message).catch((error: unknown) => {
-      setText(message) // give the draft back — nothing was posted
-      toast({
-        title: 'Message not sent',
-        description:
-          error instanceof Error && error.message
-            ? error.message
-            : 'Something went wrong. Try again.',
-        variant: 'destructive',
+    send
+      .mutateAsync(message)
+      .then(() => {
+        const now = systemTime.now().getTime()
+        setSentAtMs((prev) => [...prev.filter((t) => t > now - CHAT_RATE_LIMIT.windowMs), now])
       })
-    })
+      .catch((error: unknown) => {
+        setText(message) // give the draft back — nothing was posted
+        toast({
+          title: 'Message not sent',
+          description:
+            error instanceof Error && error.message
+              ? error.message
+              : 'Something went wrong. Try again.',
+          variant: 'destructive',
+        })
+      })
   }
 
   return (
@@ -176,6 +200,11 @@ export function DraftChat({ scope, draftId, userId, className }: DraftChatProps)
               <Icon name="send" size={13} />
             </Button>
           </div>
+        )}
+        {!standalone && waitMs > 0 && (
+          <p role="status" className="text-[11px] text-muted-foreground">
+            {chatCooldownHint(waitMs)}
+          </p>
         )}
       </CardContent>
     </Card>
