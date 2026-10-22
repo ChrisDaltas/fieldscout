@@ -7,6 +7,8 @@ import type { LeagueRosters } from '@/lib/leagues/api/rosters-service'
 
 import { useLeagueChannel } from './use-league-channel'
 import { invalidatingHandlers, rostersEventInvalidates } from './use-league-channel-ops'
+import { useRealtimeFallbackPoll } from './use-realtime-fallback-poll'
+import { invalidateForFallbackPoll } from './use-realtime-fallback-poll-ops'
 
 /**
  * Every franchise's roster — M4 task L.D4.1 (spec §15.3/§15.6; PROGRESS
@@ -62,8 +64,11 @@ export function useRosters(leagueId: string | undefined) {
  * The fetch + subscribe half — what a mounted roster surface uses. Returns
  * the query plus the spine's `connection` for the §16.5.4 reconnecting
  * banner.
+ *
+ * `fallbackPoll` (§24.3 / F758): while the room is DOWN, re-read the rosters
+ * every 10 s. Only My Team (desktop and phone) passes it.
  */
-export function useRostersLive(leagueId: string | undefined) {
+export function useRostersLive(leagueId: string | undefined, opts?: { fallbackPoll?: boolean }) {
   const query = useRosters(leagueId)
   const queryClient = useQueryClient()
 
@@ -72,11 +77,16 @@ export function useRostersLive(leagueId: string | undefined) {
     void queryClient.invalidateQueries({ queryKey: leagueRosterKeys.all(leagueId) })
   }
 
-  const { connection } = useLeagueChannel(
+  const { connection, degraded } = useLeagueChannel(
     leagueId,
     invalidatingHandlers(rostersEventInvalidates, invalidate),
     { onJoin: invalidate, onDrop: invalidate },
   )
 
-  return { ...query, connection }
+  useRealtimeFallbackPoll(Boolean(opts?.fallbackPoll) && degraded, () => {
+    if (!leagueId) return
+    invalidateForFallbackPoll(queryClient, [leagueRosterKeys.all(leagueId)])
+  })
+
+  return { ...query, connection, degraded }
 }

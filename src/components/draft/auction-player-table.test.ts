@@ -465,6 +465,9 @@ describe('§16.5.4 states, D140 vocabulary, and the design rules', () => {
             'useState(',
             'useEffect(',
             'useMemo(',
+            // R1633 (L.F1.1): the filter-change announcement's bookkeeping —
+            // React's own hook, not a data read.
+            'useRef(',
             'useToggleDndMark(',
             'useAuctionColumnsStore(',
             'usePlayerWindowsStore(',

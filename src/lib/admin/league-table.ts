@@ -122,3 +122,46 @@ export function roleWords(role: string): string {
   if (role === 'co_commissioner') return 'Co-commissioner'
   return 'Manager'
 }
+
+// ---------------------------------------------------------------------------
+// FieldScout replaces a missing commissioner (F750; migration 208
+// `op_set_commissioner`; spec §24.4 v2.16.106).
+// ---------------------------------------------------------------------------
+
+export const SET_COMMISSIONER_UNAVAILABLE = 'Replacing a commissioner is not available yet.'
+
+/** Who can be made the commissioner: a person in the seat (not a vacant or
+ *  placeholder seat) who is not already the commissioner, in a league that is
+ *  not deleted. The RPC refuses the rest; the page never offers them. */
+export function canBeMadeCommissioner(member: OpLeagueMember, league: Pick<OpLeagueRow, 'deleted_at'>): boolean {
+  return league.deleted_at === null && !member.vacant && member.user_id !== null && member.role !== 'commissioner'
+}
+
+function memberName(m: OpLeagueMember): string {
+  return m.username ?? m.team_name ?? 'This member'
+}
+
+/** The confirm dialog's Now / After for making `member` the commissioner. */
+export function commissionerBeforeAfter(
+  member: OpLeagueMember,
+  members: readonly OpLeagueMember[],
+): { before: string; after: string } {
+  const sitting = members.find((m) => m.role === 'commissioner' && m.member_id !== member.member_id)
+  const name = memberName(member)
+  const now = `${name} is a ${roleWords(member.role).toLowerCase()}.`
+  if (!sitting) {
+    return {
+      before: `This league has no commissioner. ${now}`,
+      after: `${name} is the commissioner. The league sees “FieldScout made ${name} the commissioner.”`,
+    }
+  }
+  const old = memberName(sitting)
+  return {
+    before: `${old} is the commissioner. ${now}`,
+    after: `${name} is the commissioner. ${old} is a co-commissioner and keeps their team. The league sees “FieldScout made ${name} the commissioner. ${old} is now a co-commissioner.”`,
+  }
+}
+
+export function setCommissionerUrl(leagueId: string): string {
+  return `/api/admin/leagues/${encodeURIComponent(leagueId)}/commissioner`
+}

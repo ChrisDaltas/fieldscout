@@ -36,6 +36,7 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 
 import { LineupEditor, railTargetProps, type LineupStats } from './lineup-editor'
 import { KEPT_STARTER_COPY, KEPT_STARTER_OTHER_WEEK_COPY, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
+import { HEALTHY_IR_BLOCKED_LINE, HEALTHY_IR_HEADLINE, HEALTHY_IR_MOVE_NEXT_WEEK, HEALTHY_IR_STILL_OPEN, HEALTHY_IR_WAYS } from './healthy-ir-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, NO_SEAT_ROW_AUTOPILOT_COPY } from './team-commish-ops'
 import { TeamPage } from './team-page'
@@ -333,6 +334,61 @@ function unescapeHtml(html: string): string {
 // The states checklist (§16.5.4)
 // ---------------------------------------------------------------------------
 
+describe('D593 — a healthy man left in my IR spot: the notice above the lineup', () => {
+  const spot = `${settings.roster_settings.ir_slots[0]!.key}:0`
+  const withIr = (status: string, over: Partial<RosterPlayer> = {}): Seed => ({
+    rosters: {
+      ...rosters,
+      teams: [
+        { ...rosters.teams[0]!, roster: [...roster, player({ player_id: 'ir-man', position: 'RB', full_name: 'Render IR Man', status, slot_key: spot, ir_placed_week: 1, ...over })] },
+        rosters.teams[1]!,
+      ],
+    },
+    lineup: { ...lineupRow, slot_map: { ...lineupRow.slot_map, [spot]: 'ir-man' } },
+  })
+  it('Chris’s headline, then his name and the two ways out, on the soft red tint (the bright red is the headline’s words only)', () => {
+    const html = renderTeamPage(withIr('Active'))
+    expect(html).toContain('data-healthy-ir-notice')
+    expect(html).toContain('<span class="text-negative-strong">You have an ineligible player in your IR spot. <span data-healthy-ir-blocked="true">Player adds and waiver claims will be blocked until that is fixed.</span></span>')
+    expect(html).toContain('Render IR Man is healthy.')
+    expect(html).not.toContain('move him out of your IR spot to add players')
+    for (const way of HEALTHY_IR_WAYS) expect(html).toContain(way)
+    expect(html).toContain(HEALTHY_IR_STILL_OPEN)
+    expect(html).toContain('bg-negative-soft')
+    expect(html).not.toMatch(/bg-negative-strong|bg-destructive/)
+  })
+  it('F690: his game has started — the notice never prescribes the locked move; it says when a drop opens and that the move waits for next week', () => {
+    const html = renderTeamPage(withIr('Active', { game_lock: { state: 'locked_release_unrecorded', until: null } }))
+    expect(html).toContain(HEALTHY_IR_HEADLINE)
+    expect(html).toContain('Render IR Man is healthy, but his game has started — he’s locked in the spot, so you can’t add players yet.')
+    expect(html).toContain('You can drop him once this week’s games end.')
+    expect(html).toContain(HEALTHY_IR_MOVE_NEXT_WEEK)
+    for (const way of HEALTHY_IR_WAYS) expect(html).not.toContain(way)
+  })
+  it('the notice reads Chris’s two sentences (2026-10-21), with or without pending claims; no old claims line', () => {
+    for (const claims of ['one', 'two', 'lost', 'empty', undefined] as const) {
+      const html = renderTeamPage({ ...withIr('Active'), claims })
+      expect(html).toContain(HEALTHY_IR_HEADLINE)
+      expect(html).toContain(HEALTHY_IR_BLOCKED_LINE)
+      expect(html).not.toContain('will fail when waivers run')
+    }
+    // Nothing in the IR spot: no notice at all.
+    expect(renderTeamPage({ claims: 'one' })).not.toContain(HEALTHY_IR_BLOCKED_LINE)
+  })
+  it('a Questionable man in the spot is named as listed, never "healthy"', () => {
+    const html = renderTeamPage(withIr('Questionable'))
+    expect(html).toContain(HEALTHY_IR_HEADLINE)
+    expect(html).toContain('Render IR Man is listed Questionable.')
+    expect(html).not.toContain('Render IR Man is healthy')
+  })
+  it('none while he still fits the spot, and none before the season', () => {
+    expect(renderTeamPage(withIr('Out'))).not.toContain('data-healthy-ir-notice')
+    expect(renderTeamPage()).not.toContain('data-healthy-ir-notice')
+    const preseason = { ...detail, league: { ...detail.league, status: 'drafting' } }
+    expect(renderTeamPage({ ...withIr('Active'), detail: preseason })).not.toContain('data-healthy-ir-notice')
+  })
+})
+
 describe('team page — the four required states per surface', () => {
   it('skeleton while the league loads; skeleton for the editor while the roster loads', () => {
     expect(renderTeamPage({ detail: 'missing' })).toContain('bg-n-4')
@@ -412,9 +468,11 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
   it('F259(a): the page passes NO poll — the room’s `league_player_pool` event (119) refetches the lock view', () => {
     vi.mocked(useRostersLive).mockClear()
     renderTeamPage()
-    // One argument: the league id. No `{ refetchInterval }` — the 60 s poll
-    // L.D5.1 added (R822(ii)) retired at L.D5.4 with the tick's broadcast.
-    expect(vi.mocked(useRostersLive).mock.calls.at(-1)).toEqual([LEAGUE])
+    // The league id and ONLY the §24.3 outage fallback (F758 / D690 — a
+    // 10 s poll that runs while the room is DOWN and stops on SUBSCRIBED).
+    // No `{ refetchInterval }` — the always-on 60 s poll L.D5.1 added
+    // (R822(ii)) retired at L.D5.4 with the tick's broadcast.
+    expect(vi.mocked(useRostersLive).mock.calls.at(-1)).toEqual([LEAGUE, { fallbackPoll: true }])
   })
 
   it('F252(c): no lineup read for week 1 while the ladder is still pending', () => {
@@ -450,7 +508,6 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             teamId: TEAM,
             week: 1,
             settings: settings.roster_settings,
-            allowIllegal: true,
             roster,
             stored: lineupRow,
             currentWeek: 1,
@@ -494,7 +551,6 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             teamId: TEAM,
             week: 1,
             settings: settings.roster_settings,
-            allowIllegal: true,
             roster,
             stored: lineupRow,
             currentWeek: 1,
@@ -717,7 +773,7 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     expect(qb).toContain('Empty')
   })
 
-  it('bye starter: the server flag chip under allow_illegal_lineups = true is caution copy', () => {
+  it('bye starter: the server flag chip is caution copy, never a refusal (D591 — the setting is retired)', () => {
     const html = renderTeamPage()
     const wr = html.slice(html.indexOf('data-slot="wr:0"'), html.indexOf('data-bench'))
     expect(wr).toContain('Bye — scores 0')
@@ -758,7 +814,6 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             teamId: TEAM,
             week: 1,
             settings: settings.roster_settings,
-            allowIllegal: true,
             roster,
             stored: lineupRow,
             currentWeek: 2,
@@ -1041,7 +1096,6 @@ describe('L.D2.13 — the FAAB balance on the team page; a dropped-but-played st
               teamId: TEAM,
               week: 1,
               settings: settings.roster_settings,
-              allowIllegal: true,
               roster,
               stored,
               currentWeek,
@@ -1164,7 +1218,6 @@ describe('My Team (League UX batch 3) — stats, checks, matchup, read-only', ()
             teamId: TEAM,
             week: 1,
             settings: settings.roster_settings,
-            allowIllegal: true,
             roster,
             stored: lineupRow,
             currentWeek: 1,

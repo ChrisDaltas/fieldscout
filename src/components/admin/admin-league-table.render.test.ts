@@ -15,8 +15,11 @@ vi.mock('next/navigation', () => ({ usePathname: () => '/app/admin/leagues', use
 
 import { AdminApiError } from '@/lib/admin/admin-api'
 import {
+  canBeMadeCommissioner,
+  commissionerBeforeAfter,
   LEAGUE_TABLE_UNAVAILABLE,
   leagueTableUrl,
+  setCommissionerUrl,
   pageWords,
   recordWords,
   type OpLeagueDetail,
@@ -146,6 +149,51 @@ describe('League page: Members and Settings', () => {
 
   it('a league with no members says so', () => {
     expect(html(createElement(LeagueDetailBody, { detail: { ...detail, members: [] } }))).toContain('No one has joined this league.')
+  })
+})
+
+describe('League page: Make commissioner (F750, migration 208)', () => {
+  const withCo: OpLeagueDetail = {
+    ...detail,
+    members: [
+      ...detail.members,
+      { member_id: 'm4', team_id: 't4', team_name: 'Cats', team_status: 'active', user_id: 'u4', username: 'sam', role: 'co_commissioner', joined_at: '2026-08-03T12:00:00Z', vacant: false, autopilot: false, record: null },
+    ],
+  }
+
+  it('offers the control to every person who is not the commissioner — a manager and a co-commissioner, never the commissioner or an open seat', () => {
+    const out = html(createElement(LeagueDetailBody, { detail: withCo, onConfirm: noop }))
+    expect(out).toContain('data-make-commissioner="m2"')
+    expect(out).toContain('data-make-commissioner="m4"')
+    expect(out).not.toContain('data-make-commissioner="m1"')
+    expect(out).not.toContain('data-make-commissioner="m3"')
+    expect(out.match(/>Make commissioner</g)?.length).toBe(2)
+  })
+
+  it('no control without the confirm dialog, and none in a deleted league', () => {
+    expect(html(createElement(LeagueDetailBody, { detail: withCo }))).not.toContain('data-make-commissioner')
+    const deleted = { ...withCo, league: { ...row, deleted_at: '2026-09-01T00:00:00Z' } }
+    expect(html(createElement(LeagueDetailBody, { detail: deleted, onConfirm: noop }))).not.toContain('data-make-commissioner')
+  })
+
+  it('the dialog words: Now / After in plain words, the old commissioner stays a co-commissioner with his team', () => {
+    expect(commissionerBeforeAfter(withCo.members[1], withCo.members)).toEqual({
+      before: 'chris is the commissioner. jason is a manager.',
+      after: 'jason is the commissioner. chris is a co-commissioner and keeps their team. The league sees “FieldScout made jason the commissioner. chris is now a co-commissioner.”',
+    })
+    expect(commissionerBeforeAfter(withCo.members[3], withCo.members).before).toBe('chris is the commissioner. sam is a co-commissioner.')
+    const headless = withCo.members.filter((m) => m.role !== 'commissioner')
+    expect(commissionerBeforeAfter(headless[0], headless)).toEqual({
+      before: 'This league has no commissioner. jason is a manager.',
+      after: 'jason is the commissioner. The league sees “FieldScout made jason the commissioner.”',
+    })
+  })
+
+  it('who can be made the commissioner, and the route', () => {
+    const [m1, m2, m3, m4] = withCo.members
+    expect([m1, m2, m3, m4].map((m) => canBeMadeCommissioner(m, row))).toEqual([false, true, false, true])
+    expect(canBeMadeCommissioner(m2, { deleted_at: '2026-09-01T00:00:00Z' })).toBe(false)
+    expect(setCommissionerUrl(row.id)).toBe(`/api/admin/leagues/${row.id}/commissioner`)
   })
 })
 

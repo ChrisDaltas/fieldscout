@@ -35,10 +35,18 @@ export function PresenceBar({ seats, className }: PresenceBarProps) {
     // once the strip squeezes the chips into overflow), which grew the page
     // its own 15px scrollbars. Positioning the scroll container makes it
     // their containing block, so they clip and scroll with their chips.
+    // L.F1.1 (axe `scrollable-region-focusable`, D622): the chips overflow
+    // into a horizontal scroller, so it takes keyboard focus and the house
+    // focus-visible ring — the DR.4 board-region treatment. Chrome makes a
+    // scroller focusable on its own; Safari and Firefox do not.
     <div
-      className={cn('relative flex gap-1.5 overflow-x-auto pb-0.5', className)}
+      className={cn(
+        'relative flex gap-1.5 overflow-x-auto pb-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+        className,
+      )}
       role="list"
       aria-label="Draft room presence"
+      tabIndex={0}
     >
       {seats.map((seat) => (
         <div

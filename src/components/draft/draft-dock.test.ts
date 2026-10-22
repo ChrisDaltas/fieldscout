@@ -218,9 +218,18 @@ describe('D119(6): the modal stays at room level, outside the dock', () => {
     // renders no Add control (ledger F122). What D119(6) is about is
     // unchanged and still pinned: when there IS one, it opens the modal
     // DIRECTLY — no close-the-dock step in front of it.
+    // L.F1.1 (D622): the handler is named now because it also remembers
+    // where focus was, so the modal can return it on close (F55's R391) —
+    // its body is still exactly "remember, then open": no dock step.
+    expect(room).toMatch(/onAddList=\{scope\.leagueId === null \? null : openAddList\}/)
     expect(room).toMatch(
-      /onAddList=\{scope\.leagueId === null \? null : \(\) => setAddListOpen\(true\)\}/,
+      /const openAddList = \(\) => \{\s*addListReturnRef\.current =\s*document\.activeElement instanceof HTMLElement \? document\.activeElement : null\s*setAddListOpen\(true\)\s*\}/,
     )
+  })
+
+  it('closing the modal returns focus to its opener, never BODY (F55 R391, L.F1.1)', () => {
+    expect(room).toMatch(/onCloseAutoFocus=\{returnFocusFromAddList\}/)
+    expect(room).toContain("document.getElementById(dockTabButtonId('lists'))")
   })
 
   it('the dock exposes NO external open/close API a dialog could trip', () => {

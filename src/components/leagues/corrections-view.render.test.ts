@@ -176,7 +176,7 @@ function renderView(seed: CorrectionsSeed, opts: { week?: number | null; connect
   qc.setQueryData(scheduleKeys.all(LEAGUE), SCHEDULE)
   const week = opts.week ?? null
   seedCorrections(qc, week === null ? {} : { week }, seed)
-  vi.mocked(useLeagueChannel).mockReturnValue({ connection: opts.connection ?? 'live' })
+  vi.mocked(useLeagueChannel).mockReturnValue({ connection: opts.connection ?? 'live', degraded: false })
   return render(qc, createElement(CorrectionsView, { leagueId: LEAGUE, initialWeek: week, leagueTimeZone: 'America/New_York' }))
 }
 
@@ -321,7 +321,7 @@ function renderMatchup(corrections: CorrectionsSeed, status = 'final'): string {
   qc.setQueryData(leagueBoxKeys.team(LEAGUE, 1, T1), box(T1))
   qc.setQueryData(leagueBoxKeys.team(LEAGUE, 1, T2), box(T2))
   seedCorrections(qc, { week: 1, limit: 100 }, corrections)
-  vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+  vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live', degraded: false })
   return render(qc, createElement(MatchupPage, { leagueId: LEAGUE, matchupId: 'm1' }))
 }
 

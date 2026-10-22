@@ -78,8 +78,8 @@ export function MobileCorrectionNote({
   if (!note) return null
   return (
     <div className="pt-3">
-      <div className="flex flex-col gap-1.5 rounded-[14px] bg-m-gb px-3 py-2.5" data-correction-note={note.resultChanged ? 'result' : 'score'}>
-        <p className="flex items-center gap-1.5 text-[13px] font-semibold text-m-tb">
+      <div className="flex flex-col gap-1.5 rounded-[14px] bg-m-b1 px-3 py-2.5" data-correction-note={note.resultChanged ? 'result' : 'score'}>
+        <p className="flex items-center gap-1.5 text-[13px] font-semibold text-m-t1">
           <MIcon name="corrections" size={14} stroke={1.6} />
           {note.title}
         </p>

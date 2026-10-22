@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { PlayerAvatarImage } from '@/components/players/player-image'
 import { PlayerLink } from '@/components/players/player-link'
@@ -40,6 +40,7 @@ import {
 } from './auction-budget'
 import { ActingAsPicker, type ActingAsControl } from './acting-as-picker'
 import { bidButtonLabel } from './acting-as-ops'
+import { highBidAnnouncement } from './room-announcer-ops'
 import { abbreviateName } from './draft-board-ops'
 
 /** The drafts-row slice the block reads. Deliberately narrow: everything
@@ -274,6 +275,7 @@ export function AuctionBlock({
         isMock={false}
         actingAs={phase === 'bidding' ? actingAs : null}
         actingForName={actingForName}
+        bidTeamId={boxTeamId}
       />
       <TeamColumns columns={columns} playerById={playerById} reserve={knobs.reserve} />
     </div>
@@ -301,6 +303,7 @@ function Nomination({
   submitting,
   actingAs,
   actingForName,
+  bidTeamId,
 }: {
   phase: 'nominating' | 'bidding'
   nomination: LiveNomination | null
@@ -326,7 +329,13 @@ function Nomination({
   isMock: boolean
   actingAs: ActingAsControl | null
   actingForName: string | null
+  /** The seat this box bids for (mine, or the one a commissioner acts as) —
+   *  the high-bid sentence says "You hold the high bid" for it. */
+  bidTeamId: string | null
 }) {
+  // L.F1.1 (F55 L.C3.1 (b)): the sentence beside the input is its
+  // description, so the reason a disabled box is disabled is not visual-only.
+  const bidHelpId = useId()
   const subject = phase === 'bidding' ? (nomination?.player_id ?? null) : nomineeId
   const player = subject ? playerById.get(subject) : undefined
   const snipe = useAntiSnipe(antiSnipe)
@@ -367,8 +376,26 @@ function Nomination({
     else if (subject) onNominate(subject, parsed)
   }
 
+  // L.F1.1 (F55 L.C3.1 (a)): the high bid changing hands is the auction's
+  // one-glance fact (§16.3), so it is announced — not only the floor reset.
+  // Always mounted, so the FIRST bid on a nomination is heard too. It waits
+  // for the nominee's identity: measured live, a fresh nomination otherwise
+  // spoke twice ("High bid: $56, CPU 6." and then the same with the name).
+  const highBidSentence =
+    phase === 'bidding' && nomination && player
+      ? highBidAnnouncement({
+          amount: nomination.high_bid,
+          teamName: teamNameById.get(nomination.high_bidder_team_id) ?? null,
+          playerName: player.full_name,
+          isMine: bidTeamId !== null && nomination.high_bidder_team_id === bidTeamId,
+        })
+      : ''
+
   return (
     <Card>
+      <p className="sr-only" role="status">
+        {highBidSentence}
+      </p>
       <CardHeader>
         <span className="text-[13px] font-bold tracking-[-0.01em]">
           {phase === 'bidding' ? 'Up for bid' : 'Nominating'}
@@ -466,6 +493,7 @@ function Nomination({
               inputMode="numeric"
               className="fs-num h-btn w-28 rounded-pill bg-white px-4 text-[13px] font-semibold hover:bg-white"
               aria-label={phase === 'bidding' ? 'Your bid' : 'Opening bid'}
+              aria-describedby={bidHelpId}
               min={box.minAmount}
               max={box.maxAmount ?? undefined}
               step={1}
@@ -489,7 +517,10 @@ function Nomination({
                 ? bidButtonLabel(Number.isInteger(parsed) ? parsed : box.minAmount, actingForName)
                 : `Nominate at $${Number.isInteger(parsed) ? parsed : box.minAmount}`}
           </Button>
-          <p className="basis-full text-[11px] font-medium text-n-3 sm:basis-auto sm:self-center">
+          <p
+            id={bidHelpId}
+            className="basis-full text-[11px] font-medium text-n-3 sm:basis-auto sm:self-center"
+          >
             {box.canAct
               ? acceptable
                 ? `Minimum $${box.minAmount}.`
@@ -705,6 +736,18 @@ function TeamColumns({
   // every column side by side, scrolling horizontally like the pick grid.
   const [mobileAllOpen, setMobileAllOpen] = useState(false)
   const mine = columns.find((c) => c.isMe) ?? null
+  // L.F1.1 (F55 L.C3.1 (d)): expanding moves focus to what appeared — the
+  // dock's tab→panel wiring — instead of leaving it on the toggle with eight
+  // teams rendered silently below.
+  const othersId = useId()
+  const othersRef = useRef<HTMLDivElement>(null)
+  const focusOthersRef = useRef(false)
+  useEffect(() => {
+    if (mobileAllOpen && focusOthersRef.current) {
+      focusOthersRef.current = false
+      othersRef.current?.focus()
+    }
+  }, [mobileAllOpen])
 
   return (
     <Card>
@@ -739,21 +782,35 @@ function TeamColumns({
             size="sm"
             className="w-fit"
             aria-expanded={mobileAllOpen}
-            onClick={() => setMobileAllOpen((current) => !current)}
+            aria-controls={mobileAllOpen ? othersId : undefined}
+            onClick={() => {
+              focusOthersRef.current = !mobileAllOpen
+              setMobileAllOpen((current) => !current)
+            }}
           >
             {mobileAllOpen ? 'Hide all teams' : 'Show all teams'}
           </Button>
-          {mobileAllOpen &&
-            columns
-              .filter((column) => !column.isMe)
-              .map((column) => (
-                <TeamColumnCard
-                  key={column.teamId}
-                  column={column}
-                  playerById={playerById}
-                  reserve={reserve}
-                />
-              ))}
+          {mobileAllOpen && (
+            <div
+              id={othersId}
+              ref={othersRef}
+              tabIndex={-1}
+              role="group"
+              aria-label="Other teams"
+              className="flex flex-col gap-2 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              {columns
+                .filter((column) => !column.isMe)
+                .map((column) => (
+                  <TeamColumnCard
+                    key={column.teamId}
+                    column={column}
+                    playerById={playerById}
+                    reserve={reserve}
+                  />
+                ))}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -773,7 +830,11 @@ function TeamColumnCard({
 }) {
   const budget = column.budget
   return (
+    // L.F1.1 (F55 L.C3.1 (c)): each team is its own named group, so eight
+    // budgets read as eight teams rather than one flat run.
     <div
+      role="group"
+      aria-label={column.isMe ? `${column.name} (you)` : column.name}
       className={cn(
         'flex flex-col gap-2 rounded-xl border border-n-4 bg-white p-2.5',
         // The three §16.4 marks: FILL and BORDER only (CLAUDE.md — a resting

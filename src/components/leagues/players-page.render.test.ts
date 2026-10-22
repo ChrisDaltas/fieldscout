@@ -168,7 +168,7 @@ function renderPage(seed: Seed = {}): string {
   const ps = seed.players ?? players
   if (ps === 'error') failQuery(qc, draftPoolKeys.pool('', ''), new Error('players: boom'))
   else qc.setQueryData(draftPoolKeys.pool('', ''), ps)
-  vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live' })
+  vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live', degraded: false })
   return render(qc, createElement(PlayersPage, { leagueId: LEAGUE }))
 }
 
@@ -244,20 +244,53 @@ describe('the page opens on the free agents: §12.19’s states per row, the �
   })
 })
 
+describe('D593 — a healthy man left in my IR spot closes every + (prevent, don’t refuse)', () => {
+  it('the banner names him and links to my team; every + is disabled with his reason; still OUT, nothing changes', () => {
+    const spot = `${detail.settings.roster_settings.ir_slots[0]!.key}:0`
+    const blocked: LeagueRosters = {
+      ...rosters,
+      teams: [{ ...rosters.teams[0]!, roster: [...rosters.teams[0]!.roster, rp({ player_id: 'mine-ir', full_name: 'Mine IR', slot_key: spot, ir_placed_week: 1 })] }, rosters.teams[1]!],
+    }
+    const html = renderPage({ rosters: blocked })
+    expect(html).toContain('data-healthy-ir')
+    // Chris 2026-10-21: the headline is exactly his sentence (no doubled full stop), then the way to the fix.
+    expect(html).toContain('<span class="text-negative-strong">You have an ineligible player in your IR spot.</span>')
+    expect(html).not.toContain('IR spot..')
+    expect(html).toContain(`href="/app/leagues/${LEAGUE}/team/${MINE}"`)
+    for (const id of ['fa-open', 'fa-norow', 'fa-waivers']) {
+      const at = html.indexOf(`data-pool-row="${id}"`)
+      const row = html.slice(at, html.indexOf('</tr>', at))
+      expect(row, id).toMatch(/disabled=""/)
+      expect(row, id).toContain('title="You have an ineligible player in your IR spot. Move Mine IR out of the spot, or drop him, to add players."')
+    }
+    // Still OUT (fits the spot): nothing changes.
+    const fits: LeagueRosters = {
+      ...rosters,
+      teams: [{ ...rosters.teams[0]!, roster: [...rosters.teams[0]!.roster, rp({ player_id: 'mine-ir', full_name: 'Mine IR', status: 'Out', slot_key: spot, ir_placed_week: 1 })] }, rosters.teams[1]!],
+    }
+    const open = renderPage({ rosters: fits })
+    expect(open).not.toContain('data-healthy-ir')
+    const at = open.indexOf('data-pool-row="fa-open"')
+    expect(open.slice(at, open.indexOf('</tr>', at))).not.toMatch(/disabled=""/)
+  })
+})
+
 describe('PoolTable — the rostered scope: Drop for mine (disabled by the view’s lock), nothing for theirs', () => {
   const rostered = poolRows(players, rosters, pool, MINE, 'rostered')
   const html = unescapeHtml(
     renderToStaticMarkup(createElement(PoolTable, { leagueId: LEAGUE, rows: rostered, scope: 'rostered', hadSearch: false, canAct: true, intent: { add: null, drop: null }, leagueTimeZone: null, onAdd: () => {}, onDrop: () => {} })),
   )
-  it('mine, unlocked → Drop; mine, locked → Drop disabled with the reason; theirs → Trade, a link to the builder (L.D3.7)', () => {
+  it('mine, unlocked → Drop (soft red tint); mine, locked → NO Drop, the lock tag says so (F692); theirs → Trade, a link to the builder (L.D3.7)', () => {
     const open = html.slice(html.indexOf('data-pool-row="mine-open"'), html.indexOf('</tr>', html.indexOf('data-pool-row="mine-open"')))
     expect(open).toContain('data-action="drop"')
     expect(open).not.toMatch(/data-action="drop"[^>]*disabled/)
+    expect(open).toMatch(/<button[^>]*bg-negative-soft[^>]*data-action="drop">Drop<\/button>/)
     expect(open).toContain('Your team')
+    // F692 (Chris 2026-10-21): "…Drop as an option if they are droppable. Not if they are locked for the week though."
     const locked = html.slice(html.indexOf('data-pool-row="mine-locked"'), html.indexOf('</tr>', html.indexOf('data-pool-row="mine-locked"')))
     expect(locked).toMatch(/data-lock-tag[^]*locked/)
-    expect(locked).toContain(LOCKED_DROP_TITLE)
-    expect(locked).toMatch(/disabled=""/)
+    expect(locked).not.toContain('data-action="drop"')
+    expect(locked).not.toContain(LOCKED_DROP_TITLE)
     const theirs = html.slice(html.indexOf('data-pool-row="theirs"'), html.indexOf('</tr>', html.indexOf('data-pool-row="theirs"')))
     expect(theirs).toContain('Their Team')
     expect(theirs).not.toMatch(/data-action="(add|drop|claim)"/)
@@ -466,7 +499,7 @@ describe('the value columns: league-scored numbers from the server, sorted by pr
       qc.setQueryData(poolValueKeys.whole(LEAGUE, WEEK), { ...values, players: poolPlayers, total: poolPlayers.length })
       qc.setQueryData(['nfl-week-games', 2099, WEEK], games)
     }
-    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live', degraded: false })
     return render(qc, createElement(PlayersPage, { leagueId: LEAGUE }))
   }
 
@@ -525,7 +558,7 @@ describe('the value columns: league-scored numbers from the server, sorted by pr
     qc.setQueryData(leaguePoolKeys.all(LEAGUE), pool)
     qc.setQueryData(scheduleKeys.all(LEAGUE), schedule)
     qc.setQueryData(poolValueKeys.whole(LEAGUE, WEEK), { ...qcValues, players: many, total: many.length })
-    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live', degraded: false })
     const html = render(qc, createElement(PlayersPage, { leagueId: LEAGUE }))
     const order = [...html.matchAll(/data-pool-row="([^"]+)"/g)].map((m) => m[1])
     expect(order[0]).toBe('bulk-399')

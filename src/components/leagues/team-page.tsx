@@ -32,9 +32,10 @@ import { MEMBERS_NAV_LABEL, membersPageHref } from './invite-panel-ops'
 import { Crest, LeaguePageTitle } from './league-cells'
 import { DropPlayerDialog, type DropTarget } from './drop-player-dialog'
 import { LineupEditor, type LineupOpponent, type LineupStats } from './lineup-editor'
+import { HEALTHY_IR_BLOCKED_LINE, HEALTHY_IR_STILL_OPEN, currentWeekGamesOver, healthyIrBlockers, healthyIrHeadline, healthyIrWays } from './healthy-ir-ops'
 import { currentWeekOf, defaultLineupWeek, formatInstantWithDate, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { projectedTotal, starterIdsOf } from './my-team-ops'
-import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
+import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner, StatusBanner } from './status-banners'
 import {
   COMMISH_CHANGED_BADGE,
   COMMISH_CHANGED_TITLE,
@@ -165,7 +166,7 @@ function TeamPageContent({
   // migration 119 the tick BROADCASTS its pass (`league_player_pool` on the
   // room — D319(6)); the room's refetch replaced the 60 s poll (F259(a),
   // L.D5.4). F252(c): no lineup read for a week the ladder has not named yet.
-  const rosters = useRostersLive(leagueId)
+  const rosters = useRostersLive(leagueId, { fallbackPoll: true })
   const lineup = useLineup(teamId, schedule.data ? week : undefined)
   // L.D3.12 (Q76 / Chris 2026-09-29): no Propose trade door past the trade
   // deadline — the server's `passed` (162); loading / before 162 keeps it.
@@ -184,8 +185,19 @@ function TeamPageContent({
   const [dropping, setDropping] = useState<DropTarget | null>(null)
   const movesState = movesGate(detail.league.status)
   const movesClosed = movesState.open ? null : movesState.reason
-  const editability = weekEditability(weeks, week, currentWeek)
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
+  // D593 (migration 205): a player who isn't IR-eligible left in one of MY IR
+  // spots blocks every add and claim until he leaves it — said here, with the
+  // ways out that work NOW, before anyone tries (the Adds elsewhere are
+  // disabled too). F690: once his game has started the move out (and for a
+  // while the drop) is locked as well, and the notice says so instead.
+  const irBlockers =
+    isOwnTeam && movesState.open && rosterTeam
+      ? healthyIrBlockers(rosterTeam.roster, detail.settings.roster_settings.ir_slots, currentWeek, currentWeekGamesOver(weeks, currentWeek))
+      : []
+  const irHeadline = healthyIrHeadline(irBlockers)
+  const irWays = healthyIrWays(irBlockers, (iso) => formatInstantWithDate(iso, leagueTimeZone).local)
+  const editability = weekEditability(weeks, week, currentWeek)
   // Chris 2026-10-04: the manager's Transactions (pending waiver claims, adds
   // and drops in one feed) live HERE, on his own team — moved off Players.
   // Claims join under the gate the Players page used: claims live (R1219), a
@@ -195,6 +207,9 @@ function TeamPageContent({
   const claimsLive =
     detail.waivers_live !== false && detail.settings.waiver_type !== 'none_fcfs' && waiverWindow?.waivers !== false
   const nextRunLocal = waiverWindow?.next_run_at ? formatInstantWithDate(waiverWindow.next_run_at, leagueTimeZone).local : null
+  // F693 as ruled (Chris 2026-10-21: "they should fail when waivers run"): the
+  // notice says when the run will fail his pending claims — the Transactions
+  // panel's own read (same key, so one fetch).
 
   const rosterProblem = rosters.isError ? (rosters.error instanceof Error ? rosters.error : new Error(String(rosters.error))) : null
 
@@ -226,7 +241,7 @@ function TeamPageContent({
   const box = useBoxScore(leagueId, lineupWeek, teamId)
   const rosterIds = useMemo(() => (rosterTeam?.roster ?? []).map((p) => p.player_id), [rosterTeam])
   const usage = usePlayerUsage(season, rosterIds)
-  const matchups = useMatchupsLive(leagueId, lineupWeek)
+  const matchups = useMatchupsLive(leagueId, lineupWeek, { fallbackPoll: true })
   const pairing = matchups.data?.matchups.find((m) => m.home_team_id === teamId || m.away_team_id === teamId) ?? null
   const oppTeamId = pairing ? (pairing.home_team_id === teamId ? pairing.away_team_id : pairing.home_team_id) : null
   const oppLineup = useLineup(oppTeamId ?? undefined, oppTeamId ? lineupWeek : undefined)
@@ -406,6 +421,7 @@ function TeamPageContent({
               Nothing set for week <span className="fs-num">{week}</span> yet — the week opens with last week’s legal lineup carried over; until then every seat is open here.
             </p>
           )}
+          {irHeadline && <HealthyIrNotice headline={irHeadline} ways={irWays} />}
           <LineupEditor
             // R1467: one saver per team-week — a week switch remounts it.
             key={`${teamId}:${week}`}
@@ -413,7 +429,6 @@ function TeamPageContent({
             teamId={teamId}
             week={week}
             settings={detail.settings.roster_settings}
-            allowIllegal={detail.settings.allow_illegal_lineups}
             roster={rosterTeam.roster}
             stored={lineup.data ?? null}
             currentWeek={currentWeek}
@@ -471,6 +486,26 @@ function TeamPageContent({
         </>
       )}
     </div>
+  )
+}
+
+/** D593: "You have an ineligible player in your IR spot. Player adds and
+ *  waiver claims will be blocked until that is fixed." (Chris 2026-10-21 —
+ *  `HEALTHY_IR_HEADLINE` + `HEALTHY_IR_BLOCKED_LINE`), who he is and the ways out that work now (`healthyIrWays` —
+ *  the two Chris named, or, while his game has him locked, the drop and when
+ *  the move opens), and what still works — a soft-red system message (the bright red is its
+ *  headline's words only). Exported for the render test. */
+export function HealthyIrNotice({ headline, ways }: { headline: string; ways: readonly string[] }) {
+  return (
+    <StatusBanner tone="negative" className="items-start">
+      <span className="flex flex-col gap-1" data-healthy-ir-notice>
+        <span className="text-negative-strong">
+          {headline} <span data-healthy-ir-blocked>{HEALTHY_IR_BLOCKED_LINE}</span>
+        </span>
+        <span className="font-medium text-ink">{ways.join(' ')}</span>
+        <span className="font-medium text-n-3">{HEALTHY_IR_STILL_OPEN}</span>
+      </span>
+    </StatusBanner>
   )
 }
 

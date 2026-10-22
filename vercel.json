@@ -13,6 +13,10 @@
       "schedule": "0 10 * * 2"
     },
     {
+      "path": "/api/cron/sync-players",
+      "schedule": "0 15 * * *"
+    },
+    {
       "path": "/api/cron/sync-live",
       "schedule": "15 8 * * *"
     },

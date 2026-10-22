@@ -54,7 +54,7 @@ import { leagueRosterKeys } from './use-rosters'
  * is why this hook does not take that: every refusal a set can meet is about
  * state this client cannot evaluate — the per-player kickoff read from
  * `nfl_games` at transaction `now()` (E42), the bipartite fit (E16), the IR
- * stint, `allow_illegal_lineups` — and the SUCCESS is not the submitted map
+ * placement / stint law — and the SUCCESS is not the submitted map
  * either: 112 may RE-SEAT a placement (`rearranged` + `moved[]`) and returns
  * the canonical map. Rendering the submitted arrangement before the server
  * agrees would show a lineup that may never exist. So the cache is

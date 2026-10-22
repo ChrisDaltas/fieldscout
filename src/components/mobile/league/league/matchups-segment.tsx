@@ -90,12 +90,12 @@ function SeasonMatchups({
   const [kept, keepWeek] = useKeptWeek(leagueId)
   const week = useMemo(() => matchupsWeek(kept, schedule.data?.weeks), [kept, schedule.data])
   const pickWeek = (next: number) => keepWeek(weekToKeep(next, schedule.data?.weeks ?? []))
-  const matchups = useMatchupsLive(leagueId, week ?? undefined)
+  const matchups = useMatchupsLive(leagueId, week ?? undefined, { fallbackPoll: true })
   const standings = useStandingsLive(leagueId)
   const lineup = useLineup(myTeamId ?? undefined, inPlay && currentWeek !== null ? currentWeek : undefined)
   const degraded = useStatsDegraded({ enabled: inPlay && scoringLive(matchups.data?.league_week.status) })
   const delay = liveScoringDelay(degraded.data)
-  const bracket = usePlayoffBracketLive(leagueId, state === 'playoffs')
+  const bracket = usePlayoffBracketLive(leagueId, state === 'playoffs', { fallbackPoll: true })
   const teamIds = useMemo(() => detail.teams.map((t) => t.id), [detail.teams])
   const teamNames = useMemo(() => new Map(detail.teams.map((t) => [t.id, t.name])), [detail.teams])
   const records = useMemo(
@@ -323,13 +323,11 @@ function MatchupCard({
   myTeamId: string | null
   door?: 'matchup' | 'teams'
 }) {
-  // Your own matchup puts you on the left (the design's team A), home or away,
-  // and is tinted (gap list §4 item 11): a resting blue-tint FILL — the
-  // desktop matchup page's accent-soft — never a shadow. The online dot's
-  // ring follows the card colour.
+  // Your own matchup puts you on the left (the design's team A), home or away.
+  // It is drawn like every other card — the handoff has "no highlight on your
+  // own matchup beyond being first" (m-league §2.2); your blue avatar marks you.
   const flip = myTeamId !== null && row.away_team_id === myTeamId
   const mine = flip || (myTeamId !== null && row.home_team_id === myTeamId)
-  const ring = mine ? 'ring-m-gb' : 'ring-m-b1'
   const left = flip ? { id: row.away_team_id!, score: row.away_score } : { id: row.home_team_id, score: row.home_score }
   const right = flip ? { id: row.home_team_id, score: row.home_score } : row.away_team_id ? { id: row.away_team_id, score: row.away_score } : null
   const teamDoor = (id: string) => (door === 'teams' ? teamPageHref(leagueId, id) : undefined)
@@ -342,7 +340,6 @@ function MatchupCard({
         record={records.get(left.id) ?? null}
         avClass={av(left.id)}
         online={online(left.id)}
-        ring={ring}
         href={teamDoor(left.id)}
       />
       <span className="flex flex-col items-center gap-0.5 text-center text-[11px] font-semibold text-m-t4">
@@ -361,7 +358,6 @@ function MatchupCard({
           record={records.get(right.id) ?? null}
           avClass={av(right.id)}
           online={online(right.id)}
-          ring={ring}
           href={teamDoor(right.id)}
           end
         />
@@ -372,7 +368,7 @@ function MatchupCard({
       )}
     </>
   )
-  const className = cn('grid grid-cols-[minmax(0,1fr)_26px_minmax(0,1fr)] items-center gap-2 rounded-[16px] p-3', mine ? 'bg-m-gb' : 'bg-m-b1')
+  const className = 'grid grid-cols-[minmax(0,1fr)_26px_minmax(0,1fr)] items-center gap-2 rounded-[16px] bg-m-b1 p-3'
   if (door === 'teams') {
     return (
       <div className={className} data-matchup={row.id} data-mine={mine || undefined}>
@@ -394,7 +390,6 @@ function Side({
   record,
   avClass,
   online,
-  ring,
   href,
   end = false,
 }: {
@@ -404,8 +399,6 @@ function Side({
   record: string | null
   avClass: string
   online: boolean
-  /** The online dot's ring — the card's own colour. */
-  ring: string
   /** The side's own door (that team's page) — only on a card that is not
    *  itself a link (an <a> inside an <a> is invalid HTML). */
   href?: string
@@ -416,7 +409,7 @@ function Side({
   const body = (
     <>
       <div className={cn('flex items-center gap-2', end && 'flex-row-reverse')}>
-        <TeamAvatar name={name} className={avClass} online={online} onlineRingClass={ring} />
+        <TeamAvatar name={name} className={avClass} online={online} onlineRingClass="ring-m-b1" />
         <span className="flex-1" />
         <span
           className={cn(
@@ -442,8 +435,9 @@ function Side({
 }
 
 /** A total-points league's week: the stored leaderboard, ranked by the ops
- *  (absence is pending, never 0). Your own row carries your matchup card's
- *  resting tint (gap list §4 item 11). */
+ *  (absence is pending, never 0). Your own row is drawn like the rest, as
+ *  the handoff draws your matchup card (m-league §2.2) — your blue avatar
+ *  marks you. */
 function Leaderboard({
   leagueId,
   doc,
@@ -468,12 +462,12 @@ function Leaderboard({
           <Link
             key={r.team_id}
             href={teamPageHref(leagueId, r.team_id)}
-            className={cn('flex h-12 items-center gap-2.5 border-t border-m-b3 px-3', mine && 'bg-m-gb')}
+            className="flex h-12 items-center gap-2.5 border-t border-m-b3 px-3"
             data-leaderboard-row={r.team_id}
             data-mine={mine || undefined}
           >
             <span className="w-5 flex-none text-[13px] font-semibold tabular-nums text-m-t3">{r.rank ?? '—'}</span>
-            <TeamAvatar name={r.name} className={av(r.team_id)} online={online(r.team_id)} onlineRingClass={mine ? 'ring-m-gb' : 'ring-m-b1'} />
+            <TeamAvatar name={r.name} className={av(r.team_id)} online={online(r.team_id)} onlineRingClass="ring-m-b1" />
             <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-m-t1">{r.name}</span>
             {r.points !== null ? (
               <span className="text-[14px] font-semibold tabular-nums text-m-t1">{formatPoints(r.points)}</span>

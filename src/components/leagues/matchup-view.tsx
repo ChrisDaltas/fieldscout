@@ -188,7 +188,7 @@ function MatchupContent({
     () => resolveWeek({ matchupId, weekParam, weeks: schedule.data?.weeks, matchups: schedule.data?.matchups }),
     [matchupId, weekParam, schedule.data],
   )
-  const matchups = useMatchupsLive(leagueId, week ?? undefined)
+  const matchups = useMatchupsLive(leagueId, week ?? undefined, { fallbackPoll: true })
   // F277(d) / F274: the flag is POLLED (nothing broadcasts `system_flags`),
   // so only a week that is scoring asks — an `upcoming` / `final` week
   // cannot be delayed. The league home's hero applies the same gate.

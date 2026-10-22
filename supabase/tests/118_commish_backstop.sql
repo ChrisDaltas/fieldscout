@@ -82,6 +82,156 @@ set local search_path = public, extensions;
 
 select plan(246);   -- 252 until 174 retired three matrix rows (three cells each); 243 until 192 added the commissioner note's row
 
+-- pg_temp.un201 — migration 201's pairs reversed (derive_201.py; pgTAP 151
+-- pins it). RE-PINNED BY D591 ("Allow illegal lineups" retired:
+-- set_lineup_internal, commish_edit_lineup_internal, lineup_autopilot_internal
+-- and commish_setting_policy changed; an identity on every other body —
+-- additive, R992). Applied INNERMOST.
+create function pg_temp.un201(s text) returns text language plpgsql as $un201$
+begin
+  -- set_lineup_internal
+  s := replace(s, $n201$      -- The bye / OUT refusal that stood here is RETIRED with the setting: a bye or   -- 201 / D591
+      -- injured starter, or an empty slot, never refuses a save. He keeps his flag (above)   -- 201 / D591
+      -- and scores what he scores — 0 if he does not play. What still refuses a lineup:   -- 201 / D591
+      -- the position fit (8), the kickoff locks (7), one start per week, and IR (9).   -- 201 / D591
+$n201$,
+                 $o201$      -- §7.3.6 allow_illegal_lineups = FALSE: a bye/OUT starter in an
+      -- UNLOCKED slot blocks the submit by name.
+      -- (a locked slot's bye/OUT player is not the manager's to change:
+      --  exempt when the stored player's own game has kicked off, R739.)
+      IF NOT v_allow AND jsonb_array_length(v_pflags) > 0
+         AND NOT ((v_kick -> v_pid ->> 'kickoff_at') IS NOT NULL
+                  AND (v_kick -> v_pid ->> 'kickoff_at')::timestamptz <= p_at
+                  AND (v_stored ->> v_key) = v_pid)
+         AND NOT (v_gone_kick ? v_pid) THEN   -- 154 / F445: a kept off-roster starter is not the manager's to change
+        RAISE EXCEPTION
+          'set_lineup: % is % for week % and allow_illegal_lineups is off — slot "%" is blocked at submit (§7.3.6); bench him or start someone who plays',
+          v_p ->> 'name', CASE WHEN v_pflags ? 'bye' THEN 'on bye' ELSE 'OUT (' || (v_p ->> 'designation') || ')' END,
+          p_week, v_key
+          USING ERRCODE = 'P0001';
+      END IF;
+$o201$);
+  s := replace(s, $n201$  -- "Allow illegal lineups" is RETIRED (§7.3.6; Chris 2026-10-20: "That shouldn't be blocking   -- 201 / D591
+  -- anyone from doing anything."): the stored value is ignored, and the result's   -- 201 / D591
+  -- allow_illegal_lineups key stays for its readers, always TRUE.   -- 201 / D591
+  v_allow := TRUE;   -- 201 / D591
+$n201$,
+                 $o201$  v_allow := COALESCE((v_league.settings ->> 'allow_illegal_lineups')::boolean, TRUE);
+$o201$);
+  -- commish_edit_lineup_internal
+  s := replace(s, $n201$      -- The bye / OUT refusal that stood here is RETIRED with the setting (it refused the   -- 201 / D591
+      -- commissioner too — spec §7.3.6 / §11.1 said he is never refused): a bye or injured   -- 201 / D591
+      -- starter, or an empty slot, never refuses a save. He keeps his flag (above) and   -- 201 / D591
+      -- scores what he scores. The position fit (8) and one start per week still bind.   -- 201 / D591
+$n201$,
+                 $o201$      -- §7.3.6 allow_illegal_lineups = FALSE. KEPT (see WHAT IS NOT LIFTED).
+      -- 166 / F500: R739's exemption, carried exactly as set_lineup_internal
+      -- step (10) has it (157): a STORED starter whose own game has kicked
+      -- off (his per-player datum, step (6)) and who stays at his stored key
+      -- is not blocked — his game is under way or over, so keeping him where
+      -- he stands is the week as it happened, not a submit. 123 dropped the
+      -- clause as meaningless for a verb with no lock; without it a starter
+      -- who played Thursday and was put on IR before Sunday refused every
+      -- commissioner fix to that week unless he benched him (changing the
+      -- score) — a save the manager may make: a TIMING refusal of the
+      -- commissioner (standing rule (g)). Putting a bye / OUT player at any
+      -- key he is not stored at (moving him, or starting one from the
+      -- bench) is still refused by name, as it is for the manager. The
+      -- stored-occupant test is spelled NULL-SAFE here: set_lineup's `=`
+      -- yields NULL for a key that was empty, which cannot reach its gate
+      -- (step (7b) refuses a kicked-off player entering a slot first) but
+      -- would reach this one (no lock) and let a moved OUT starter through.
+      -- The kept-start clause below (154 / F441) is spelled the same way
+      -- (F503): its `=` let a kept OFF-ROSTER starter, now OUT, be moved
+      -- into an empty key without the refusal.
+      IF NOT v_allow AND jsonb_array_length(v_pflags) > 0
+         AND NOT ((v_kick -> v_pid ->> 'kickoff_at') IS NOT NULL
+                  AND (v_kick -> v_pid ->> 'kickoff_at')::timestamptz <= p_at
+                  AND (v_stored ->> v_key) IS NOT DISTINCT FROM v_pid)   -- 166 / F500: R739, as set_lineup (null-safe)
+         AND NOT (v_gone_kick ? v_pid AND (v_stored ->> v_key) IS NOT DISTINCT FROM v_pid) THEN   -- 154 / F441: a kept start where it stands is the week's record, not a submit (166 / F503: null-safe too — an empty key must not exempt a moved kept start)
+        RAISE EXCEPTION
+          'commish_edit_lineup: % is % for week % and this league doesn''t allow illegal lineups — slot "%" can''t be saved like this; bench him, start someone who plays, or turn on illegal lineups in the league settings',
+          v_p ->> 'name', CASE WHEN v_pflags ? 'bye' THEN 'on bye' ELSE 'OUT (' || (v_p ->> 'designation') || ')' END,
+          p_week, v_key
+          USING ERRCODE = 'P0001';
+      END IF;
+$o201$);
+  s := replace(s, $n201$  -- "Allow illegal lineups" is RETIRED (§7.3.6; Chris 2026-10-20: "That shouldn't be blocking   -- 201 / D591
+  -- anyone from doing anything."): the stored value is ignored, and the result's   -- 201 / D591
+  -- allow_illegal_lineups key stays for its readers, always TRUE.   -- 201 / D591
+  v_allow := TRUE;   -- 201 / D591
+$n201$,
+                 $o201$  v_allow := COALESCE((v_league.settings ->> 'allow_illegal_lineups')::boolean, TRUE);
+$o201$);
+  -- lineup_autopilot_internal
+  s := replace(s, $n201$  -- `v_tail`. An IR-held man, a seated (fixed) starter and a locked man are   -- 201 / D591
+  -- never ordered by this pass, so they   -- 201 / D591
+$n201$,
+                 $o201$  -- `v_tail`. An IR-held man, a seated (fixed) starter, a locked man and one
+  -- the allow = FALSE filter refused are never ordered by this pass, so they
+$o201$);
+  s := replace(s, $n201$          -- (the "league forbids illegal lineups" reason is retired with the setting)   -- 201 / D591
+$n201$,
+                 $o201$          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_filtered) x WHERE v_elig ? (x ->> 'position'))
+            THEN 'no healthy eligible player at ' || upper(v_e ->> 'slot') || '; league forbids illegal lineups'
+$o201$);
+  s := replace(s, $n201$  -- remaining slots are offered to the unhealthy tail — the Doubtful men first, then   -- 201 / D591
+  -- the blocked men — so a slot any unlocked eligible man could take is filled.   -- 201 / D591
+$n201$,
+                 $o201$  -- remaining slots are offered to the unhealthy tail — which, when the
+  -- league forbids illegal lineups, holds only the Doubtful men (138), so a
+  -- slot only a BLOCKED man could take stays `unfillable`.
+$o201$);
+  s := replace(s, $n201$      ELSE   -- a blocked man is always the tail: the allow = FALSE hard filter is retired   -- 201 / D591
+        -- A PREFERENCE, not a filter: seated LAST, never left out, because an
+        -- empty slot is the zero this task exists to remove (item 4c).
+        v_tail := v_tail || jsonb_build_object(
+          'player_id', v_pid, 'position', v_e ->> 'position', 'wanted', NULL, 'fixed', FALSE);
+      END IF;
+$n201$,
+                 $o201$      ELSIF v_allow THEN
+        -- A PREFERENCE, not a filter: seated LAST, never left out, because an
+        -- empty slot is the zero this task exists to remove (item 4c).
+        v_tail := v_tail || jsonb_build_object(
+          'player_id', v_pid, 'position', v_e ->> 'position', 'wanted', NULL, 'fixed', FALSE);
+      ELSE
+        v_filtered := v_filtered || jsonb_build_object(
+          'player_id', v_pid, 'position', v_e ->> 'position');
+      END IF;
+$o201$);
+  s := replace(s, $n201$  -- §7.3.6's "Allow illegal lineups" is RETIRED (Chris 2026-10-20): the stored value is   -- 201 / D591
+  -- ignored. A blocked man (bye / OUT / IR / PUP / NFI / Suspended) is always the TAIL —   -- 201 / D591
+  -- seated LAST, behind every healthy and Doubtful candidate, never filtered out — and   -- 201 / D591
+  -- the result's allow_illegal_lineups key stays for its readers, always TRUE.   -- 201 / D591
+  v_allow := TRUE;   -- 201 / D591
+$n201$,
+                 $o201$  -- §7.3.6's per-league setting, read the way `set_lineup` reads it
+  -- (`114:307`): absent ⇒ TRUE.
+  v_allow := COALESCE((v_league.settings ->> 'allow_illegal_lineups')::boolean, TRUE);
+$o201$);
+  s := replace(s, $n201$  v_locked_out  JSONB := '[]'::jsonb;        -- skipped_locked[]
+  -- (v_filtered — the allow = FALSE hard filter's refusals — is gone with the setting)   -- 201 / D591
+$n201$,
+                 $o201$  v_locked_out  JSONB := '[]'::jsonb;        -- skipped_locked[]
+  v_filtered    JSONB := '[]'::jsonb;        -- refused by the allow = FALSE hard filter
+$o201$);
+  -- commish_setting_policy
+  s := replace(s, $n201$                                  'This setting has been retired: a waiver claim always fails if the player you''d drop has already played this week, just like a regular drop.')
+    -- Chris 2026-10-20: "You can always start a player on a buy [bye]. … That shouldn't be blocking anyone   -- 201 / D591
+    -- from doing anything." A lineup save is never refused over a bye or injured starter, or an empty   -- 201 / D591
+    -- slot; a value already stored is simply ignored (no data rewrite, no CHECK).   -- 201 / D591
+    WHEN p_key IN ('allow_illegal_lineups') THEN jsonb_build_object('storage', 'blob', 'class', 'refused', 'refused_why',   -- 201 / D591
+                                  'This setting has been retired: a lineup always saves, even with a player who is on a bye or injured — he scores only if he plays.')   -- 201 / D591
+$n201$,
+                 $o201$                                  'This setting has been retired: a waiver claim always fails if the player you''d drop has already played this week, just like a regular drop.')
+$o201$);
+  s := replace(s, $n201$         'auto_sub_inactives', 'stat_correction_window',   -- 201 / D591: allow_illegal_lineups is retired, refused below
+$n201$,
+                 $o201$         'allow_illegal_lineups', 'auto_sub_inactives', 'stat_correction_window',
+$o201$);
+  return s;
+end
+$un201$;
 -- pg_temp.un199 — migration 199's hunks reversed for assign_manager, commish_edit_faab_internal, commish_edit_lineup_internal, commish_rename_team_internal, commish_roster_override_internal, commish_set_autopilot_internal, create_league_invite, remove_manager, set_lineup_internal, trade_respond_internal, trade_tick, trade_vote_internal, waiver_claim_edit_internal, waiver_claim_submit_internal
 -- (43 of 199's 81; generated by gen_un199.py from derive_199.py's pairs — each
 -- replacement text occurs once across every live body, so this is an identity
@@ -793,6 +943,8 @@ insert into _allow values
   ('trade_vote_internal',     'a manager''s own ballot for his own team (Q77 / D415(1)); is_league_commish only words the refusal a teamless commissioner meets — his power over a vote is approve / veto, receipted by commish_force_or_reverse_trade'),
   ('trade_propose_internal',  'a manager''s own offer for his own team (174, ruled 2026-09-30: the commissioner acts on a trade only once it is accepted); is_league_commish only words the by-name refusal a commissioner who does not manage the team meets — his power over a trade is veto / force, receipted by commish_force_or_reverse_trade'),
   ('trade_respond_internal',  'the two teams'' own answer to an offer (174, ruled 2026-09-30); is_league_commish only words the by-name refusal a commissioner who manages neither team meets — his power over a trade is veto / force once it is accepted, receipted by commish_force_or_reverse_trade'),
+  -- RE-PINNED BY 208 (F750, additive, R992 / D671): the operator's verb.
+  ('op_set_commissioner_internal', 'the PLATFORM OPERATOR''s verb (208, F750 — spec §24.4 v2.16.106), not a commissioner action: its role literals read and write who the commissioner is. Its record is the platform_operator_actions receipt + the "FieldScout" league line; a commissioner_actions row would carry the admin as actor and show his username to the league, which §24.4 forbids (D671)'),
   ('snapshot_league_scoring', 'derived, pre-draft only: copies the rules the league already references into leagues.scoring_rules_snapshot (setup / scheduled), which draft start re-takes before anything scores (110:1138 / 168:3190) — no commissioner input reaches game state; the rules edits themselves are receipted (fork_scoring / edit_scoring / change_settings, 169)');
 
 -- THE MATRIX (TD10 (ii)): one row per verb, filled by pg_temp.mx below.
@@ -885,7 +1037,7 @@ select ok(
                         'scoring_systems_league_rules_guard_internal', 'scoring_system_league_use_internal')),
   'A2 PUBLIC holds EXECUTE on none of the six (REVOKEs restated)');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un170(pg_temp.un199(p.prosrc))), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un170(pg_temp.un199(pg_temp.un201(p.prosrc)))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and p.proname in ('commish_edit_lineup_internal', 'commish_roster_override_internal', 'commish_rename_team_internal')),
@@ -893,7 +1045,7 @@ select is(
   || 'commish_roster_override_internal=a078d3e98fd386bdf4d77c587f87523e',
   'A3 D137: each live body with 170 reversed is its NEWEST definer FILE TEXT (166:144 / 131:2304 / 164:209 — stored md5 literals)');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un199(p.prosrc)), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un199(pg_temp.un201(p.prosrc))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and p.proname in ('commish_action_pointer_guard_internal', 'commish_edit_lineup_internal',
@@ -1668,14 +1820,14 @@ select is(
   || 'draft_create_internal=receipt draft_end=receipt draft_force_pick=receipt draft_move_player=receipt draft_pause=receipt '
   || 'draft_place_bid=receipt draft_queue_replace=receipt draft_reassign_pick=receipt draft_reset=receipt draft_resume=receipt draft_reverse_won_bid=receipt draft_set_clock=receipt '
   || 'draft_set_order=receipt draft_start=receipt draft_start_internal=receipt draft_tick=receipt draft_undo=receipt '
-  || 'leave_league=allowlisted remove_manager=receipt revoke_league_invite=receipt rotate_invite_code=receipt '
+  || 'leave_league=allowlisted op_set_commissioner_internal=allowlisted remove_manager=receipt revoke_league_invite=receipt rotate_invite_code=receipt '
   || 'schedule_edit_matchup=receipt schedule_remix_confirm=receipt scoring_fork_template=receipt scoring_update_rules=receipt '
   || 'set_league_invite_slug=receipt set_league_status=receipt set_lineup_internal=receipt set_member_role=receipt '
   || 'set_team_autodraft=receipt snapshot_league_scoring=allowlisted soft_delete_league=receipt trade_propose_internal=allowlisted '
   || 'trade_respond_internal=allowlisted trade_vote_internal=allowlisted update_league_profile=receipt update_league_settings=receipt '
   || 'waiver_claim_cancel_internal=receipt waiver_claim_edit_internal=receipt waiver_claim_reorder_internal=receipt '
   || 'waiver_claim_submit_internal=receipt',
-  'C4 THE CENSUS (stored literal): 59 commissioner-gated writers — 53 reach the receipt, 6 are allowlisted (171 added the two draft-room manager verbs, F521; 174 took the commissioner arm off trade_propose / trade_respond — ruled 2026-09-30 — so both are allowlisted beside trade_vote; 192 added the commissioner note)');
+  'C4 THE CENSUS (stored literal): 60 commissioner-gated writers — 53 reach the receipt, 7 are allowlisted (history: 59 / 6 before 208; 171 added the two draft-room manager verbs, F521; 174 took the commissioner arm off trade_propose / trade_respond — ruled 2026-09-30 — so both are allowlisted beside trade_vote; 192 added the commissioner note; re-pinned by 208: 60 writers, 7 allowlisted — the operator''s op_set_commissioner_internal, F750)');
 
 -- C5: THE BACKSTOP CELL. A gated writer that reaches no receipt and is not
 -- on the allowlist is an OFFENDER, named here. ***The task probe target.***
@@ -1690,8 +1842,8 @@ select is(
 select is(
   (select string_agg(a.fn || ':' || coalesce((c.writes is not null and not c.receipt)::text, 'absent'), ' ' order by a.fn)
    from _allow a left join _census c on c.fn = a.fn),
-  'claim_league_invite:true leave_league:true snapshot_league_scoring:true trade_propose_internal:true trade_respond_internal:true trade_vote_internal:true',
-  'C6 the allowlist is six entries (two added by 174), each still a gated writer with no receipt — none stale');
+  'claim_league_invite:true leave_league:true op_set_commissioner_internal:true snapshot_league_scoring:true trade_propose_internal:true trade_respond_internal:true trade_vote_internal:true',
+  'C6 the allowlist is seven entries (two added by 174, one by 208), each still a gated writer with no receipt — none stale');
 select is((select count(*)::int from _allow where length(why) < 60), 0,
   'C7 every allowlist entry says why, in a sentence (no bare names)');
 -- C8: gated functions that write nothing are outside the census, named.

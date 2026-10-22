@@ -97,7 +97,7 @@ function rowSides(html: string, id: string): Array<[string, string]> {
 
 beforeEach(() => {
   search.value = ''
-  vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+  vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live', degraded: false })
 })
 
 /** The sticky header's markup (bar, chips, status lines) — everything
@@ -140,7 +140,7 @@ describe('the Schedule screen', () => {
     expect(html).toContain('4 weeks · 3 regular season · 1 playoff')
   })
 
-  it('shows each game’s stored scores, your game first with you on top and tinted', () => {
+  it('shows each game’s stored scores, your game first with you on top — drawn like the rest, no tint', () => {
     const html = render(detailWith(), SCHEDULE)
     // Week 1: your game (Charlie's adjusted tie) leads, then Alpha's win.
     const w1 = weekCard(html, 1)
@@ -149,8 +149,11 @@ describe('the Schedule screen', () => {
       ['Charlie', '80.00'],
       ['Delta', '80.00'],
     ])
-    expect(w1).toMatch(/<li class="[^"]*bg-m-gb[^"]*" data-matchup="m2" data-mine="true"/)
+    // The handoff draws no "you" tint (m-league §2.2, §2.3): your game's row
+    // has exactly the classes of every other row.
+    expect(w1).toMatch(/<li class="relative flex flex-col gap-0\.5 px-3\.5 py-2" data-matchup="m2" data-mine="true"/)
     expect(w1).toMatch(/<li class="relative flex flex-col gap-0\.5 px-3\.5 py-2" data-matchup="m1"/)
+    expect(html).not.toMatch(/\bbg-m-gb2?\b/)
     // The loser's score is greyed; the winner's is not.
     expect(rowSides(html, 'm1')).toEqual([
       ['Alpha', '120.50'],
@@ -199,7 +202,7 @@ describe('the Schedule screen', () => {
       ['Bravo', '99.00'],
       ['Alpha', '120.50'],
     ])
-    // Only their game against you (Charlie) is tinted.
+    // Only their game against you (Charlie) is marked yours.
     expect([...html.matchAll(/data-matchup="([^"]+)" data-mine="true"/g)].map((m) => m[1])).toEqual(['m6'])
   })
 
@@ -254,7 +257,7 @@ describe('the Schedule screen', () => {
   })
 
   it('the reconnecting and not-refreshing lines sit in the sticky header under the chips — in view at the current week, not atop the list', () => {
-    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'reconnecting' })
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'reconnecting', degraded: false })
     const html = render(detailWith({ role: 'commissioner' }), { stale: SCHEDULE })
     const header = stickyHeader(html)
     const status = /data-schedule-status="true">(.*?)<\/div>/.exec(header)?.[1] ?? ''
@@ -271,7 +274,7 @@ describe('the Schedule screen', () => {
     // current week's title.
     expect(html).toMatch(/class="[^"]*\[overflow-anchor:none\][^"]*" data-schedule-screen/)
     // A healthy page shows neither.
-    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live', degraded: false })
     expect(render(detailWith(), SCHEDULE)).not.toContain('data-schedule-status')
   })
 

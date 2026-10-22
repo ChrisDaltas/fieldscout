@@ -74,7 +74,7 @@ export function LeagueNoteCard({ leagueId, canEdit }: { leagueId: string; canEdi
         </div>
       ) : note ? (
         <div className="px-3 pt-2.5" data-league-note="shown">
-          <div className="flex flex-col gap-1.5 rounded-[16px] bg-m-gb px-3.5 pb-3 pt-3">
+          <div className="flex flex-col gap-1.5 rounded-[16px] bg-m-b1 px-3.5 pb-3 pt-3">
             <button
               type="button"
               onClick={() => setOpen(true)}
@@ -82,7 +82,7 @@ export function LeagueNoteCard({ leagueId, canEdit }: { leagueId: string; canEdi
               className="flex flex-col gap-1.5 text-left"
               data-league-note-open
             >
-              <span className="flex items-center gap-1.5 text-[12px] font-semibold text-m-tb">
+              <span className="flex items-center gap-1.5 text-[12px] font-semibold text-m-t2">
                 <MIcon name="news" size={13} stroke={1.8} />
                 Commissioner note
                 <MIcon name="chevronRight" size={10} stroke={2} className="ml-auto text-m-t5" />
