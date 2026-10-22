@@ -62,3 +62,65 @@ export function appendId(ids: readonly string[], id: string): string[] {
 export function removeId(ids: readonly string[], id: string): string[] {
   return ids.filter((existing) => existing !== id)
 }
+
+/** The slice of a DOM element the drag guard reads — structural, so the
+ *  guard is testable without a DOM (R1635). */
+export interface GuardNode {
+  tagName?: string
+  getAttribute?: (name: string) => string | null
+  parentElement: GuardNode | null
+}
+
+const INTERACTIVE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'LABEL'])
+const INTERACTIVE_ROLES = new Set(['button', 'link', 'checkbox', 'menuitem', 'switch', 'textbox'])
+
+/**
+ * R1632: did a press start on an interactive control INSIDE the draggable
+ * row (the name button that opens the player card, Remove)? Walks from the
+ * event target up to — not including — the row root; the root itself is a
+ * `role="button"` sortable and does not count. A press there belongs to the
+ * control, so no sensor lifts the row. The guard lives in `my-queue.tsx`'s
+ * own sensors; the shared `player-row.tsx` is untouched.
+ */
+export function startsOnInteractiveChild(target: GuardNode | null, root: GuardNode | null): boolean {
+  let node = target
+  while (node !== null && node !== root) {
+    const tag = node.tagName?.toUpperCase()
+    if (tag && INTERACTIVE_TAGS.has(tag)) return true
+    const role = node.getAttribute?.('role')
+    if (role && INTERACTIVE_ROLES.has(role)) return true
+    node = node.parentElement
+  }
+  return false
+}
+
+/**
+ * Screen-reader sentences for a Targets reorder (M7 L.F1.1, F73/F55; D621).
+ * dnd-kit's default announcements name the DRAGGABLE ID — here a player id —
+ * so a keyboard or screen-reader user heard "Picked up draggable item
+ * 00-0036…". These name the player and the 1-based place in the list.
+ * `position` is null when the pointer is over nothing.
+ */
+export function targetsDragSentence(
+  event: 'start' | 'over' | 'end' | 'cancel',
+  name: string,
+  position: number | null,
+  total: number,
+): string {
+  switch (event) {
+    case 'start':
+      return position === null
+        ? `Picked up ${name}.`
+        : `Picked up ${name}, Target ${position} of ${total}.`
+    case 'over':
+      return position === null
+        ? `${name} is not over a Target.`
+        : `${name} moved to Target ${position} of ${total}.`
+    case 'end':
+      return position === null
+        ? `${name} dropped. Your Targets order is unchanged.`
+        : `${name} dropped at Target ${position} of ${total}.`
+    case 'cancel':
+      return `Move cancelled. ${name} stays where it was.`
+  }
+}

@@ -127,7 +127,15 @@ const STATUS_SOURCE: {
     state: 'on the clock (announcement)',
     needle: "You're on the clock",
     announcedBy: ['status-strip-ops.ts'],
-    why: "the strip's LEFT edge is the ruled announcement site (requirement 3, D149)",
+    // L.F1.1 (D620): the announcer's visually hidden live region is the
+    // SCREEN-READER telling of the strip's state — the strip is not a live
+    // region, so without it §16.3's "live-region announcements for
+    // picks/clock" had no site at all. It draws nothing on screen, so it is
+    // not a second visual telling; enumerated here so it is not silent.
+    alsoNamedBy: ['room-announcer-ops.ts'],
+    why:
+      "the strip's LEFT edge is the ruled announcement site (requirement 3, D149); the " +
+      'announcer (room-announcer-ops.ts) is its screen-reader voice, visually hidden'
   },
   {
     state: 'on the clock (object-local label)',
@@ -141,6 +149,8 @@ const STATUS_SOURCE: {
     state: 'on the clock (object-local label — unquoted companion)',
     needle: 'On the clock',
     announcedBy: ['draft-pick.tsx', 'status-strip-ops.ts'],
+    // L.F1.1 (D620): the announcer's "On the clock: Team." — see the row above.
+    alsoNamedBy: ['room-announcer-ops.ts'],
     why:
       'R398: the quoted needle above matches STRING LITERALS only, so a future teller ' +
       'written as bare JSX text (>On the clock<) would slip past it — this companion ' +

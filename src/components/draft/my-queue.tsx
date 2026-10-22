@@ -2,13 +2,17 @@
 
 import {
   DndContext,
-  PointerSensor,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
+  type Announcements,
   type DragEndEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
@@ -31,8 +35,60 @@ import {
   orderedIdsForSave,
   removeId,
   reorderIds,
+  startsOnInteractiveChild,
+  targetsDragSentence,
+  type GuardNode,
   type QueueViewRow,
 } from './my-queue-ops'
+
+/**
+ * The keyboard reorder (WCAG 2.1.1 — a drag needs a keyboard path; M7
+ * L.F1.1, D621). Space/Enter lift a FOCUSED ROW, the arrows move it, Space
+ * drops, Escape cancels. The row root carries the drag listeners AND
+ * interactive children (the name button opens the player card, the Remove
+ * button), and keydown bubbles: without this guard, Enter on the name button
+ * would lift the row instead of opening the card. dnd-kit's own guard only
+ * runs when a separate activator node is registered, and the shared
+ * `player-row.tsx` registers none — so the guard lives here, not there.
+ */
+const baseKeyboardActivator = KeyboardSensor.activators[0]
+class RowKeyboardSensor extends KeyboardSensor {
+  static activators: typeof KeyboardSensor.activators = [
+    {
+      eventName: 'onKeyDown',
+      handler: (event, options, context) =>
+        event.target === event.currentTarget &&
+        baseKeyboardActivator.handler(event, options, context),
+    },
+  ]
+}
+
+/**
+ * R1632: the pointer half of the same guard. A press (mouse or touch) that
+ * starts on the name button or Remove belongs to that control — a
+ * press-and-hold on a name must not lift the row out from under the finger.
+ * `startsOnInteractiveChild` walks from the target to the row root.
+ */
+function guardedActivators<
+  A extends { eventName: string; handler: (event: never, ...rest: never[]) => boolean | undefined },
+>(activators: readonly A[]): A[] {
+  return activators.map((activator) => ({
+    ...activator,
+    handler: (event: React.SyntheticEvent, ...rest: unknown[]) =>
+      !startsOnInteractiveChild(
+        event.target as unknown as GuardNode,
+        event.currentTarget as unknown as GuardNode,
+      ) && (activator.handler as (e: unknown, ...r: unknown[]) => boolean)(event, ...rest),
+  })) as unknown as A[]
+}
+
+export class RowMouseSensor extends MouseSensor {
+  static activators = guardedActivators(MouseSensor.activators)
+}
+
+export class RowTouchSensor extends TouchSensor {
+  static activators = guardedActivators(TouchSensor.activators)
+}
 
 interface MyQueueProps {
   /** The room's scope league, `null` on a standalone practice draft —
@@ -89,7 +145,36 @@ export function MyQueue({
   const saveIds = useMemo(() => orderedIdsForSave(view), [view])
   const allIds = useMemo(() => view.map((row) => row.player_id), [view])
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  // F73 (M7 L.F1.1, D621): touch reorder. The single PointerSensor was
+  // inert on a phone — the browser claims a touch-move for scrolling and the
+  // pointer stream cancels before the 5px activation. The house pairing
+  // (lineup editor, lists v2, draft-order editor): Mouse for a mouse, Touch
+  // with a press-and-hold so a plain swipe still scrolls the Targets list.
+  const sensors = useSensors(
+    useSensor(RowMouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(RowTouchSensor, { activationConstraint: { delay: 220, tolerance: 6 } }),
+    useSensor(RowKeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  // dnd-kit's default announcements read the draggable id (a player id).
+  const announcements = useMemo<Announcements>(() => {
+    const nameOf = (id: string | number) => playerById.get(String(id))?.full_name ?? 'Player'
+    const placeOf = (id: string | number | undefined) => {
+      if (id === undefined) return null
+      const index = allIds.indexOf(String(id))
+      return index < 0 ? null : index + 1
+    }
+    return {
+      onDragStart: ({ active }) =>
+        targetsDragSentence('start', nameOf(active.id), placeOf(active.id), allIds.length),
+      onDragOver: ({ active, over }) =>
+        targetsDragSentence('over', nameOf(active.id), placeOf(over?.id), allIds.length),
+      onDragEnd: ({ active, over }) =>
+        targetsDragSentence('end', nameOf(active.id), placeOf(over?.id), allIds.length),
+      onDragCancel: ({ active }) =>
+        targetsDragSentence('cancel', nameOf(active.id), null, allIds.length),
+    }
+  }, [playerById, allIds])
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
@@ -136,7 +221,11 @@ export function MyQueue({
             : 'Add players from the pool so a plan is ready when the clock hits you. Timeouts draft from the top of your Targets first.'}
         </p>
       ) : (
-        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sensors}
+          onDragEnd={handleDragEnd}
+          accessibility={{ announcements }}
+        >
           <SortableContext items={allIds} strategy={verticalListSortingStrategy}>
             <ul className="flex flex-col gap-0.5 p-2">
               {view.map((row, i) => (

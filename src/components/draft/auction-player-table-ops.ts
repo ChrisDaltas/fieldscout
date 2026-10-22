@@ -633,6 +633,13 @@ export interface FilterInput {
   onlyListIds: ReadonlySet<string> | null
 }
 
+/** The live region's answer to a filter change (L.F1.1 F55 L.C3.3 (c);
+ *  R1633 — said only when a filter changes). */
+export function filterResultSentence(count: number): string {
+  if (count === 0) return 'No players shown'
+  return `${count} ${count === 1 ? 'player' : 'players'} shown`
+}
+
 /**
  * The four filters, composed. Drafted rows are REMOVED unless Show
  * Drafted is on — when it is on they stay in place, greyed, carrying
