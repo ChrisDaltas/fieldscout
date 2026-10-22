@@ -56,6 +56,11 @@ describe('scoring-editor.tsx source pins', () => {
     )
   })
 
+  it('the phone marks the sample’s tier row with a small "Sample" tag, never a row fill (Chris 2026-10-21: "do the tag")', () => {
+    expect(editorSource).toMatch(/\{highlight && \(\s*<span data-sample-tag className="[^"]*rounded-pill bg-m-gb[^"]*">Sample<\/span>/)
+    expect(editorSource).not.toMatch(/highlight && '[^']*bg-m-gb/)
+  })
+
   it('F191: the remount key derives from DOCUMENT CONTENT ONLY — status/editable reconcile via props, so a failed refetch cannot discard unsaved typing', () => {
     expect(editorSource).toMatch(/key=\{canonicalDocJson\(doc\)\}/)
     // The defective shape — `${canonicalDocJson(doc)}|…status…|…editable…` —

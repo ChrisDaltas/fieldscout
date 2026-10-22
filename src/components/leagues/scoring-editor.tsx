@@ -1130,20 +1130,20 @@ function CoefficientCell({
   if (useSettingsSkin() === 'mobile') {
     // The phone row (the G-page rows): label and notes on the left, the
     // "Custom" chip, the sign switch and the phone number field on the
-    // right; the sample's tier row carries the blue tint (a resting state =
-    // fill, never a lift).
+    // right; the sample's tier row carries a small blue "Sample" tag by its
+    // label — no row fill (Chris 2026-10-21: "do the tag").
     const negative = shown.trim().startsWith('-')
     return (
-      <div
-        className={cn(
-          'flex min-h-[48px] items-center gap-3 border-b border-m-b2 py-2 last:border-b-0',
-          highlight && '-mx-2 rounded-[10px] border-b-0 bg-m-gb px-2',
-        )}
-      >
+      <div className="flex min-h-[48px] items-center gap-3 border-b border-m-b2 py-2 last:border-b-0">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <label htmlFor={`scoring-${field.key}`} className="text-[14px] font-semibold text-m-t1">
-            {sentenceCase(field.label)}
-          </label>
+          <div className="flex items-center gap-2">
+            <label htmlFor={`scoring-${field.key}`} className="text-[14px] font-semibold text-m-t1">
+              {sentenceCase(field.label)}
+            </label>
+            {highlight && (
+              <span data-sample-tag className="flex h-5 flex-none items-center rounded-pill bg-m-gb px-2 text-[11px] font-semibold text-m-tb">Sample</span>
+            )}
+          </div>
           {hint ? <p className={M_NOTE}>{hint}</p> : null}
           {field.overridden ? (
             <p className={M_NOTE}>
