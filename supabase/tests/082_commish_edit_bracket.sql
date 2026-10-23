@@ -110,33 +110,49 @@ select
   json_build_object('username', 'eb_user' || i)::jsonb, now(), now()
 from generate_series(1, 3) i;
 
-update nfl_weeks set first_kickoff_at = null, last_game_ends_at = null where season = 2026;
-update nfl_weeks set last_game_ends_at = starts_at + interval '6 days' where season = 2026 and week in (1, 2);
-update nfl_weeks set starts_at = '2026-09-23 04:00:00+00', last_game_ends_at = '2026-09-29 04:00:00+00', correction_window_ends_at = '2026-10-01 10:00:00+00' where season = 2026 and week = 3;
-update nfl_weeks set starts_at = '2026-09-30 04:00:00+00', last_game_ends_at = '2026-10-06 04:00:00+00', correction_window_ends_at = '2026-10-08 10:00:00+00' where season = 2026 and week = 4;
-update nfl_weeks set starts_at = '2026-10-07 04:00:00+00', last_game_ends_at = '2026-10-13 04:00:00+00', correction_window_ends_at = '2026-10-15 10:00:00+00' where season = 2026 and week = 5;
-update nfl_weeks set starts_at = '2026-10-14 04:00:00+00', last_game_ends_at = '2026-10-20 04:00:00+00', correction_window_ends_at = '2026-10-22 10:00:00+00' where season = 2026 and week = 6;
-update nfl_weeks set starts_at = '2026-10-21 04:00:00+00', last_game_ends_at = '2026-10-27 04:00:00+00', correction_window_ends_at = '2026-10-29 10:00:00+00' where season = 2026 and week = 7;
-update nfl_weeks set starts_at = '2026-10-28 04:00:00+00', last_game_ends_at = '2026-11-03 04:00:00+00', correction_window_ends_at = '2026-11-05 10:00:00+00' where season = 2026 and week = 8;
-update nfl_weeks set starts_at = '2026-11-04 04:00:00+00', last_game_ends_at = '2026-11-10 04:00:00+00', correction_window_ends_at = '2026-11-12 10:00:00+00' where season = 2026 and week = 9;
+-- F806 / D720: the world is season 2071, never a real one. It was season
+-- 2026's real weeks, and the door reads now() — so once eb-w7's planted
+-- kickoff (then 2026-10-23 04:00) passed on the wall clock, kickoff_lock:7
+-- joined bypassed[] and ten goldens went red. 2071 has 2026's calendar
+-- (both begin on a Thursday, neither is leap; 16 436 days = 2 348 weeks), so
+-- every planted instant keeps its weekday and its distance from every other;
+-- only the year moved. Its calendar rows are planted here as the seeded 2026
+-- rows shifted by that exact span (static seed data, not the clock); the
+-- updates below then pin weeks 3-12 exactly as before.
+insert into nfl_weeks (season, week, starts_at, first_kickoff_at, last_game_ends_at, correction_window_ends_at, correction_window_default_ends_at)
+select 2071, week, starts_at + interval '16436 days', first_kickoff_at + interval '16436 days', last_game_ends_at + interval '16436 days',
+       correction_window_ends_at + interval '16436 days', correction_window_default_ends_at + interval '16436 days'
+from nfl_weeks where season = 2026
+on conflict (season, week) do update set starts_at = excluded.starts_at, first_kickoff_at = excluded.first_kickoff_at,
+  last_game_ends_at = excluded.last_game_ends_at, correction_window_ends_at = excluded.correction_window_ends_at,
+  correction_window_default_ends_at = excluded.correction_window_default_ends_at;
+update nfl_weeks set first_kickoff_at = null, last_game_ends_at = null where season = 2071;
+update nfl_weeks set last_game_ends_at = starts_at + interval '6 days' where season = 2071 and week in (1, 2);
+update nfl_weeks set starts_at = '2071-09-23 04:00:00+00', last_game_ends_at = '2071-09-29 04:00:00+00', correction_window_ends_at = '2071-10-01 10:00:00+00' where season = 2071 and week = 3;
+update nfl_weeks set starts_at = '2071-09-30 04:00:00+00', last_game_ends_at = '2071-10-06 04:00:00+00', correction_window_ends_at = '2071-10-08 10:00:00+00' where season = 2071 and week = 4;
+update nfl_weeks set starts_at = '2071-10-07 04:00:00+00', last_game_ends_at = '2071-10-13 04:00:00+00', correction_window_ends_at = '2071-10-15 10:00:00+00' where season = 2071 and week = 5;
+update nfl_weeks set starts_at = '2071-10-14 04:00:00+00', last_game_ends_at = '2071-10-20 04:00:00+00', correction_window_ends_at = '2071-10-22 10:00:00+00' where season = 2071 and week = 6;
+update nfl_weeks set starts_at = '2071-10-21 04:00:00+00', last_game_ends_at = '2071-10-27 04:00:00+00', correction_window_ends_at = '2071-10-29 10:00:00+00' where season = 2071 and week = 7;
+update nfl_weeks set starts_at = '2071-10-28 04:00:00+00', last_game_ends_at = '2071-11-03 04:00:00+00', correction_window_ends_at = '2071-11-05 10:00:00+00' where season = 2071 and week = 8;
+update nfl_weeks set starts_at = '2071-11-04 04:00:00+00', last_game_ends_at = '2071-11-10 04:00:00+00', correction_window_ends_at = '2071-11-12 10:00:00+00' where season = 2071 and week = 9;
 -- Weeks 10-12 exist for L3 (§L: three two-week rounds, weeks 7-12).
-update nfl_weeks set starts_at = '2026-11-11 04:00:00+00', last_game_ends_at = '2026-11-17 04:00:00+00', correction_window_ends_at = '2026-11-19 10:00:00+00' where season = 2026 and week = 10;
-update nfl_weeks set starts_at = '2026-11-18 04:00:00+00', last_game_ends_at = '2026-11-24 04:00:00+00', correction_window_ends_at = '2026-11-26 10:00:00+00' where season = 2026 and week = 11;
-update nfl_weeks set starts_at = '2026-11-25 04:00:00+00', last_game_ends_at = '2026-12-01 04:00:00+00', correction_window_ends_at = '2026-12-03 10:00:00+00' where season = 2026 and week = 12;
-delete from nfl_games where season = 2026;
+update nfl_weeks set starts_at = '2071-11-11 04:00:00+00', last_game_ends_at = '2071-11-17 04:00:00+00', correction_window_ends_at = '2071-11-19 10:00:00+00' where season = 2071 and week = 10;
+update nfl_weeks set starts_at = '2071-11-18 04:00:00+00', last_game_ends_at = '2071-11-24 04:00:00+00', correction_window_ends_at = '2071-11-26 10:00:00+00' where season = 2071 and week = 11;
+update nfl_weeks set starts_at = '2071-11-25 04:00:00+00', last_game_ends_at = '2071-12-01 04:00:00+00', correction_window_ends_at = '2071-12-03 10:00:00+00' where season = 2071 and week = 12;
+delete from nfl_games where season = 2071;
 insert into nfl_games (id, season, week, home_team, away_team, kickoff_at, status)
-select 'eb-w' || w, 2026, w, 'BUF', 'KC', (select starts_at + interval '2 days' from nfl_weeks where season = 2026 and week = w), 'final'
+select 'eb-w' || w, 2071, w, 'BUF', 'KC', (select starts_at + interval '2 days' from nfl_weeks where season = 2071 and week = w), 'final'
 from generate_series(3, 12) w;
 
 insert into leagues (id, owner_id, name, season, status, team_count, regular_season_weeks, playoff_teams, playoff_start_week,
                      scoring_system_id, scoring_rules_snapshot, lineup_lock, settings, roster_settings) values
- ('be000000-0000-4000-8000-000000000001', '9e000000-0000-4000-8000-000000000001', 'pgtap-eb-L1', 2026, 'in_season', 8, 4, 6, 5,
+ ('be000000-0000-4000-8000-000000000001', '9e000000-0000-4000-8000-000000000001', 'pgtap-eb-L1', 2071, 'in_season', 8, 4, 6, 5,
   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
   (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
   'per_player_kickoff',
   '{"schedule_mode": "h2h", "median_game": false, "second_opponent": false, "schedule_seed": 134134, "playoff_weeks_per_round": 1, "playoff_reseed": true}',
   '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 3, "ir_slots": [], "swap_spots": 0}'),
- ('be000000-0000-4000-8000-000000000002', '9e000000-0000-4000-8000-000000000001', 'pgtap-eb-L2', 2026, 'in_season', 8, 10, 2, 13,
+ ('be000000-0000-4000-8000-000000000002', '9e000000-0000-4000-8000-000000000001', 'pgtap-eb-L2', 2071, 'in_season', 8, 10, 2, 13,
   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
   (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
   'per_player_kickoff',
@@ -145,7 +161,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, regular_sea
  -- L3 (§L, R1085): L1's twin with `playoff_weeks_per_round: 2` — the same
  -- regular season (weeks 3-6), so the same seeds; three two-week rounds on
  -- weeks 7-12. ONE pairing = a row in EACH of a round's weeks (134:328-348).
- ('be000000-0000-4000-8000-000000000003', '9e000000-0000-4000-8000-000000000001', 'pgtap-eb-L3', 2026, 'in_season', 8, 4, 6, 7,
+ ('be000000-0000-4000-8000-000000000003', '9e000000-0000-4000-8000-000000000001', 'pgtap-eb-L3', 2071, 'in_season', 8, 4, 6, 7,
   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
   (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
   'per_player_kickoff',
@@ -179,32 +195,32 @@ insert into league_members (league_id, user_id, team_id, role) values
  ('be000000-0000-4000-8000-000000000002', '9e000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000021', 'commissioner'),
  ('be000000-0000-4000-8000-000000000003', '9e000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000031', 'commissioner');
 
-insert into league_weeks (league_id, season, week) select 'be000000-0000-4000-8000-000000000001', 2026, g from generate_series(3, 9) g;
+insert into league_weeks (league_id, season, week) select 'be000000-0000-4000-8000-000000000001', 2071, g from generate_series(3, 9) g;
 update league_weeks set status = 'live'              where league_id = 'be000000-0000-4000-8000-000000000001' and week between 3 and 5;
 update league_weeks set status = 'correction_window' where league_id = 'be000000-0000-4000-8000-000000000001' and week between 3 and 5;
-insert into league_weeks (league_id, season, week) select 'be000000-0000-4000-8000-000000000002', 2026, g from generate_series(3, 13) g;
-insert into league_weeks (league_id, season, week) select 'be000000-0000-4000-8000-000000000003', 2026, g from generate_series(3, 12) g;
+insert into league_weeks (league_id, season, week) select 'be000000-0000-4000-8000-000000000002', 2071, g from generate_series(3, 13) g;
+insert into league_weeks (league_id, season, week) select 'be000000-0000-4000-8000-000000000003', 2071, g from generate_series(3, 12) g;
 update league_weeks set status = 'live'              where league_id = 'be000000-0000-4000-8000-000000000003' and week between 3 and 5;
 update league_weeks set status = 'correction_window' where league_id = 'be000000-0000-4000-8000-000000000003' and week between 3 and 5;
 
 -- L1 (A=01 … H=08) — 066 P1's regular season, verbatim in shape.
 insert into matchups (id, league_id, season, week, round_type, home_team_id, away_team_id, home_score, away_score, status) values
- ('de000000-0000-4000-8000-000000000131', 'be000000-0000-4000-8000-000000000001', 2026, 3, 'regular', 'ce000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002', 100.00,  90.00, 'live'),
- ('de000000-0000-4000-8000-000000000132', 'be000000-0000-4000-8000-000000000001', 2026, 3, 'regular', 'ce000000-0000-4000-8000-000000000003', 'ce000000-0000-4000-8000-000000000004', 100.00,  80.00, 'live'),
- ('de000000-0000-4000-8000-000000000133', 'be000000-0000-4000-8000-000000000001', 2026, 3, 'regular', 'ce000000-0000-4000-8000-000000000005', 'ce000000-0000-4000-8000-000000000006',  95.00,  85.00, 'live'),
- ('de000000-0000-4000-8000-000000000134', 'be000000-0000-4000-8000-000000000001', 2026, 3, 'regular', 'ce000000-0000-4000-8000-000000000007', 'ce000000-0000-4000-8000-000000000008',  70.00, 110.00, 'live'),
- ('de000000-0000-4000-8000-000000000141', 'be000000-0000-4000-8000-000000000001', 2026, 4, 'regular', 'ce000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000003', 100.00,  90.00, 'live'),
- ('de000000-0000-4000-8000-000000000142', 'be000000-0000-4000-8000-000000000001', 2026, 4, 'regular', 'ce000000-0000-4000-8000-000000000002', 'ce000000-0000-4000-8000-000000000004', 100.00,  70.00, 'live'),
- ('de000000-0000-4000-8000-000000000143', 'be000000-0000-4000-8000-000000000001', 2026, 4, 'regular', 'ce000000-0000-4000-8000-000000000005', 'ce000000-0000-4000-8000-000000000007', 100.00,  80.00, 'live'),
- ('de000000-0000-4000-8000-000000000144', 'be000000-0000-4000-8000-000000000001', 2026, 4, 'regular', 'ce000000-0000-4000-8000-000000000006', 'ce000000-0000-4000-8000-000000000008',  90.00, 120.00, 'live'),
- ('de000000-0000-4000-8000-000000000151', 'be000000-0000-4000-8000-000000000001', 2026, 5, 'regular', 'ce000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000004', 110.00, 100.00, 'live'),
- ('de000000-0000-4000-8000-000000000152', 'be000000-0000-4000-8000-000000000001', 2026, 5, 'regular', 'ce000000-0000-4000-8000-000000000002', 'ce000000-0000-4000-8000-000000000003',  80.00, 100.00, 'live'),
- ('de000000-0000-4000-8000-000000000153', 'be000000-0000-4000-8000-000000000001', 2026, 5, 'regular', 'ce000000-0000-4000-8000-000000000005', 'ce000000-0000-4000-8000-000000000008',  90.00, 130.00, 'live'),
- ('de000000-0000-4000-8000-000000000154', 'be000000-0000-4000-8000-000000000001', 2026, 5, 'regular', 'ce000000-0000-4000-8000-000000000006', 'ce000000-0000-4000-8000-000000000007', 100.00,  95.00, 'live'),
- ('de000000-0000-4000-8000-000000000161', 'be000000-0000-4000-8000-000000000001', 2026, 6, 'regular', 'ce000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000005', 100.00,  90.00, 'scheduled'),
- ('de000000-0000-4000-8000-000000000162', 'be000000-0000-4000-8000-000000000001', 2026, 6, 'regular', 'ce000000-0000-4000-8000-000000000002', 'ce000000-0000-4000-8000-000000000006', 100.00,  70.00, 'scheduled'),
- ('de000000-0000-4000-8000-000000000163', 'be000000-0000-4000-8000-000000000001', 2026, 6, 'regular', 'ce000000-0000-4000-8000-000000000003', 'ce000000-0000-4000-8000-000000000007',  90.00,  95.00, 'scheduled'),
- ('de000000-0000-4000-8000-000000000164', 'be000000-0000-4000-8000-000000000001', 2026, 6, 'regular', 'ce000000-0000-4000-8000-000000000004', 'ce000000-0000-4000-8000-000000000008', 100.00, 105.00, 'scheduled');
+ ('de000000-0000-4000-8000-000000000131', 'be000000-0000-4000-8000-000000000001', 2071, 3, 'regular', 'ce000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002', 100.00,  90.00, 'live'),
+ ('de000000-0000-4000-8000-000000000132', 'be000000-0000-4000-8000-000000000001', 2071, 3, 'regular', 'ce000000-0000-4000-8000-000000000003', 'ce000000-0000-4000-8000-000000000004', 100.00,  80.00, 'live'),
+ ('de000000-0000-4000-8000-000000000133', 'be000000-0000-4000-8000-000000000001', 2071, 3, 'regular', 'ce000000-0000-4000-8000-000000000005', 'ce000000-0000-4000-8000-000000000006',  95.00,  85.00, 'live'),
+ ('de000000-0000-4000-8000-000000000134', 'be000000-0000-4000-8000-000000000001', 2071, 3, 'regular', 'ce000000-0000-4000-8000-000000000007', 'ce000000-0000-4000-8000-000000000008',  70.00, 110.00, 'live'),
+ ('de000000-0000-4000-8000-000000000141', 'be000000-0000-4000-8000-000000000001', 2071, 4, 'regular', 'ce000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000003', 100.00,  90.00, 'live'),
+ ('de000000-0000-4000-8000-000000000142', 'be000000-0000-4000-8000-000000000001', 2071, 4, 'regular', 'ce000000-0000-4000-8000-000000000002', 'ce000000-0000-4000-8000-000000000004', 100.00,  70.00, 'live'),
+ ('de000000-0000-4000-8000-000000000143', 'be000000-0000-4000-8000-000000000001', 2071, 4, 'regular', 'ce000000-0000-4000-8000-000000000005', 'ce000000-0000-4000-8000-000000000007', 100.00,  80.00, 'live'),
+ ('de000000-0000-4000-8000-000000000144', 'be000000-0000-4000-8000-000000000001', 2071, 4, 'regular', 'ce000000-0000-4000-8000-000000000006', 'ce000000-0000-4000-8000-000000000008',  90.00, 120.00, 'live'),
+ ('de000000-0000-4000-8000-000000000151', 'be000000-0000-4000-8000-000000000001', 2071, 5, 'regular', 'ce000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000004', 110.00, 100.00, 'live'),
+ ('de000000-0000-4000-8000-000000000152', 'be000000-0000-4000-8000-000000000001', 2071, 5, 'regular', 'ce000000-0000-4000-8000-000000000002', 'ce000000-0000-4000-8000-000000000003',  80.00, 100.00, 'live'),
+ ('de000000-0000-4000-8000-000000000153', 'be000000-0000-4000-8000-000000000001', 2071, 5, 'regular', 'ce000000-0000-4000-8000-000000000005', 'ce000000-0000-4000-8000-000000000008',  90.00, 130.00, 'live'),
+ ('de000000-0000-4000-8000-000000000154', 'be000000-0000-4000-8000-000000000001', 2071, 5, 'regular', 'ce000000-0000-4000-8000-000000000006', 'ce000000-0000-4000-8000-000000000007', 100.00,  95.00, 'live'),
+ ('de000000-0000-4000-8000-000000000161', 'be000000-0000-4000-8000-000000000001', 2071, 6, 'regular', 'ce000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000005', 100.00,  90.00, 'scheduled'),
+ ('de000000-0000-4000-8000-000000000162', 'be000000-0000-4000-8000-000000000001', 2071, 6, 'regular', 'ce000000-0000-4000-8000-000000000002', 'ce000000-0000-4000-8000-000000000006', 100.00,  70.00, 'scheduled'),
+ ('de000000-0000-4000-8000-000000000163', 'be000000-0000-4000-8000-000000000001', 2071, 6, 'regular', 'ce000000-0000-4000-8000-000000000003', 'ce000000-0000-4000-8000-000000000007',  90.00,  95.00, 'scheduled'),
+ ('de000000-0000-4000-8000-000000000164', 'be000000-0000-4000-8000-000000000001', 2071, 6, 'regular', 'ce000000-0000-4000-8000-000000000004', 'ce000000-0000-4000-8000-000000000008', 100.00, 105.00, 'scheduled');
 -- L3 (§L): L1's regular season re-keyed (team 0N → 3N, matchup 1WN → 3WN),
 -- score for score — the same standings, the same six seeds.
 insert into matchups (id, league_id, season, week, round_type, home_team_id, away_team_id, home_score, away_score, status)
@@ -215,7 +231,7 @@ select ('de000000-0000-4000-8000-0000000003' || right(m.id::text, 2))::uuid, 'be
 from matchups m where m.league_id = 'be000000-0000-4000-8000-000000000001';
 -- L2: a SEEDED playoff row in a league that is still in_season (§F6).
 insert into matchups (id, league_id, season, week, round_type, home_team_id, away_team_id, home_seed, away_seed, status) values
- ('de000000-0000-4000-8000-000000000271', 'be000000-0000-4000-8000-000000000002', 2026, 13, 'playoff', 'ce000000-0000-4000-8000-000000000021', 'ce000000-0000-4000-8000-000000000022', 1, 2, 'scheduled');
+ ('de000000-0000-4000-8000-000000000271', 'be000000-0000-4000-8000-000000000002', 2071, 13, 'playoff', 'ce000000-0000-4000-8000-000000000021', 'ce000000-0000-4000-8000-000000000022', 1, 2, 'scheduled');
 
 -- Renderers (066's).
 create or replace function pg_temp.eb_round(p_first int, p_last int) returns text language sql as $$
@@ -224,12 +240,12 @@ create or replace function pg_temp.eb_round(p_first int, p_last int) returns tex
                m.home_seed || ':' || right(m.home_team_id::text, 2) || 'v' ||
                coalesce(m.away_seed || ':' || right(m.away_team_id::text, 2), 'bye') as g
         from matchups m
-        where m.league_id = 'be000000-0000-4000-8000-000000000001' and m.season = 2026 and m.week between p_first and p_last and m.round_type = 'playoff') r
+        where m.league_id = 'be000000-0000-4000-8000-000000000001' and m.season = 2071 and m.week between p_first and p_last and m.round_type = 'playoff') r
 $$;
 create or replace function pg_temp.eb_marks(p_first int, p_last int) returns text language sql as $$
   select coalesce(string_agg(coalesce(right(m.pairing_set_by_action_id::text, 4), 'none'), ',' order by m.week, m.home_seed), '')
   from matchups m
-  where m.league_id = 'be000000-0000-4000-8000-000000000001' and m.season = 2026 and m.week between p_first and p_last and m.round_type = 'playoff'
+  where m.league_id = 'be000000-0000-4000-8000-000000000001' and m.season = 2071 and m.week between p_first and p_last and m.round_type = 'playoff'
 $$;
 create or replace function pg_temp.eb_brackets(p_league uuid) returns jsonb language sql as $$
   select coalesce((select x from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'brackets') x where x ->> 'league_id' = p_league::text limit 1), '{}'::jsonb)
@@ -247,12 +263,12 @@ $$;
 create or replace function pg_temp.eb3_round(p_week int) returns text language sql as $$
   select string_agg(m.home_seed || ':' || right(m.home_team_id::text, 2) || 'v' || coalesce(m.away_seed || ':' || right(m.away_team_id::text, 2), 'bye'), ',' order by m.home_seed)
   from matchups m
-  where m.league_id = 'be000000-0000-4000-8000-000000000003' and m.season = 2026 and m.week = p_week and m.round_type = 'playoff'
+  where m.league_id = 'be000000-0000-4000-8000-000000000003' and m.season = 2071 and m.week = p_week and m.round_type = 'playoff'
 $$;
 create or replace function pg_temp.eb3_marks(p_first int, p_last int) returns text language sql as $$
   select coalesce(string_agg(coalesce(right(m.pairing_set_by_action_id::text, 4), 'none'), ',' order by m.week, m.home_seed), '')
   from matchups m
-  where m.league_id = 'be000000-0000-4000-8000-000000000003' and m.season = 2026 and m.week between p_first and p_last and m.round_type = 'playoff'
+  where m.league_id = 'be000000-0000-4000-8000-000000000003' and m.season = 2071 and m.week between p_first and p_last and m.round_type = 'playoff'
 $$;
 create or replace function pg_temp.eb3_m(p_week int, p_seed int) returns uuid language sql as $$
   select id from matchups where league_id = 'be000000-0000-4000-8000-000000000003' and week = p_week and round_type = 'playoff' and home_seed = p_seed
@@ -262,9 +278,9 @@ create or replace function pg_temp.eb3_ca() returns int language sql as $$
 $$;
 
 -- The jobs walk L1 to a built round 1 (066 §E-§G's instants).
-select set_config('pgtap.r', public.finalize_matchups('2026-10-15 10:00:00+00')::text, true);
-select set_config('pgtap.r', public.league_week_advance('2026-10-14 04:00:00+00')::text, true);
-select set_config('pgtap.r', public.league_week_advance('2026-10-20 04:00:00+00')::text, true);
+select set_config('pgtap.r', public.finalize_matchups('2071-10-15 10:00:00+00')::text, true);
+select set_config('pgtap.r', public.league_week_advance('2071-10-14 04:00:00+00')::text, true);
+select set_config('pgtap.r', public.league_week_advance('2071-10-20 04:00:00+00')::text, true);
 
 -- PREMISES.
 select is((pg_temp.eb_brackets('be000000-0000-4000-8000-000000000001') ->> 'action') || ':' || (pg_temp.eb_brackets('be000000-0000-4000-8000-000000000001') ->> 'round') || ':' || (pg_temp.eb_brackets('be000000-0000-4000-8000-000000000001') ->> 'source'),
@@ -274,11 +290,11 @@ select is(pg_temp.eb_round(7, 7), '1:01vbye,2:03vbye,3:05v6:07,4:02v5:06',
 select is((select status from leagues where id = 'be000000-0000-4000-8000-000000000001'), 'playoffs', 'B3 PREMISE: L1 is in playoffs');
 select is((select string_agg(status, ',' order by home_seed) || '|' || (select status from league_weeks where league_id = 'be000000-0000-4000-8000-000000000001' and week = 7) from matchups where league_id = 'be000000-0000-4000-8000-000000000001' and week = 7),
   'scheduled,scheduled,scheduled,scheduled|upcoming', 'B4 PREMISE: four scheduled rows in an upcoming week 7 (no timing gate engaged yet)');
-select is((select free from public.schedule_window_internal(2026, 7, '2026-10-20 05:00:00+00')), true, 'B5 PREMISE: week 7 has not kicked off at 2026-10-20 05:00 (eb-w7 kicks off 10-23)');
+select is((select free from public.schedule_window_internal(2071, 7, '2071-10-20 05:00:00+00')), true, 'B5 PREMISE: week 7 has not kicked off at 2071-10-20 05:00 (eb-w7 kicks off 10-23)');
 select is(pg_temp.eb_ca() || ':' || pg_temp.eb_chat() || ':' || (select count(*)::int from commish_bracket_actions), '0:0:0',
   'B6 PREMISE: zero receipts, zero posts, zero ledger rows — every row counted below is this suite''s');
 select is(pg_temp.eb_marks(7, 7), 'none,none,none,none', 'B7 PREMISE: no row of round 1 is marked');
-select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2026-10-20 04:00:00+00'), '{"round": 1, "reason": "round_in_progress", "source": "provisional"}'::jsonb,
+select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2071-10-20 04:00:00+00'), '{"round": 1, "reason": "round_in_progress", "source": "provisional"}'::jsonb,
   'B8 PREMISE: the sync reads the engine''s round as in progress (stored = desired) — the state §D contrasts against');
 
 -- ---------------------------------------------------------------------------
@@ -328,29 +344,29 @@ select is((select string_agg(status, ',' order by home_seed) || '|' || string_ag
 -- ---------------------------------------------------------------------------
 -- D. SURVIVAL — the cell that does not exist today. ***BREAK PROBE 1***
 -- ---------------------------------------------------------------------------
-select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2026-10-20 04:00:00+00') - 'set_by_action_id',
+select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2071-10-20 04:00:00+00') - 'set_by_action_id',
   '{"round": 1, "reason": "round_hand_picked", "source": "provisional", "weeks": [7, 7], "rows": 4}'::jsonb,
   'D1 THE SURVIVAL CELL: the sync at the rollover instant — where B8 said stored = desired and where a differing pairing was DELETEd and re-INSERTed before 134 (118:1573-1594) — now reports round_hand_picked and writes NOTHING');
-select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2026-10-20 04:00:00+00') ->> 'set_by_action_id', current_setting('pgtap.c1')::jsonb ->> 'commissioner_action_id',
+select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2071-10-20 04:00:00+00') ->> 'set_by_action_id', current_setting('pgtap.c1')::jsonb ->> 'commissioner_action_id',
   'D1b …and names the receipt that set it');
 select is(pg_temp.eb_round(7, 7) || '|' || (select count(*)::int from matchups where league_id = 'be000000-0000-4000-8000-000000000001' and week = 7), '1:01vbye,2:03vbye,3:05v5:06,4:02v6:07|4',
   'D2 the hand-picked pairing STANDS — same four rows, same pairing');
 select is(pg_temp.eb_marks(7, 7), repeat(right((current_setting('pgtap.c1')::jsonb ->> 'commissioner_action_id'), 4) || ',', 3) || right((current_setting('pgtap.c1')::jsonb ->> 'commissioner_action_id'), 4),
   'D2b …marks intact (no row was re-INSERTed)');
 -- Week 7 opens (Wednesday): the rows go live with the week (116 (a)).
-select set_config('pgtap.r', public.league_week_advance('2026-10-21 04:00:00+00')::text, true);
+select set_config('pgtap.r', public.league_week_advance('2071-10-21 04:00:00+00')::text, true);
 select is((select status from league_weeks where league_id = 'be000000-0000-4000-8000-000000000001' and week = 7) || ':' || (select string_agg(status, ',' order by home_seed) from matchups where league_id = 'be000000-0000-4000-8000-000000000001' and week = 7),
   'live:live,live,live,live', 'D3 week 7 opens for L1; the four hand-picked rows go live with it');
 select is(current_setting('pgtap.r')::jsonb -> 'brackets' || (current_setting('pgtap.r')::jsonb -> 'bracket_blocked') || (current_setting('pgtap.r')::jsonb -> 'bracket_waiting') || (current_setting('pgtap.r')::jsonb -> 'bracket_failures'), '[]'::jsonb,
   'D3b …the advance payload carries NO bracket action, block, wait or failure for it — round_hand_picked is the every-hour normal, like round_in_progress');
 -- THE CORRECTION CLOSE (§11.5 (E)) — the rebuild that rewrote a landed edit
 -- before 134 (066 §H3). Week 6 finalizes; the round is left as picked.
-select set_config('pgtap.r', public.finalize_matchups('2026-10-22 10:00:00+00')::text, true);
+select set_config('pgtap.r', public.finalize_matchups('2071-10-22 10:00:00+00')::text, true);
 select is((select status from league_weeks where league_id = 'be000000-0000-4000-8000-000000000001' and week = 6), 'final', 'D4 the close AT: L1''s week 6 finalizes');
 select is(pg_temp.eb_brackets('be000000-0000-4000-8000-000000000001'), '{}'::jsonb, 'D4b …NO bracket action for L1 at the close (066 H3''s `rebuilt:1:final` is exactly what a hand-picked round must not get)');
 select is(pg_temp.eb_round(7, 7), '1:01vbye,2:03vbye,3:05v5:06,4:02v6:07', 'D4c …the pairing STANDS through the correction close');
 select is((select status from leagues where id = 'be000000-0000-4000-8000-000000000001'), 'playoffs', 'D4d …league still in playoffs');
-select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2026-10-22 10:00:00+00') ->> 'source', 'final',
+select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2071-10-22 10:00:00+00') ->> 'source', 'final',
   'D4e …the sync now reads the prior stage as FINAL and STILL stands down (source final, reason round_hand_picked)');
 -- The member read carries the mark.
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
@@ -389,14 +405,14 @@ select is((current_setting('pgtap.e1')::jsonb ->> 'system_post') || '|' || (sele
   'Playoff round 1 (week 7) matchup hand-picked by eb_user1 (commissioner override): EB A vs EB B (was EB A vs bye); EB G vs bye (was EB B vs EB G) — lifted: matchup_status_gate:live, week_status_gate:7:live, bracket_sync_rebuild:stood_down|1',
   'E6 the post says "bye" on both sides of the change (the document''s system_post, found exactly once in league_chat)');
 -- The kickoff lock, through the internal at an instant AFTER eb-w7''s kickoff
--- (2026-10-23 04:00): named, not refused (standing rule (g)). A swap of the
+-- (2071-10-23 04:00): named, not refused (standing rule (g)). A swap of the
 -- two bye rows'' teams is the change (C(2) bye ↔ G(6) bye ⇒ C v G? no — that
 -- would empty a pairing; instead E v F becomes F v E, a sides swap).
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select set_config('pgtap.e7', public.commish_edit_bracket_internal(
   'be000000-0000-4000-8000-000000000001', pg_temp.eb_m(3),
   'ce000000-0000-4000-8000-000000000006', 'ce000000-0000-4000-8000-000000000005',
-  'a1000000-0000-4000-8000-000000000003', '2026-10-24 12:00:00+00', null)::text, true);
+  'a1000000-0000-4000-8000-000000000003', '2071-10-24 12:00:00+00', null)::text, true);
 select set_config('request.jwt.claims', '', true);
 select is(current_setting('pgtap.e7')::jsonb -> 'bypassed', '["matchup_status_gate:live", "week_status_gate:7:live", "kickoff_lock:7", "bracket_sync_rebuild:stood_down"]'::jsonb,
   'E7 at an instant after week 7''s kickoff the lock is NAMED (kickoff_lock:7), never refused — the game-day lock does not bind the commissioner (standing rule (g), D335)');
@@ -433,7 +449,7 @@ select throws_like(
   'F4 a regular row is 130''s — refused BY NAME pointing at the right verb (the mirror of 078 F3b)');
 -- F5 a seedless (foreign) playoff row.
 insert into matchups (id, league_id, season, week, round_type, home_team_id, away_team_id, status)
-values ('de000000-0000-4000-8000-000000000179', 'be000000-0000-4000-8000-000000000001', 2026, 7, 'playoff', 'ce000000-0000-4000-8000-000000000004', null, 'scheduled');
+values ('de000000-0000-4000-8000-000000000179', 'be000000-0000-4000-8000-000000000001', 2071, 7, 'playoff', 'ce000000-0000-4000-8000-000000000004', null, 'scheduled');
 select throws_like(
   $$ select public.commish_edit_bracket('be000000-0000-4000-8000-000000000001', 'de000000-0000-4000-8000-000000000179', 'ce000000-0000-4000-8000-000000000004', null, null, 'a1000000-0000-4000-8000-0000000000f6') $$,
   '%is a playoff row with NO seed — not the engine''s (a foreign row%',
@@ -577,7 +593,7 @@ select is(pg_temp.eb_round(7, 7), '1:01v4:02,2:03vbye,5:06v3:05,6:07vbye', 'J3 �
 -- ---------------------------------------------------------------------------
 update matchups set home_score = 100.00, away_score =  90.00 where id = pg_temp.eb_m(1);
 update matchups set home_score =  95.00, away_score = 105.00 where id = pg_temp.eb_m(5);
-select set_config('pgtap.r', public.league_week_advance('2026-10-27 04:00:00+00')::text, true);
+select set_config('pgtap.r', public.league_week_advance('2071-10-27 04:00:00+00')::text, true);
 select is((select status from league_weeks where league_id = 'be000000-0000-4000-8000-000000000001' and week = 7), 'correction_window', 'K1 L1''s week 7 closes at its rollover');
 select is((pg_temp.eb_brackets('be000000-0000-4000-8000-000000000001') ->> 'action') || ':' || (pg_temp.eb_brackets('be000000-0000-4000-8000-000000000001') ->> 'round') || ':' || (pg_temp.eb_brackets('be000000-0000-4000-8000-000000000001') ->> 'source') || ':' || (pg_temp.eb_brackets('be000000-0000-4000-8000-000000000001') ->> 'key'),
   'built:2:provisional:seed', 'K2 round 2 BUILT by the engine at the hand-picked round''s rollover (the stand-down CONTINUEs a rolled round to its survivors)');
@@ -586,7 +602,7 @@ select is(pg_temp.eb_round(8, 8), '1:01v6:07,2:03v3:05',
 select is(pg_temp.eb_marks(8, 8), 'none,none', 'K3 round 2 is the ENGINE''s — unmarked (the mark is per round, never inherited)');
 select is(pg_temp.eb_marks(7, 7), repeat(right((current_setting('pgtap.h2')::jsonb ->> 'commissioner_action_id'), 4) || ',', 3) || right((current_setting('pgtap.h2')::jsonb ->> 'commissioner_action_id'), 4),
   'K3b …round 1 still carries §H2''s receipt');
-select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2026-10-27 04:00:00+00'), '{"round": 2, "reason": "round_in_progress", "source": "provisional"}'::jsonb,
+select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2071-10-27 04:00:00+00'), '{"round": 2, "reason": "round_in_progress", "source": "provisional"}'::jsonb,
   'K4 the sync now reports round 2 in progress — round 1 (hand-picked, rolled) is walked past by name');
 -- A hand-picked round that has ROLLED is history to the verb too: scored.
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -603,7 +619,7 @@ select is(pg_temp.eb_round(8, 8) || '|' || (current_setting('pgtap.k6')::jsonb -
   'K6 round 2 hand-picked: C(2) v G(6), A(1) v E(3) — the verb found round 2 from the row''s week');
 select is(pg_temp.eb_marks(8, 8), repeat(right((current_setting('pgtap.k6')::jsonb ->> 'commissioner_action_id'), 4) || ',', 1) || right((current_setting('pgtap.k6')::jsonb ->> 'commissioner_action_id'), 4),
   'K6b …round 2 marked with its own receipt');
-select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2026-10-27 04:00:00+00') ->> 'reason', 'round_hand_picked',
+select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000001', '2071-10-27 04:00:00+00') ->> 'reason', 'round_hand_picked',
   'K6c …and the sync stands down on round 2 now');
 
 -- ---------------------------------------------------------------------------
@@ -620,7 +636,7 @@ select is(pg_temp.eb3_round(7) || '|' || pg_temp.eb3_round(8), '1:31vbye,2:33vby
 select is((select status from league_weeks where league_id = 'be000000-0000-4000-8000-000000000003' and week = 7) || ':' || (select status from league_weeks where league_id = 'be000000-0000-4000-8000-000000000003' and week = 8) || '|' || (select status from leagues where id = 'be000000-0000-4000-8000-000000000003'),
   'correction_window:upcoming|playoffs', 'L1b PREMISE: week 7 closed, week 8 upcoming, L3 in playoffs');
 select is(pg_temp.eb3_marks(7, 8) || '|' || pg_temp.eb3_ca(), 'none,none,none,none,none,none,none,none|0', 'L1c PREMISE: eight unmarked rows, zero receipts for L3');
-select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000003', '2026-10-27 04:00:00+00'), '{"round": 1, "reason": "round_in_progress", "source": "final"}'::jsonb,
+select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000003', '2071-10-27 04:00:00+00'), '{"round": 1, "reason": "round_in_progress", "source": "final"}'::jsonb,
   'L1d PREMISE: the sync reads L3''s round 1 as the engine''s, in progress');
 -- L2 the pairing swap, addressed through WEEK 8's row: E(3) v G(6) → E v F.
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -642,7 +658,7 @@ select is((select message from league_chat where league_id = 'be000000-0000-4000
   'L2e ONE post naming the week RANGE (7–8)');
 select is(pg_temp.eb3_ca() || ':' || (select count(*)::int from commish_bracket_actions where league_id = 'be000000-0000-4000-8000-000000000003'), '1:1', 'L2f one receipt, one ledger row');
 -- L3 the sync stands down on all eight rows.
-select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000003', '2026-10-27 04:00:00+00') - 'set_by_action_id',
+select is(public.playoff_bracket_sync_internal('be000000-0000-4000-8000-000000000003', '2071-10-27 04:00:00+00') - 'set_by_action_id',
   '{"round": 1, "reason": "round_hand_picked", "source": "final", "weeks": [7, 8], "rows": 8}'::jsonb,
   'L3 the sync reports round_hand_picked over weeks [7, 8] with rows 8 and writes nothing');
 select is(pg_temp.eb3_round(7) || '|' || pg_temp.eb3_round(8), '1:31vbye,2:33vbye,3:35v5:36,4:32v6:37|1:31vbye,2:33vbye,3:35v5:36,4:32v6:37',

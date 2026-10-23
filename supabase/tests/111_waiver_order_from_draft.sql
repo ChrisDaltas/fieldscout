@@ -349,10 +349,27 @@ create or replace function pg_temp.lg(n text) returns uuid language sql as $$
   select ('b1110000-0000-4000-8000-' || lpad(n, 12, '0'))::uuid
 $$;
 
+-- F806 / D720: K1 plays season 2071, never a real one. Its last pick goes
+-- through the real draft_make_pick, which completes the draft at now() and
+-- schedules the season from the first NFL week still ahead of now() — so on
+-- season 2026's real calendar the entry week crept forward with the wall
+-- clock, and once week 15's kickoff passed (mid-December 2026) the schedule
+-- could not fit and B2a died. 2071 has 2026's calendar (both begin on a
+-- Thursday, neither is leap; 16 436 days = 2 348 weeks); its rows are the
+-- seeded 2026 rows shifted by that exact span (static seed data, not the
+-- clock). K2-K4 complete at a stored instant and stay in 2026.
+insert into nfl_weeks (season, week, starts_at, first_kickoff_at, last_game_ends_at, correction_window_ends_at, correction_window_default_ends_at)
+select 2071, week, starts_at + interval '16436 days', first_kickoff_at + interval '16436 days', last_game_ends_at + interval '16436 days',
+       correction_window_ends_at + interval '16436 days', correction_window_default_ends_at + interval '16436 days'
+from nfl_weeks where season = 2026
+on conflict (season, week) do update set starts_at = excluded.starts_at, first_kickoff_at = excluded.first_kickoff_at,
+  last_game_ends_at = excluded.last_game_ends_at, correction_window_ends_at = excluded.correction_window_ends_at,
+  correction_window_default_ends_at = excluded.correction_window_default_ends_at;
+
 -- K1..K4: drafting leagues whose live draft has every pick made
 insert into leagues (id, owner_id, name, season, status, team_count, scoring_system_id, scoring_rules_snapshot,
                      waiver_type, faab_budget, settings, roster_settings)
-select pg_temp.lg(v.n::text), '91110000-0000-4000-8000-000000000001', 'pgtap-wo-K' || v.n, 2026, 'drafting', 8,
+select pg_temp.lg(v.n::text), '91110000-0000-4000-8000-000000000001', 'pgtap-wo-K' || v.n, case when v.n = 1 then 2071 else 2026 end, 'drafting', 8,
   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
   (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
   v.wt, 100,
