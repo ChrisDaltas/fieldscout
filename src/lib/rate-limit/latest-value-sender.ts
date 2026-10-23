@@ -19,7 +19,9 @@
  *     re-sent after the server's `Retry-After`, up to `maxRetries` times; then
  *     it fails like any other error;
  *   - every promise settles with the write that carried it (or, for a value,
- *     a later merged one): resolved with that write's answer, or rejected.
+ *     a later merged one): resolved with that write's answer, or rejected;
+ *   - a write that has not answered after `timeoutMs` (15 s) fails in plain
+ *     words and frees the lane (R1700) — a hung request never blocks the queue.
  *
  * Pure plumbing: the clock and the timer are injected (tests drive them).
  */
@@ -40,6 +42,8 @@ export interface LatestValueSenderDeps<T, R> {
   pacer?: Pacer
   minGapMs?: number
   maxRetries?: number
+  /** R1700: a write in flight longer than this fails (default 15 s). */
+  timeoutMs?: number
 }
 
 interface Waiter<X> {
@@ -52,6 +56,9 @@ type Item<T, R> =
   | { kind: 'op'; fn: () => Promise<unknown>; waiter: Waiter<unknown> }
 
 export const QUEUE_SEND_MIN_GAP_MS = 1250
+export const WRITE_TIMEOUT_MS = 15_000
+export const WRITE_TIMEOUT_MESSAGE =
+  'The server took too long to answer, so this change may not have been saved. Check your queue and try again.'
 
 export function newPacer(): Pacer {
   return { lastStartAt: Number.NEGATIVE_INFINITY }
@@ -65,12 +72,14 @@ export class LatestValueSender<T, R> {
   private readonly pacer: Pacer
   private readonly minGapMs: number
   private readonly maxRetries: number
+  private readonly timeoutMs: number
   private readonly merge: (older: T, newer: T) => T
 
   constructor(private readonly deps: LatestValueSenderDeps<T, R>) {
     this.pacer = deps.pacer ?? newPacer()
     this.minGapMs = deps.minGapMs ?? QUEUE_SEND_MIN_GAP_MS
     this.maxRetries = deps.maxRetries ?? 5
+    this.timeoutMs = deps.timeoutMs ?? WRITE_TIMEOUT_MS
     this.merge = deps.merge ?? ((_older, newer) => newer)
   }
 
@@ -115,6 +124,30 @@ export class LatestValueSender<T, R> {
     }, wait)
   }
 
+  /** R1700: a write that never answers fails after `timeoutMs` and frees the lane. */
+  private withTimeout<X>(work: Promise<X>): Promise<X> {
+    return new Promise<X>((resolve, reject) => {
+      let settled = false
+      this.deps.setTimer(() => {
+        if (settled) return
+        settled = true
+        reject(new Error(WRITE_TIMEOUT_MESSAGE))
+      }, this.timeoutMs)
+      work.then(
+        (r) => {
+          if (settled) return
+          settled = true
+          resolve(r)
+        },
+        (e) => {
+          if (settled) return
+          settled = true
+          reject(e)
+        },
+      )
+    })
+  }
+
   private async flush(): Promise<void> {
     if (this.inFlight) return
     const item = this.lane.shift()
@@ -122,7 +155,7 @@ export class LatestValueSender<T, R> {
     this.inFlight = true
     this.pacer.lastStartAt = this.deps.now()
     try {
-      const result = item.kind === 'value' ? await this.deps.post(item.value) : await item.fn()
+      const result = await this.withTimeout(item.kind === 'value' ? this.deps.post(item.value) : item.fn())
       this.inFlight = false
       this.retries = 0
       if (item.kind === 'value') for (const w of item.waiters) w.resolve(result as R)

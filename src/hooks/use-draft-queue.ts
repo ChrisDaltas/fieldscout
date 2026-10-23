@@ -4,11 +4,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { jsonInit, rateLimitRetryMs, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import { systemTime } from '@/lib/leagues/time/time-provider'
-import { LatestValueSender, newPacer, type Pacer } from '@/lib/rate-limit/latest-value-sender'
+import { newPacer, type Pacer } from '@/lib/rate-limit/latest-value-sender'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 import { draftVerbPath, queueFromListPath } from './use-draft-action-path'
-import { mergeQueueIntents, rebaseQueueOrder, type QueueIntent } from './use-draft-queue-ops'
+import { oncePerError, QueueLane } from './use-draft-queue-ops'
 import { toast } from './use-toast'
 
 /**
@@ -88,25 +88,24 @@ export function useDraftQueue(
  * middleware counts by — so every queue a member writes in one league shares
  * the 1.25 s gap and his total stays at most 8 per 10 s (R1694).
  *
- * `confirmed` is the server's last answer for this queue. A value is sent as
- * the click's change replayed on it (`rebaseQueueOrder`), so an Add clicked
- * while a list load was still in the lane does not undo the load.
+ * `confirmed` is the server's last answer for this queue, kept only while
+ * writes are waiting (R1697 — an idle lane sends the click's own list). A
+ * value that waited is sent as the click's change replayed on it
+ * (`rebaseQueueOrder`), so an Add clicked while a list load was still in the
+ * lane does not undo the load. The lane itself is `QueueLane`
+ * (`use-draft-queue-ops.ts`).
  */
-interface QueueLane {
-  sender: LatestValueSender<QueueIntent, QueueResponse>
-  confirmed: string[] | null
-}
-
-const queueLanes = new Map<string, QueueLane>()
-/** Each click's own array → the order it saw (set in onMutate, read in mutationFn). */
-const clickBases = new WeakMap<string[], string[]>()
+const queueLanes = new Map<string, QueueLane<QueueResponse>>()
 const scopePacers = new Map<string, Pacer>()
 
 function idsOf(rows: readonly DraftQueueRow[]): string[] {
   return rows.map((r) => r.player_id)
 }
 
-function queueLane(leagueId: string | null, draftId: string, teamId: string, forAnotherTeam: boolean): QueueLane {
+/** Each click's own array → the order it saw (set in onMutate, read in mutationFn). */
+const clickBases = new WeakMap<string[], string[]>()
+
+function queueLane(leagueId: string | null, draftId: string, teamId: string, forAnotherTeam: boolean): QueueLane<QueueResponse> {
   const path = draftVerbPath(leagueId, draftId, 'queue')
   const key = `${path}|${draftId}|${teamId}|${forAnotherTeam ? 'commish' : 'own'}`
   const existing = queueLanes.get(key)
@@ -117,34 +116,30 @@ function queueLane(leagueId: string | null, draftId: string, teamId: string, for
     pacer = newPacer()
     scopePacers.set(scope, pacer)
   }
-  const lane: QueueLane = {
-    confirmed: null,
-    sender: new LatestValueSender<QueueIntent, QueueResponse>({
-      post: async (intent) => {
-        const response = await sendLeagueAction<QueueResponse>(
-          path,
-          jsonInit('POST', {
-            draft_id: draftId,
-            players: rebaseQueueOrder(intent, lane.confirmed),
-            ...(forAnotherTeam ? { team_id: teamId } : {}),
-          }),
-        )
-        if (Array.isArray(response?.queue)) lane.confirmed = idsOf(response.queue)
-        return response
-      },
-      merge: mergeQueueIntents,
-      retryAfterMs: rateLimitRetryMs,
-      pacer,
-      now: () => systemTime.now().getTime(),
-      setTimer: (fn, ms) => setTimeout(fn, ms),
-    }),
-  }
+  const lane = new QueueLane<QueueResponse>({
+    postOrder: (players) =>
+      sendLeagueAction<QueueResponse>(
+        path,
+        jsonInit('POST', {
+          draft_id: draftId,
+          players,
+          ...(forAnotherTeam ? { team_id: teamId } : {}),
+        }),
+      ),
+    retryAfterMs: rateLimitRetryMs,
+    pacer,
+    now: () => systemTime.now().getTime(),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+  })
   queueLanes.set(key, lane)
   return lane
 }
 
-/** The plain words when a queue change finally fails (R1692). */
+const tellQueueFailure = oncePerError()
+
+/** The plain words when a queue change finally fails (R1692), once per failed write (R1698). */
 function toastQueueFailure(error: unknown) {
+  if (!tellQueueFailure(error)) return
   toast({
     title: 'Your queue wasn’t saved',
     description:
@@ -183,7 +178,7 @@ export function useUpdateDraftQueue(
     // onMutate runs first (TanStack v5): it records the order this click SAW
     // — the (optimistic) cache before it is overwritten — for mutationFn.
     mutationFn: (players: string[]) =>
-      lane.sender.offer({ base: clickBases.get(players) ?? [...players], next: players }),
+      lane.offer({ base: clickBases.get(players) ?? [...players], next: players }),
     onMutate: async (players) => {
       await queryClient.cancelQueries({ queryKey })
       clickBases.set(players, idsOf(queryClient.getQueryData<DraftQueueRow[]>(queryKey) ?? []))
@@ -194,7 +189,7 @@ export function useUpdateDraftQueue(
     },
     onError: (error) => toastQueueFailure(error),
     onSettled: () => {
-      if (lane.sender.busy) return
+      if (lane.busy) return
       void queryClient.invalidateQueries({ queryKey })
     },
   })
@@ -227,20 +222,18 @@ export function useQueueFromList(
   const lane = queueLane(leagueId, draftId, teamId, forAnotherTeam)
   return useMutation({
     mutationFn: ({ listId, mode }: QueueFromListVars) =>
-      lane.sender.run(async () => {
-        const response = await sendLeagueAction<QueueResponse & { added: number; skipped_drafted: number }>(
+      lane.run(() =>
+        sendLeagueAction<QueueResponse & { added: number; skipped_drafted: number }>(
           queueFromListPath(leagueId, draftId, listId),
           jsonInit('POST', {
             draft_id: draftId,
             ...(mode ? { mode } : {}),
             ...(forAnotherTeam ? { team_id: teamId } : {}),
           }),
-        )
-        if (Array.isArray(response?.queue)) lane.confirmed = idsOf(response.queue)
-        return response
-      }),
+        ),
+      ),
     onSettled: () => {
-      if (lane.sender.busy) return
+      if (lane.busy) return
       void queryClient.invalidateQueries({ queryKey })
     },
   })

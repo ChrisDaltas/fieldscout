@@ -4,7 +4,7 @@ import { LeagueActionError, rateLimitRetryMs } from '@/lib/leagues/api/client-fe
 
 import { mergeQueueIntents, rebaseQueueOrder, type QueueIntent } from '@/hooks/use-draft-queue-ops'
 
-import { LatestValueSender, newPacer, QUEUE_SEND_MIN_GAP_MS } from './latest-value-sender'
+import { LatestValueSender, newPacer, QUEUE_SEND_MIN_GAP_MS, WRITE_TIMEOUT_MESSAGE } from './latest-value-sender'
 
 /**
  * L.F2.6 review R1685 (D707): a fast queue builder never meets the
@@ -151,7 +151,9 @@ describe('LatestValueSender — the draft queue under a burst', () => {
       },
       retryAfterMs: rateLimitRetryMs,
       now: () => h.now,
-      setTimer: (fn) => fn(),
+      setTimer: (fn, ms) => {
+        if (ms < 15_000) fn() // the gap runs at once; the 15 s write timeout never fires here
+      },
       minGapMs: 0,
     })
     await expect(s.offer(['x'])).rejects.toThrow('nope')
@@ -342,5 +344,42 @@ describe('R1694 — the pacing is per SCOPE: two queues in one league share the 
     expect(starts.length).toBeGreaterThan(8)
     expect(maxIn10).toBeLessThanOrEqual(8)
     for (let i = 1; i < starts.length; i++) expect(starts[i] - starts[i - 1]).toBeGreaterThanOrEqual(QUEUE_SEND_MIN_GAP_MS)
+  })
+})
+
+describe('R1700 — a write that never answers', () => {
+  it('fails after 15 s in plain words, frees the lane, and the next change goes out', async () => {
+    const c = clock()
+    const starts: Array<[number, string]> = []
+    let hang = true
+    const lane = new LatestValueSender<string[], string[]>({
+      post: (v) => {
+        starts.push([c.now(), v.join('')])
+        if (hang) {
+          hang = false
+          return new Promise<string[]>(() => {}) // never answers
+        }
+        return c.later(100, () => v)
+      },
+      retryAfterMs: rateLimitRetryMs,
+      now: c.now,
+      setTimer: c.setTimer,
+    })
+    const first = lane.offer(['a']).then(
+      () => 'resolved',
+      (e: Error) => e.message,
+    )
+    await c.advance(14_999)
+    expect(lane.busy).toBe(true)
+    await c.advance(1)
+    expect(await first).toBe(WRITE_TIMEOUT_MESSAGE)
+    expect(lane.busy).toBe(false)
+    const second = lane.offer(['a', 'b'])
+    await c.advance(2_000)
+    await expect(second).resolves.toEqual(['a', 'b'])
+    expect(starts).toEqual([
+      [0, 'a'],
+      [15_000, 'ab'],
+    ])
   })
 })
