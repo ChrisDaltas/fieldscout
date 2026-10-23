@@ -20,13 +20,36 @@ export class LeagueActionError extends Error {
   /** The server's text as sent — for code that PARSES a refusal
    *  (`dropsNeeded`, `isDeadlineRefusal`); `message` is the member's copy. */
   raw: string
-  constructor(status: number, message: string, fieldErrors?: Record<string, string[]>, raw?: string) {
+  /** §22.5 (L.F2.6): on a 429, how long the server asked us to wait (ms,
+   *  from `Retry-After`); null otherwise. */
+  retryAfterMs: number | null
+  constructor(
+    status: number,
+    message: string,
+    fieldErrors?: Record<string, string[]>,
+    raw?: string,
+    retryAfterMs: number | null = null,
+  ) {
     super(message)
     this.name = 'LeagueActionError'
     this.status = status
     this.fieldErrors = fieldErrors
     this.raw = raw ?? message
+    this.retryAfterMs = retryAfterMs
   }
+}
+
+/** `Retry-After` (whole seconds) → ms, or null when absent / unreadable. */
+export function retryAfterHeaderMs(value: string | null): number | null {
+  if (value === null || value.trim() === '') return null
+  const seconds = Number(value)
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds * 1000) : null
+}
+
+/** The wait a rate-limit refusal asks for (ms), or null when `error` is not one. */
+export function rateLimitRetryMs(error: unknown): number | null {
+  if (!(error instanceof LeagueActionError) || error.status !== 429) return null
+  return error.retryAfterMs ?? 1000
 }
 
 /** The server's raw text behind an error (parsers read this, never the copy). */
@@ -83,6 +106,7 @@ export async function sendLeagueAction<T = unknown>(
       userFacingMessage(message),
       fieldErrors && friendlyFieldErrors(fieldErrors),
       message,
+      response.status === 429 ? retryAfterHeaderMs(response.headers.get('retry-after')) : null,
     )
   }
 

@@ -33,14 +33,15 @@
 -- internal's limit test ⇒ L/W/D/C red (an 11th mutation admitted); (2) the
 -- guard's `NEW.is_system` clause removed ⇒ C4 red.
 -- World (season 2097): u1, u2 members of L1 (u1 commissioner, u2 manager);
--- u3 in no league. L2 a second league (u1 commissioner). D1 a draft of L1.
+-- u3 in no league. L2 a second league (u1 commissioner). D1 a draft of L1;
+-- E2 a standalone practice draft launched by u3.
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(54);
+select plan(61);
 
 create or replace function pg_temp.err(p_sql text) returns text language plpgsql as $$
 begin
@@ -137,6 +138,10 @@ insert into league_members (league_id, user_id, role) values
   ('b1590000-0000-4000-8000-000000000002', '99159000-0000-4000-8000-000000000001', 'commissioner');
 insert into drafts (id, league_id, status, is_mock) values
   ('e1590000-0000-4000-8000-000000000001', 'b1590000-0000-4000-8000-000000000001', 'scheduled', false);
+-- E2: a standalone practice draft (no league) launched by u3.
+insert into drafts (id, league_id, status, is_mock, config) values
+  ('e1590000-0000-4000-8000-000000000002', null, 'scheduled', true,
+   '{"mock": {"launched_by": "99159000-0000-4000-8000-000000000003"}}');
 
 -- ---------------------------------------------------------------------------
 -- K. The gate
@@ -162,7 +167,25 @@ select is(pg_temp.err($$select rate_limit_take('mutation', 'b1590000-0000-4000-8
   '22023: rate_limit: unknown league or draft', 'K5 an unknown scope is refused by name (no rows minted under made-up ids)');
 select is(pg_temp.err($$select rate_limit_take('pick', 'b1590000-0000-4000-8000-000000000001')$$),
   '22023: rate_limit: unknown bucket pick', 'K6 an unknown bucket is refused by name');
+select is(pg_temp.err($$select rate_limit_take('chat', 'b1590000-0000-4000-8000-000000000001')$$),
+  '22023: rate_limit: unknown bucket chat', 'K6b R1687: chat is not the door''s (the insert-path guard owns it) — no draining a member''s chat from outside');
 reset role;
+-- R1687: membership of the scope.
+select set_config('request.jwt.claims', '{"sub": "99159000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
+set local role authenticated;
+select is(pg_temp.err($$select rate_limit_take('mutation', 'b1590000-0000-4000-8000-000000000001')$$),
+  '42501: rate_limit: not a member of this league or draft', 'K6c R1687: a non-member of the league is refused by name');
+reset role;
+select set_config('request.jwt.claims', '{"sub": "99159000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+set local role authenticated;
+select is(pg_temp.err($$select rate_limit_take('mutation', 'e1590000-0000-4000-8000-000000000002')$$),
+  '42501: rate_limit: not a member of this league or draft', 'K6d R1687: a practice draft someone else launched is refused');
+select is(pg_temp.err($$select rate_limit_take('mutation', 'e1590000-0000-4000-8000-000000000001')$$),
+  '42501: rate_limit: not a member of this league or draft', 'K6e R1687: a league draft''s id is not a scope a member can spend (league writes are keyed by the league)');
+reset role;
+select is((select count(*)::int from rate_limit_hits where user_id in
+  ('99159000-0000-4000-8000-000000000001', '99159000-0000-4000-8000-000000000002', '99159000-0000-4000-8000-000000000003')),
+  0, 'K6f the refused doors wrote nothing');
 
 -- §4.2 no-write-policy per role, with RETURNING counts. A SEED row first, so
 -- a 0 is "RLS hid it", never "there was nothing to see".
@@ -267,7 +290,7 @@ select is(
 select set_config('request.jwt.claims', '{"sub": "99159000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
 set local role authenticated;
 create temp table d159 as
-  select i, rate_limit_take('mutation', 'e1590000-0000-4000-8000-000000000001') r from generate_series(1, 11) i;
+  select i, rate_limit_take('mutation', 'e1590000-0000-4000-8000-000000000002') r from generate_series(1, 11) i;
 reset role;
 select is(
   (select string_agg(format('%s:%s', r ->> 'allowed', r ->> 'remaining'), ' ' order by i) from d159),
@@ -275,15 +298,24 @@ select is(
   'D1 through the door: 10 accepted, the 11th refused');
 select is((select (r ->> 'retry_after_ms')::int from d159 where i = 11), 10000,
   'D2 the refusal names a 10 s wait (all 10 at one instant)');
-select is((select string_agg(user_id::text, ',' order by user_id) from rate_limit_hits where scope = 'e1590000-0000-4000-8000-000000000001' and bucket = 'mutation'),
-  '99159000-0000-4000-8000-000000000001,99159000-0000-4000-8000-000000000003',
-  'D3 the door wrote only the CALLER''s row (u3) — u1''s I3 row is his own, untouched');
+select is((select string_agg(user_id::text, ',' order by user_id) from rate_limit_hits where scope = 'e1590000-0000-4000-8000-000000000002'),
+  '99159000-0000-4000-8000-000000000003',
+  'D3 the door wrote only the CALLER''s row (u3, the launcher of his practice draft)');
+select set_config('request.jwt.claims', '{"sub": "99159000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+set local role authenticated;
+select is((rate_limit_take('bid', 'b1590000-0000-4000-8000-000000000001') ->> 'allowed'), 'true',
+  'D4 a manager (u2) of the league spends his own bid allowance');
+reset role;
 
 -- ---------------------------------------------------------------------------
 -- C. Chat on the insert path (now() is the transaction's — one instant)
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims', '{"sub": "99159000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 set local role authenticated;
+-- C0 (R1686): a league-less post never reaches the limiter — RLS answers it.
+select alike(pg_temp.err($$insert into league_chat (league_id, user_id, message, context, is_system)
+  values (null, '99159000-0000-4000-8000-000000000002', 'nowhere', 'league', false)$$),
+  '42501: new row violates row-level security policy%', 'C0 R1686: a post with no league is RLS''s refusal, not the limiter''s 22023');
 -- C1: a post RLS refuses (an empty message — the 065 policy) does not spend.
 select alike(pg_temp.err($$insert into league_chat (league_id, user_id, message, context, is_system)
   values ('b1590000-0000-4000-8000-000000000001', '99159000-0000-4000-8000-000000000002', '', 'league', false)$$),

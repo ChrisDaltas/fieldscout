@@ -23,6 +23,7 @@
  * the server (`game_lock` / the RPC). This supersedes the draft-and-Save
  * model of D293 / D315(8) — never its server-authoritative lock law.
  */
+import { rateLimitRetryMs } from '@/lib/leagues/api/client-fetch'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 
 import { designationOf, positionMatches, type MovePlan, type MoveTarget, type Placement, type SlotInstance, type SlotRow } from './lineup-editor-ops'
@@ -469,18 +470,27 @@ export interface AutosaveDeps<R> {
   onRefused: (message: string, move: QueuedMove) => void
   /** The client-side plan refused (a lock, an ineligible seat) — nothing sent. */
   onPlanRefused: (message: string, move: QueuedMove) => void
+  /** §22.5 (L.F2.6): ms to wait before re-sending after this error, or null
+   *  when it is a real refusal. Default: a 429's Retry-After. */
+  retryAfterMs?: (error: unknown) => number | null
+  /** The wait itself (injected by tests). Default: a timer. */
+  wait?: (ms: number) => Promise<void>
 }
 
 /**
  * The autosave queue. Never optimistic: `base` is the server's arrangement
  * and only a server answer moves it. A move made while a save is in flight
- * waits its turn and is planned against the answer that save brings back.
+ * waits its turn and is planned against the answer that save brings back;
+ * every move waiting when the save lands goes out together as ONE save
+ * (coalesced — L.F2.6 R1685), and a 429 is waited out and re-sent, never
+ * dropped. `onSaved` fires once per save, with the batch's last move.
  */
 export class LineupAutosaver<R> {
   private base: Placement
   private queue: QueuedMove[] = []
   private inFlight = false
   private savedInRun = false
+  private retries = 0
 
   constructor(
     base: Placement,
@@ -514,37 +524,67 @@ export class LineupAutosaver<R> {
       this.deps.onStatus('saving', this.queue.length)
       return
     }
-    const move = this.queue.shift()
-    if (!move) {
+    if (this.queue.length === 0) {
       // R1466: the queue emptied with nothing in flight — always emit a
       // terminal status, or a trailing no-op/refused move leaves 'saving'.
       this.deps.onStatus(this.savedInRun ? 'saved' : 'idle', 0)
       this.savedInRun = false
       return
     }
-    const plan = this.deps.plan(this.base, move)
-    if (!plan.ok) {
-      if (plan.reason !== 'noop') this.deps.onPlanRefused(plan.message, move)
-      return this.pump()
+    // COALESCE (§22.5, L.F2.6 R1685 — D707): every move queued so far is
+    // planned in order over the server's arrangement and the RESULT is sent
+    // once — a burst of moves is one save, not one per move.
+    const batch = this.queue
+    this.queue = []
+    let next = this.base
+    const landed: Array<{ move: QueuedMove; plan: Extract<MovePlan, { ok: true }> }> = []
+    for (const move of batch) {
+      const plan = this.deps.plan(next, move)
+      if (!plan.ok) {
+        if (plan.reason !== 'noop') this.deps.onPlanRefused(plan.message, move)
+        continue
+      }
+      next = plan.next
+      landed.push({ move, plan })
     }
+    if (landed.length === 0) return this.pump()
     this.inFlight = true
     this.deps.onStatus('saving', this.queue.length)
     try {
-      const result = await this.deps.send(plan.next)
+      const result = await this.deps.send(next)
       this.base = this.deps.canonical(result)
       this.inFlight = false
       this.savedInRun = true
-      this.deps.onSaved(result, move, plan)
+      this.retries = 0
+      const last = landed[landed.length - 1]
+      this.deps.onSaved(result, last.move, last.plan)
       return this.pump()
     } catch (e) {
+      // A 429 is a wait, not a refusal: hold the batch (moves made meanwhile
+      // queue behind it), wait out Retry-After, and re-plan it from the
+      // server's arrangement — nothing the manager did is dropped.
+      const wait = (this.deps.retryAfterMs ?? rateLimitRetryMs)(e)
+      if (wait !== null && this.retries < LINEUP_SAVE_MAX_RETRIES) {
+        this.retries += 1
+        this.queue = [...landed.map((l) => l.move), ...this.queue]
+        this.deps.onStatus('saving', this.queue.length)
+        const sleep = this.deps.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+        await sleep(wait)
+        this.inFlight = false
+        return this.pump()
+      }
       this.inFlight = false
       this.savedInRun = false
+      this.retries = 0
       this.queue = []
       this.deps.onStatus('error', 0)
-      this.deps.onRefused(e instanceof Error ? e.message : String(e), move)
+      this.deps.onRefused(e instanceof Error ? e.message : String(e), landed[landed.length - 1].move)
     }
   }
 }
+
+/** How many 429s in a row a lineup save waits out before it says so. */
+export const LINEUP_SAVE_MAX_RETRIES = 5
 
 
 /** R1467: the week tabs wait while a save is in flight — a week switch

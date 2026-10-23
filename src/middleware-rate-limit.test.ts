@@ -29,6 +29,7 @@ let currentUser: { id: string } | null = null
 let rpcAnswer: { data: unknown; error: { code: string; message: string } | null } = { data: null, error: null }
 let rpcThrows = false
 const rpcCalls: Array<{ fn: string; args: unknown }> = []
+const rpcSignals: AbortSignal[] = []
 
 vi.mock('@supabase/ssr', () => ({
   createServerClient: (
@@ -42,11 +43,16 @@ vi.mock('@supabase/ssr', () => ({
         return { data: { user: currentUser } }
       },
     },
-    rpc: async (fn: string, args: unknown) => {
-      rpcCalls.push({ fn, args })
-      if (rpcThrows) throw new Error('network down')
-      return rpcAnswer
-    },
+    // supabase-js's builder: `.rpc(...).abortSignal(signal)` is awaited.
+    rpc: (fn: string, args: unknown) => ({
+      abortSignal: async (signal: AbortSignal) => {
+        rpcCalls.push({ fn, args })
+        rpcSignals.push(signal)
+        if (rpcThrows) throw new Error('network down')
+        if (signal.aborted) return { data: null, error: { code: '20', message: 'AbortError: The operation was aborted' } }
+        return rpcAnswer
+      },
+    }),
   }),
 }))
 
@@ -72,6 +78,8 @@ beforeEach(() => {
   rpcAnswer = { data: ALLOWED, error: null }
   rpcThrows = false
   rpcCalls.length = 0
+  rpcSignals.length = 0
+  vi.restoreAllMocks()
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
@@ -140,12 +148,29 @@ describe('at or under the limit: the request goes through untouched', () => {
     expect(rpcCalls).toHaveLength(0)
   })
 
-  it('routes outside leagues / practice drafts spend nothing', async () => {
+  it('routes outside leagues / practice drafts spend nothing (incl. cron and the admin console — R1690)', async () => {
     await middleware(request('/api/leagues'))
     await middleware(request('/api/leagues/join'))
     await middleware(request('/api/lists'))
     await middleware(request('/api/leagues/not-a-uuid/draft/pick'))
+    await middleware(request('/api/cron/waivers'))
+    await middleware(request('/api/cron/week-advance', 'GET'))
+    await middleware(request(`/api/admin/leagues/${LEAGUE}/commissioner`))
+    await middleware(request(`/api/admin/leagues/${LEAGUE}/jobs/pause`, 'PATCH'))
     expect(rpcCalls).toHaveLength(0)
+  })
+
+  it('R1688: a percent-encoded league id is decoded before it is classified — it cannot slip past the limit', async () => {
+    rpcAnswer = { data: REFUSED, error: null }
+    const encoded = LEAGUE.split('').map((c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join('')
+    const res = await middleware(request(`/api/leagues/${encoded}/draft/pick`))
+    expect(res.status).toBe(429)
+    expect(rpcCalls[0]).toEqual({ fn: 'rate_limit_take', args: { p_bucket: 'mutation', p_scope: LEAGUE } })
+  })
+
+  it('R1688: a malformed escape does not throw — the raw path is classified (and, not matching, spends nothing)', async () => {
+    const res = await middleware(request(`/api/leagues/${LEAGUE}%E0%A4%A/draft/pick`))
+    expect(res.status).toBe(200)
   })
 })
 
@@ -162,6 +187,21 @@ describe('a limiter fault FAILS OPEN (deploy-before-push; never stop a draft on 
     const res = await middleware(request(`/api/leagues/${LEAGUE}/draft/pick`))
     expect(res.status).toBe(200)
     expect(console.error).toHaveBeenCalled()
+  })
+
+  it('R1690: the call carries a 1.5 s timeout; a timed-out call lets the request through', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(AbortSignal.abort())
+    const res = await middleware(request(`/api/leagues/${LEAGUE}/draft/pick`))
+    expect(timeout).toHaveBeenCalledWith(1500)
+    expect(rpcSignals[0].aborted).toBe(true)
+    expect(res.status).toBe(200)
+    expect(console.error).toHaveBeenCalled()
+  })
+
+  it('a non-member of the scope (42501 from the door, R1687) lets the request through — the route answers him', async () => {
+    rpcAnswer = { data: null, error: { code: '42501', message: 'rate_limit: not a member of this league or draft' } }
+    const res = await middleware(request(`/api/leagues/${LEAGUE}/members`))
+    expect(res.status).toBe(200)
   })
 
   it('a thrown call lets the request through and logs it', async () => {

@@ -33,8 +33,10 @@
 --   `rate_limit_take(bucket, scope)` — the DOOR. SECURITY DEFINER,
 --   search_path '', in-body gate: a signed-in caller (auth.uid()) — the
 --   caller can only ever spend HIS OWN allowance; there is no user argument.
---   The scope must be an existing league or draft (a PK lookup), so a caller
---   cannot mint rows under made-up scopes. Hands now() to the internal.
+--   Buckets 'mutation' | 'bid' only ('chat' is the guard's). The scope must
+--   be an existing league or draft, and the caller a MEMBER of it — a league
+--   member, or the launcher of a practice draft (R1687) — so nobody mints
+--   rows under scopes that are not his. Hands now() to the internal.
 --   REVOKE PUBLIC / anon, EXECUTE authenticated. The Next middleware calls it
 --   with the member's own session for every league / practice-draft mutation
 --   (src/middleware.ts + src/lib/rate-limit/route-limits.ts) and turns a
@@ -219,10 +221,24 @@ BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'rate_limit: sign in first' USING ERRCODE = '42501';
   END IF;
+  -- Chat is limited on the insert path only (the guard below), never here.
+  IF p_bucket IS NULL OR p_bucket NOT IN ('mutation', 'bid') THEN
+    RAISE EXCEPTION 'rate_limit: unknown bucket %', COALESCE(p_bucket, '<null>') USING ERRCODE = '22023';
+  END IF;
   IF p_scope IS NULL
      OR NOT (EXISTS (SELECT 1 FROM public.leagues l WHERE l.id = p_scope)
              OR EXISTS (SELECT 1 FROM public.drafts d WHERE d.id = p_scope)) THEN
     RAISE EXCEPTION 'rate_limit: unknown league or draft' USING ERRCODE = '22023';
+  END IF;
+  -- R1687: only a member of the scope spends (and so writes) an allowance —
+  -- a member of the league, or the launcher of the practice draft. Anyone
+  -- else is refused BY NAME and nothing is written; the middleware lets the
+  -- request through (fails open) and the route's own gate answers him.
+  IF NOT (EXISTS (SELECT 1 FROM public.league_members lm
+                  WHERE lm.league_id = p_scope AND lm.user_id = v_uid)
+          OR EXISTS (SELECT 1 FROM public.drafts d
+                     WHERE d.id = p_scope AND d.config -> 'mock' ->> 'launched_by' = v_uid::TEXT)) THEN
+    RAISE EXCEPTION 'rate_limit: not a member of this league or draft' USING ERRCODE = '42501';
   END IF;
   RETURN public.rate_limit_take_internal(v_uid, p_bucket, p_scope, now());
 END;
@@ -232,7 +248,7 @@ REVOKE ALL ON FUNCTION public.rate_limit_take(TEXT, UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.rate_limit_take(TEXT, UUID) TO authenticated;
 COMMENT ON FUNCTION public.rate_limit_take(TEXT, UUID) IS
   'L.F2.6 (migration 209, spec §22.5): take one hit from the CALLER''s own allowance for a bucket '
-  '(mutation | bid | chat) in a league or draft. DEFINER, signed-in only; the Next middleware calls it '
+  '(mutation | bid) in a league he is a member of or a practice draft he launched. DEFINER, signed-in only; the Next middleware calls it '
   'per league mutation and answers a refusal with 429 + Retry-After.';
 
 -- ---------------------------------------------------------------------------
@@ -251,7 +267,9 @@ DECLARE
 BEGIN
   -- Only a member's own post counts: system lines (is_system, written by
   -- RPCs) and service-role writes (no auth.uid()) are never limited.
-  IF v_uid IS NULL OR NEW.is_system OR NEW.user_id IS DISTINCT FROM v_uid THEN
+  -- R1686: a row with no league has no allowance to spend (RLS refuses a
+  -- member's league-less post anyway).
+  IF v_uid IS NULL OR NEW.is_system OR NEW.league_id IS NULL OR NEW.user_id IS DISTINCT FROM v_uid THEN
     RETURN NEW;
   END IF;
 

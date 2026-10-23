@@ -52,23 +52,28 @@ function redirectPreservingAuthCookies(
  * to send, or `null` to let the request through.
  *
  * FAILS OPEN — any limiter error (the function not pushed yet: PGRST202; a
- * database blip; an answer of the wrong shape) lets the request through and
+ * database blip; a call slower than 1.5 s; a caller who is not a member of
+ * the scope, 42501 — the route's own gate answers him; an answer of the
+ * wrong shape) lets the request through and
  * logs it. A missing limiter is today's behaviour (tasks-M7 §7 deploy
  * safety), and a limiter fault must never stop a draft; the route's own RPC
  * is the authority either way. A refusal is never silent: 429, plain words,
  * `Retry-After`, and the auth cookies this request produced (the same
  * footgun as the redirects above).
  */
+const RATE_LIMIT_TIMEOUT_MS = 1500
+
 async function rateLimitRefusal(
   supabase: ReturnType<typeof createServerClient>,
   target: RateLimitTarget,
   supabaseResponse: NextResponse,
 ): Promise<NextResponse | null> {
   try {
-    const { data, error } = await supabase.rpc('rate_limit_take', {
-      p_bucket: target.bucket,
-      p_scope: target.scope,
-    })
+    // R1690: a slow limiter must never hold up a pick — after 1.5 s the
+    // call is abandoned and the request goes through (fail open, below).
+    const { data, error } = await supabase
+      .rpc('rate_limit_take', { p_bucket: target.bucket, p_scope: target.scope })
+      .abortSignal(AbortSignal.timeout(RATE_LIMIT_TIMEOUT_MS))
     if (error) {
       console.error('[rate-limit] limiter unavailable, letting the request through:', error.code, error.message)
       return null
@@ -89,6 +94,17 @@ async function rateLimitRefusal(
   } catch (err) {
     console.error('[rate-limit] limiter threw, letting the request through:', err)
     return null
+  }
+}
+
+/** R1688: classify what the router will route — `%xx` escapes decoded
+ *  (an encoded id must not slip past the UUID match); a malformed escape
+ *  falls back to the raw path. */
+function decodedPathname(pathname: string): string {
+  try {
+    return decodeURIComponent(pathname)
+  } catch {
+    return pathname
   }
 }
 
@@ -120,7 +136,7 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  const rateLimitTarget = user ? classifyRateLimitedRequest(request.method, pathname) : null
+  const rateLimitTarget = user ? classifyRateLimitedRequest(request.method, decodedPathname(pathname)) : null
   if (rateLimitTarget) {
     const refusal = await rateLimitRefusal(supabase, rateLimitTarget, supabaseResponse)
     if (refusal) return refusal
