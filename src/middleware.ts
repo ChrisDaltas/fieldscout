@@ -75,6 +75,10 @@ async function rateLimitRefusal(
       .rpc('rate_limit_take', { p_bucket: target.bucket, p_scope: target.scope })
       .abortSignal(AbortSignal.timeout(RATE_LIMIT_TIMEOUT_MS))
     if (error) {
+      // R1695: 42501 is the door saying "not a member of this league / draft"
+      // — an expected pass-through (the route's own gate answers him), not a
+      // fault, so it is not logged.
+      if (error.code === '42501') return null
       console.error('[rate-limit] limiter unavailable, letting the request through:', error.code, error.message)
       return null
     }

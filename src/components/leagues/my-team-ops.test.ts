@@ -466,6 +466,36 @@ describe('AUTOSAVE — LineupAutosaver (Chris 2026-10-03: no Save button)', () =
     expect(log.statuses.at(-1)).toBe('saved')
   })
 
+  it('R1693: a server that always answers 429 — 5 waits, then the refusal in its own words; never shown as saved', async () => {
+    const words = "You're making changes too fast. Wait 2 seconds and try again — nothing was changed."
+    const waits: number[] = []
+    const log = { sent: 0, refused: [] as string[], statuses: [] as AutosaveStatus[], saved: 0 }
+    const saver = new LineupAutosaver<Result>({ 'qb:0': 'qb' }, {
+      plan: (b, m: QueuedMove) => planMove(b, m.playerId, m.target, ctx),
+      send: async () => {
+        log.sent += 1
+        throw new LeagueActionError(429, words, undefined, words, 2000)
+      },
+      canonical: (r) => r.slot_map,
+      onStatus: (st) => log.statuses.push(st),
+      onSaved: () => (log.saved += 1),
+      onRefused: (m) => log.refused.push(m),
+      onPlanRefused: () => {},
+      wait: async (ms) => {
+        waits.push(ms)
+      },
+    })
+    saver.enqueue({ playerId: 'rb', target: { kind: 'slot', key: 'rb:0' } })
+    for (let i = 0; i < 20; i++) await flush()
+    expect(log.sent).toBe(6)
+    expect(waits).toEqual([2000, 2000, 2000, 2000, 2000])
+    expect(log.refused).toEqual([words])
+    expect(log.saved).toBe(0)
+    expect(log.statuses.at(-1)).toBe('error')
+    expect(saver.placement).toEqual({ 'qb:0': 'qb' })
+    expect(saver.saving).toBe(false)
+  })
+
   it('a LOCKED player is never sent — the plan refuses him and nothing reaches the server', async () => {
     const { saver, log } = rig(async (m) => ({ slot_map: m }), { 'rb:0': 'rbL' })
     saver.enqueue({ playerId: 'rbL', target: { kind: 'bench' } })

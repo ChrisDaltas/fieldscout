@@ -202,6 +202,7 @@ describe('a limiter fault FAILS OPEN (deploy-before-push; never stop a draft on 
     rpcAnswer = { data: null, error: { code: '42501', message: 'rate_limit: not a member of this league or draft' } }
     const res = await middleware(request(`/api/leagues/${LEAGUE}/members`))
     expect(res.status).toBe(200)
+    expect(console.error).not.toHaveBeenCalled() // R1695: expected, not a fault
   })
 
   it('a thrown call lets the request through and logs it', async () => {

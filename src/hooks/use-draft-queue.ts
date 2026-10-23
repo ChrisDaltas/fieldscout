@@ -4,10 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { jsonInit, rateLimitRetryMs, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import { systemTime } from '@/lib/leagues/time/time-provider'
-import { LatestValueSender } from '@/lib/rate-limit/latest-value-sender'
+import { LatestValueSender, newPacer, type Pacer } from '@/lib/rate-limit/latest-value-sender'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 import { draftVerbPath, queueFromListPath } from './use-draft-action-path'
+import { mergeQueueIntents, rebaseQueueOrder, type QueueIntent } from './use-draft-queue-ops'
+import { toast } from './use-toast'
 
 /**
  * My draft queue — M2 task L.B2.2 (spec §8.4, §8.9, §15.2, §15.5, §15.6;
@@ -79,33 +81,76 @@ export function useDraftQueue(
 }
 
 /**
- * One sender per (route, draft, team): every caller of `useUpdateDraftQueue`
- * for the same queue shares it, so two components queueing at once still
- * coalesce (L.F2.6 R1685 — D707).
+ * ONE WRITE LANE PER QUEUE (route, draft, team) — shared by every caller of
+ * `useUpdateDraftQueue` and `useQueueFromList` for that queue, so Adds,
+ * reorders and list loads land in click order (L.F2.6 R1685 / R1691 — D707,
+ * D709). The PACING is per SCOPE — the league (or the practice draft) the
+ * middleware counts by — so every queue a member writes in one league shares
+ * the 1.25 s gap and his total stays at most 8 per 10 s (R1694).
+ *
+ * `confirmed` is the server's last answer for this queue. A value is sent as
+ * the click's change replayed on it (`rebaseQueueOrder`), so an Add clicked
+ * while a list load was still in the lane does not undo the load.
  */
-const queueSenders = new Map<string, LatestValueSender<string[], QueueResponse>>()
+interface QueueLane {
+  sender: LatestValueSender<QueueIntent, QueueResponse>
+  confirmed: string[] | null
+}
 
-function queueSender(path: string, draftId: string, teamId: string, forAnotherTeam: boolean) {
+const queueLanes = new Map<string, QueueLane>()
+/** Each click's own array → the order it saw (set in onMutate, read in mutationFn). */
+const clickBases = new WeakMap<string[], string[]>()
+const scopePacers = new Map<string, Pacer>()
+
+function idsOf(rows: readonly DraftQueueRow[]): string[] {
+  return rows.map((r) => r.player_id)
+}
+
+function queueLane(leagueId: string | null, draftId: string, teamId: string, forAnotherTeam: boolean): QueueLane {
+  const path = draftVerbPath(leagueId, draftId, 'queue')
   const key = `${path}|${draftId}|${teamId}|${forAnotherTeam ? 'commish' : 'own'}`
-  let sender = queueSenders.get(key)
-  if (!sender) {
-    sender = new LatestValueSender<string[], QueueResponse>({
-      post: (players) =>
-        sendLeagueAction<QueueResponse>(
+  const existing = queueLanes.get(key)
+  if (existing) return existing
+  const scope = leagueId ?? draftId
+  let pacer = scopePacers.get(scope)
+  if (!pacer) {
+    pacer = newPacer()
+    scopePacers.set(scope, pacer)
+  }
+  const lane: QueueLane = {
+    confirmed: null,
+    sender: new LatestValueSender<QueueIntent, QueueResponse>({
+      post: async (intent) => {
+        const response = await sendLeagueAction<QueueResponse>(
           path,
           jsonInit('POST', {
             draft_id: draftId,
-            players,
+            players: rebaseQueueOrder(intent, lane.confirmed),
             ...(forAnotherTeam ? { team_id: teamId } : {}),
           }),
-        ),
+        )
+        if (Array.isArray(response?.queue)) lane.confirmed = idsOf(response.queue)
+        return response
+      },
+      merge: mergeQueueIntents,
       retryAfterMs: rateLimitRetryMs,
+      pacer,
       now: () => systemTime.now().getTime(),
       setTimer: (fn, ms) => setTimeout(fn, ms),
-    })
-    queueSenders.set(key, sender)
+    }),
   }
-  return sender
+  queueLanes.set(key, lane)
+  return lane
+}
+
+/** The plain words when a queue change finally fails (R1692). */
+function toastQueueFailure(error: unknown) {
+  toast({
+    title: 'Your queue wasn’t saved',
+    description:
+      error instanceof Error && error.message ? error.message : 'Something went wrong. Please try again.',
+    variant: 'destructive',
+  })
 }
 
 /**
@@ -113,14 +158,15 @@ function queueSender(path: string, draftId: string, teamId: string, forAnotherTe
  * (§15.6): the new order renders immediately; the server row set (RLS +
  * the 065 policy + the service's player validation) stays the truth.
  *
- * COALESCED (§22.5, L.F2.6 R1685 — D707): the queue is a whole-list replace,
- * so a burst of Adds / reorders sends only the LATEST order, one write in
- * flight, writes at least 1.25 s apart — a fast queue builder spends at most
- * 8 of the 10-per-10-s allowance and never his own pick's. A 429 is re-sent
- * after `Retry-After`, never dropped. Each `mutate` settles with the write
- * that carried its order (or a later one). The cache is re-read only once
- * the sender is idle, so a refetch never paints an older order over a newer
- * optimistic one; a real failure re-reads the server's order (the rollback).
+ * COALESCED (§22.5, L.F2.6 R1685 — D707): a burst of Adds / reorders sends
+ * only the LATEST order, one write in flight, writes at least 1.25 s apart
+ * per league — at most 8 of the 10-per-10-s allowance, never his pick's
+ * share. A 429 is re-sent after `Retry-After`, never dropped. Each `mutate`
+ * settles with the write that carried its order (or a later one). The cache
+ * is re-read only once the lane is idle, so a refetch never paints an older
+ * order over a newer optimistic one. A change that finally FAILS says so — a
+ * toast in plain words (R1692) — and the re-read shows the server's order;
+ * nothing is undone silently.
  */
 export function useUpdateDraftQueue(
   leagueId: string | null,
@@ -132,18 +178,23 @@ export function useUpdateDraftQueue(
 ) {
   const queryClient = useQueryClient()
   const queryKey = draftQueueKeys.queue(draftId, teamId)
-  const sender = queueSender(draftVerbPath(leagueId, draftId, 'queue'), draftId, teamId, forAnotherTeam)
+  const lane = queueLane(leagueId, draftId, teamId, forAnotherTeam)
   return useMutation({
-    mutationFn: (players: string[]) => sender.offer(players),
+    // onMutate runs first (TanStack v5): it records the order this click SAW
+    // — the (optimistic) cache before it is overwritten — for mutationFn.
+    mutationFn: (players: string[]) =>
+      lane.sender.offer({ base: clickBases.get(players) ?? [...players], next: players }),
     onMutate: async (players) => {
       await queryClient.cancelQueries({ queryKey })
+      clickBases.set(players, idsOf(queryClient.getQueryData<DraftQueueRow[]>(queryKey) ?? []))
       queryClient.setQueryData<DraftQueueRow[]>(
         queryKey,
         players.map((playerId, index) => ({ player_id: playerId, rank: index + 1 })),
       )
     },
+    onError: (error) => toastQueueFailure(error),
     onSettled: () => {
-      if (sender.busy) return
+      if (lane.sender.busy) return
       void queryClient.invalidateQueries({ queryKey })
     },
   })
@@ -158,6 +209,11 @@ export interface QueueFromListVars {
  * POST /api/leagues/[id]/draft/queue/from-list/[listId] — §8.9 load-into-
  * queue (replace) / "Add remaining" (append). NOT optimistic: the server
  * computes the skip-drafted result — the settle refetch renders it.
+ *
+ * In the queue's ONE write lane (R1691 — D709): it waits for every Add /
+ * reorder clicked before it and every one clicked after waits for it, so the
+ * three land in click order; it is paced and 429-retried with them, and the
+ * cache is re-read only once the lane is idle.
  */
 export function useQueueFromList(
   leagueId: string | null,
@@ -168,17 +224,23 @@ export function useQueueFromList(
 ) {
   const queryClient = useQueryClient()
   const queryKey = draftQueueKeys.queue(draftId, teamId)
+  const lane = queueLane(leagueId, draftId, teamId, forAnotherTeam)
   return useMutation({
     mutationFn: ({ listId, mode }: QueueFromListVars) =>
-      sendLeagueAction<QueueResponse & { added: number; skipped_drafted: number }>(
-        queueFromListPath(leagueId, draftId, listId),
-        jsonInit('POST', {
-          draft_id: draftId,
-          ...(mode ? { mode } : {}),
-          ...(forAnotherTeam ? { team_id: teamId } : {}),
-        }),
-      ),
+      lane.sender.run(async () => {
+        const response = await sendLeagueAction<QueueResponse & { added: number; skipped_drafted: number }>(
+          queueFromListPath(leagueId, draftId, listId),
+          jsonInit('POST', {
+            draft_id: draftId,
+            ...(mode ? { mode } : {}),
+            ...(forAnotherTeam ? { team_id: teamId } : {}),
+          }),
+        )
+        if (Array.isArray(response?.queue)) lane.confirmed = idsOf(response.queue)
+        return response
+      }),
     onSettled: () => {
+      if (lane.sender.busy) return
       void queryClient.invalidateQueries({ queryKey })
     },
   })
