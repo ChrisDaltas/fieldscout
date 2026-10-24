@@ -9,6 +9,7 @@ import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
@@ -407,6 +408,92 @@ describe('AUTOSAVE — LineupAutosaver (Chris 2026-10-03: no Save button)', () =
     await flush()
     expect(log.planRefused).toHaveLength(1)
     expect(log.statuses.at(-1)).toBe('saved')
+  })
+
+  it('L.F2.6 R1685: a burst of moves while a save is in flight goes out as ONE save, planned over the first answer', async () => {
+    const resolvers: Array<(r: Result) => void> = []
+    const { saver, log } = rig(() => new Promise((r) => resolvers.push(r)))
+    saver.enqueue({ playerId: 'rb', target: { kind: 'slot', key: 'rb:0' } })
+    saver.enqueue({ playerId: 'qb2', target: { kind: 'slot', key: 'qb:0' } })
+    saver.enqueue({ playerId: 'qb', target: { kind: 'slot', key: 'qb:0' } })
+    saver.enqueue({ playerId: 'qb2', target: { kind: 'slot', key: 'qb:0' } })
+    await flush()
+    expect(log.sent).toHaveLength(1)
+    resolvers[0]({ slot_map: { 'qb:0': 'qb', 'rb:0': 'rb' } })
+    await flush()
+    // three queued moves → one save carrying where they end up
+    expect(log.sent).toEqual([{ 'qb:0': 'qb', 'rb:0': 'rb' }, { 'qb:0': 'qb2', 'rb:0': 'rb' }])
+    resolvers[1]({ slot_map: { 'qb:0': 'qb2', 'rb:0': 'rb' } })
+    await flush()
+    expect(log.saved).toHaveLength(2)
+    expect(saver.placement).toEqual({ 'qb:0': 'qb2', 'rb:0': 'rb' })
+    expect(log.statuses.at(-1)).toBe('saved')
+  })
+
+  it('L.F2.6 R1685: a 429 is waited out and re-sent — with the moves made meanwhile — never refused or dropped', async () => {
+    const waits: number[] = []
+    let releaseWait!: () => void
+    let calls = 0
+    const log = { sent: [] as Placement[], refused: [] as string[], statuses: [] as AutosaveStatus[] }
+    const saver = new LineupAutosaver<Result>({ 'qb:0': 'qb' }, {
+      plan: (b, m: QueuedMove) => planMove(b, m.playerId, m.target, ctx),
+      send: async (slotMap) => {
+        log.sent.push(slotMap)
+        calls += 1
+        if (calls === 1) throw new LeagueActionError(429, 'too fast', undefined, 'too fast', 2000)
+        return { slot_map: slotMap }
+      },
+      canonical: (r) => r.slot_map,
+      onStatus: (st) => log.statuses.push(st),
+      onSaved: () => {},
+      onRefused: (m) => log.refused.push(m),
+      onPlanRefused: () => {},
+      wait: (ms) => {
+        waits.push(ms)
+        return new Promise((r) => (releaseWait = r))
+      },
+    })
+    saver.enqueue({ playerId: 'rb', target: { kind: 'slot', key: 'rb:0' } })
+    await flush()
+    expect(waits).toEqual([2000])
+    expect(saver.saving).toBe(true)
+    saver.enqueue({ playerId: 'qb2', target: { kind: 'slot', key: 'qb:0' } }) // made during the wait
+    releaseWait()
+    await flush()
+    expect(log.refused).toEqual([])
+    expect(log.sent).toEqual([{ 'qb:0': 'qb', 'rb:0': 'rb' }, { 'qb:0': 'qb2', 'rb:0': 'rb' }])
+    expect(saver.placement).toEqual({ 'qb:0': 'qb2', 'rb:0': 'rb' })
+    expect(log.statuses.at(-1)).toBe('saved')
+  })
+
+  it('R1693: a server that always answers 429 — 5 waits, then the refusal in its own words; never shown as saved', async () => {
+    const words = "You're making changes too fast. Wait 2 seconds and try again — nothing was changed."
+    const waits: number[] = []
+    const log = { sent: 0, refused: [] as string[], statuses: [] as AutosaveStatus[], saved: 0 }
+    const saver = new LineupAutosaver<Result>({ 'qb:0': 'qb' }, {
+      plan: (b, m: QueuedMove) => planMove(b, m.playerId, m.target, ctx),
+      send: async () => {
+        log.sent += 1
+        throw new LeagueActionError(429, words, undefined, words, 2000)
+      },
+      canonical: (r) => r.slot_map,
+      onStatus: (st) => log.statuses.push(st),
+      onSaved: () => (log.saved += 1),
+      onRefused: (m) => log.refused.push(m),
+      onPlanRefused: () => {},
+      wait: async (ms) => {
+        waits.push(ms)
+      },
+    })
+    saver.enqueue({ playerId: 'rb', target: { kind: 'slot', key: 'rb:0' } })
+    for (let i = 0; i < 20; i++) await flush()
+    expect(log.sent).toBe(6)
+    expect(waits).toEqual([2000, 2000, 2000, 2000, 2000])
+    expect(log.refused).toEqual([words])
+    expect(log.saved).toBe(0)
+    expect(log.statuses.at(-1)).toBe('error')
+    expect(saver.placement).toEqual({ 'qb:0': 'qb' })
+    expect(saver.saving).toBe(false)
   })
 
   it('a LOCKED player is never sent — the plan refuses him and nothing reaches the server', async () => {

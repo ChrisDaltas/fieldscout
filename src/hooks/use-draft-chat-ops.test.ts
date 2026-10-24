@@ -8,7 +8,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   CHAT_MAX_LENGTH,
+  CHAT_RATE_LIMIT,
   chatAuthorsById,
+  chatCooldownHint,
+  chatCooldownMs,
   chatDraftSendable,
   chatItemView,
   FORMER_MEMBER_LABEL,
@@ -156,5 +159,30 @@ describe('chatDraftSendable', () => {
     expect(chatDraftSendable('a')).toBe(true)
     expect(chatDraftSendable('x'.repeat(500))).toBe(true)
     expect(chatDraftSendable('x'.repeat(501))).toBe(false)
+  })
+})
+
+describe('chat pace — §22.5 5 per 10 s, prevented in the composer (L.F2.6; 209 is the authority)', () => {
+  const T = 1_000_000
+  it('mirrors 209\'s chat rule (pgTAP 159 A5: chat=5/10000)', () => {
+    expect(CHAT_RATE_LIMIT).toEqual({ maxMessages: 5, windowMs: 10_000 })
+  })
+  it('four posts in the window: send now', () => {
+    expect(chatCooldownMs([T, T, T, T], T)).toBe(0)
+  })
+  it('five at one instant: wait the whole window', () => {
+    expect(chatCooldownMs([T, T, T, T, T], T)).toBe(10_000)
+  })
+  it('boundary: 1 ms before the oldest leaves, 1 ms; AT the boundary, 0 (a post at t counts for [t, t + 10 s))', () => {
+    const five = [T, T + 1000, T + 2000, T + 3000, T + 4000]
+    expect(chatCooldownMs(five, T + 9_999)).toBe(1)
+    expect(chatCooldownMs(five, T + 10_000)).toBe(0)
+  })
+  it('more than five remembered: waits on the fifth-newest, in any order', () => {
+    expect(chatCooldownMs([T + 4000, T, T + 3000, T + 1000, T + 2000, T + 500], T + 5000)).toBe(5_500)
+  })
+  it('the hint, golden', () => {
+    expect(chatCooldownHint(10_000)).toBe('Slow down a little — you can send again in 10 seconds.')
+    expect(chatCooldownHint(1)).toBe('Slow down a little — you can send again in 1 second.')
   })
 })

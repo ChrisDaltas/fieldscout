@@ -232,7 +232,7 @@ export function QueueButton({
     const ids = fresh.data.map((r) => r.player_id).filter((id) => id !== playerId)
     update.mutate([...ids, playerId], {
       onSuccess: () => toast({ title: leagueName ? `Added to your ${leagueName} queue` : 'Added to your queue' }),
-      onError: (err) => toast({ title: err instanceof Error ? err.message : 'Couldn’t queue him.' }),
+      // A failure is toasted by useUpdateDraftQueue itself (L.F2.6 R1692) — one toast, not two.
     })
   }
   const header = variant === 'header'

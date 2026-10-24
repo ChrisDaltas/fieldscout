@@ -261,7 +261,18 @@ select is(
         -- and §E's mid-state allowlists are re-derived UNCHANGED — the delta
         -- cells are the proof. Census 73 → 74.
         'player_weekly_projections',
-        'players', 'profiles', 'ranking_history', 'research_configs',
+        'players', 'profiles', 'ranking_history',
+        -- 209 / M7 L.F2.6: the §22.5 rate-limit ledger. NOT WRITTEN by this
+        -- lifecycle (zero policies; written only by rate_limit_take — the
+        -- route layer, which this file never crosses — and by the league_chat
+        -- guard on a member's OWN post, never on the is_system lines the mock
+        -- verbs write), so §C's and §E's mid-state allowlists are re-derived
+        -- UNCHANGED — the delta cells are the proof. Through the routes a
+        -- practice draft does spend an allowance (§22.5: "Mocks share every
+        -- live-draft rate limit"), keyed by its draft id: instants, never game
+        -- state (PROGRESS F803). Census 95 → 96.
+        'rate_limit_hits',
+        'research_configs',
         'schedule_actions',  -- 111/L.D1.3 (the Remix/edit idempotency ledger, DEFINER-RPC only — UNREACHABLE from a mock)
         'score_fanout',  -- 109/L.D1.1 (D292 — the delta queue, service-role only)
         'scoring_systems', 'start_sit_questions', 'start_sit_votes',
@@ -317,7 +328,7 @@ select is(
         -- mock engine never will — §8.8's zero-side-effect contract), so §C's
         -- and §E's mid-state allowlists are re-derived UNCHANGED in the same
         -- PR — the delta cells below are the proof, not this comment.
-  'THE CENSUS, as a stored literal: the 95 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+  'THE CENSUS, as a stored literal: the 96 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -362,8 +373,8 @@ select is(
   'PRECONDITION: no committed scheduled league is past its D94 auto-start instant — our tick would start it inside the snapshot (the F49 fixture-instant class, asserted rather than assumed)');
 
 select lives_ok($$ select pg_temp.mp11_take('before') $$,
-  'BASELINE: all 95 tables snapshotted (count + whole-row digest each)');
-select is((select count(*) from mp11_snap where phase = 'before'), 95::bigint,
+  'BASELINE: all 96 tables snapshotted (count + whole-row digest each)');
+select is((select count(*) from mp11_snap where phase = 'before'), 96::bigint,
   '…one row per table');
 
 -- ---------------------------------------------------------------------------
