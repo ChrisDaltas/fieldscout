@@ -63,7 +63,7 @@ export async function generateMetadata({
   return {
     title: `${handle} · FieldScout`,
     description:
-      profile.bio ?? `${handle}'s rankings, accuracy, and lists on FieldScout.`,
+      profile.bio ?? `${handle}'s cred and public lists on FieldScout.`,
   }
 }
 

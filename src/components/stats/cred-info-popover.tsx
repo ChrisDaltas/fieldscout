@@ -8,72 +8,70 @@ import {
 } from '@/components/ui/popover'
 import { CRED_START, CRED_TIERS } from '@/lib/cred-tiers'
 
+/**
+ * "How cred works" — the info button beside My stats' Cred progress.
+ *
+ * It says only what is true today: every account starts at `CRED_START`
+ * (migration 197) and nothing awards cred yet. The old copy promised cred for
+ * big board updates, weekly and season-long submissions and start or sit
+ * votes, plus accuracy bonuses and slow decay — none of that exists (no table,
+ * function or script writes `profiles.cred_score` beyond 197's backfill), and
+ * those surfaces are switched off at launch. Name a way to earn cred here only
+ * once it is built. The tier ladder is real (`CRED_TIERS`) and stays.
+ */
 export function CredInfoPopover() {
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label="How cred is calculated"
+          aria-label="How cred works"
           className="inline-flex h-btn-sm w-btn-sm items-center justify-center rounded-pill text-n-3 transition-colors hover:bg-surface-hover hover:text-ink"
         >
           <Icon name="info-circle" size={14} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-4">
-        <h3 className="text-h6">How cred works</h3>
-        <p className="mt-2 text-[11px] font-medium text-n-3">
-          Cred is your reputation score on FieldScout. It rewards both showing
-          up and being right. There are three ways to earn it:
-        </p>
-        <ul className="mt-3 space-y-2 text-[11px] font-medium text-n-3">
-          <li>
-            <span className="font-semibold text-ink">Big board updates.</span>{' '}
-            Base cred for hitting update big board, plus a bonus based on how
-            that saved state predicted real outcomes.
-          </li>
-          <li>
-            <span className="font-semibold text-ink">
-              Weekly + season-long submissions.
-            </span>{' '}
-            Base cred per submission, plus an accuracy bonus calculated from
-            the Spearman correlation between your ranking and actual fantasy
-            points.
-          </li>
-          <li>
-            <span className="font-semibold text-ink">Start or sit votes.</span>{' '}
-            Cred proportional to your accuracy, with a contrarian bonus when
-            you&apos;re correct in a minority.
-          </li>
-        </ul>
-
-        <p className="mt-3 text-[10px] font-medium text-n-6">
-          Cred decays slowly if you stop participating during the season.
-          Everyone starts with {CRED_START} cred, so a new scout&apos;s rankings
-          count toward consensus from day one.
-        </p>
-
-        <h4 className="mt-4 text-[13px] font-bold tracking-[-0.015em] text-ink">Rank tiers</h4>
-        <ol className="mt-2 space-y-1 text-[11px] font-medium">
-          {CRED_TIERS.map((tier) => (
-            <li
-              key={tier.level}
-              className="flex items-center justify-between gap-3 text-n-3"
-            >
-              <span className="flex items-center gap-2">
-                <span
-                  className="inline-block h-2 w-2 rounded-full"
-                  style={{ backgroundColor: tier.accent }}
-                />
-                <span className="font-semibold text-ink">{tier.name}</span>
-              </span>
-              <span className="fs-num">
-                {tier.threshold.toLocaleString()}+
-              </span>
-            </li>
-          ))}
-        </ol>
+        <CredExplainer />
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** The popover's body — its own piece so a render test can read it (the
+ *  popover itself portals, so a static render never shows it). */
+export function CredExplainer() {
+  return (
+    <>
+      <h3 className="text-h6">How cred works</h3>
+      <p className="mt-2 text-[11px] font-medium text-n-3">
+        Cred is your reputation score on FieldScout. Everyone starts with{' '}
+        {CRED_START} cred, and your Scout tier goes up as your cred does.
+      </p>
+      <p className="mt-2 text-[10px] font-medium text-n-6">
+        Ways to earn more cred aren&apos;t live yet.
+      </p>
+
+      <h4 className="mt-4 text-[13px] font-bold tracking-[-0.015em] text-ink">Rank tiers</h4>
+      <ol className="mt-2 space-y-1 text-[11px] font-medium">
+        {CRED_TIERS.map((tier) => (
+          <li
+            key={tier.level}
+            className="flex items-center justify-between gap-3 text-n-3"
+          >
+            <span className="flex items-center gap-2">
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ backgroundColor: tier.accent }}
+              />
+              <span className="font-semibold text-ink">{tier.name}</span>
+            </span>
+            <span className="fs-num">
+              {tier.threshold.toLocaleString()}+
+            </span>
+          </li>
+        ))}
+      </ol>
+    </>
   )
 }
