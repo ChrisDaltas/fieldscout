@@ -60,6 +60,9 @@ export type CommitOutcome =
       remaining: SavePlan | null
       /** The re-read list, when there is one. */
       list: ListWithDetails | null
+      /** What saved before this write, in words — a new list's Save makes
+       *  the list itself first ("the list", `saveNewList`). */
+      alsoSaved?: string[]
     }
 
 type Fetch = typeof fetch

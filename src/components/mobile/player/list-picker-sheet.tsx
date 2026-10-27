@@ -185,7 +185,10 @@ export function useListRemoval(
       if (!listContext || mode === 'none') return
       if (mode === 'draft') {
         listContext.removeFromDraft!(playerId)
-        toast({ title: 'Removed from list', description: 'Tap Update to save' })
+        toast({
+          title: 'Removed from list',
+          description: listContext.draftSaveLabel === 'Save' ? 'Tap Save when you’re done' : 'Tap Update to save',
+        })
         onDone()
         return
       }

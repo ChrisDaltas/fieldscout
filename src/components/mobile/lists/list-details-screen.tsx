@@ -1,14 +1,17 @@
 'use client'
 
-import { useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useRouter, useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
 import { rosterTotal, type RosterDraft } from '@/components/lists/list-form-payload'
+import { refreshCommunity } from '@/components/mobile/community/community-store'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { MSwitch } from '@/components/mobile/trades/m-overlay'
 import { useListCoverColorSupport } from '@/hooks/use-list-cover-color-support'
 import { listsKeys, useCreateList, useList, useUpdateList, type ListWithDetails } from '@/hooks/use-lists'
+import { commitDraft } from '@/hooks/use-mobile-lists-commit'
 import { thumbnailProblem, useMobileListsThumbnail } from '@/hooks/use-mobile-lists-thumbnail'
 import { toast } from '@/hooks/use-toast'
 import { useYouTubeTitle, youTubeTitleKey } from '@/hooks/use-youtube-title'
@@ -25,7 +28,6 @@ import {
   VIDEO_ATTACH_FAILED,
   VIDEO_REMOVE_FAILED,
   addVideo,
-  detailsCreateInput,
   detailsPatch,
   maxVideos,
   nameReturnMovesOn,
@@ -47,17 +49,33 @@ import {
   positionGroupValue,
   youTubeThumb,
 } from './lists-model'
-import { useListsNav } from './lists-nav'
-import { CenterNote, CoverImage, LIcon, PillButton, YouTubeBadge, type LIconName } from './lists-parts'
+import { NewListEditor, type EditorCommit } from './list-editor'
+import type { ListDraft } from './lists-model'
+import { COMMUNITY_HREF, listHref, useListsNav } from './lists-nav'
+import { CenterNote, CoverImage, DiscardSheet, LIcon, PillButton, YouTubeBadge, type LIconName } from './lists-parts'
+import { carryListSession } from './lists-session-store'
+import {
+  NEW_LIST_STEP_PARAM,
+  createdToast,
+  newListCloseAsks,
+  newListKey,
+  newListStepHref,
+  saveNewList,
+  stepTwoDraft,
+  type CreatedList,
+  type NewListOutcome,
+} from './new-list-save'
 
 /**
  * FieldScout Mobile — New list, step 1 (lr-lists §2.2, states L3–L3h), and its
  * "Edit details" variant (L3x — unreachable in the prototype; here it opens
  * from a list's options).
  *
- * Name, description, thumbnail and video, then "Next: add players" creates
- * the list (the app needs it to exist before a player can be added) and opens
- * the editor with Add players up. Carried from the app: the cover upload goes
+ * Name, description, thumbnail and video, then "Next: add players" opens step
+ * 2 — the editor, Add players up — and saves nothing: the list is made only
+ * by the editor's Save, Back from step 2 returns here with everything kept,
+ * and ✕ leaves without a list (lr-lists §4; `NewListScreen`,
+ * `new-list-save.ts`). Carried from the app: the cover upload goes
  * to the list's real storage with its size and type rules, Edit details also
  * edits tags, and both carry desktop's **position group** (Chris, 2026-10-15)
  * — an `MSegmented` row (exactly one choice is always on, "All" = no filter),
@@ -100,8 +118,198 @@ import { CenterNote, CoverImage, LIcon, PillButton, YouTubeBadge, type LIconName
  * has a name rather than tappable with a toast ("prevent, don't refuse").
  */
 
-export function NewListScreen() {
-  return <DetailsForm mode="new" list={null} />
+/**
+ * New list: step 1, the details form, and step 2, the editor
+ * (`NewListEditor`) — one draft, held here, until the editor's Save makes the
+ * list (`saveNewList`). Nothing reaches the server before that, so no way
+ * out leaves an empty list in My lists (the design: the list gets its id on
+ * Save, lr-lists §4).
+ *
+ * - **Next** checks the name and opens step 2 as a pushed `step=2` entry of
+ *   this URL, so **Back** — the editor's, or the OS gesture — is history back
+ *   to step 1, with the name, description, cover, videos and settings as
+ *   they were, and the players kept for the next Next. A name changed in
+ *   step 2's header comes back to step 1 with it.
+ * - **✕** on step 1 leaves (where you came from, #27) without a list. Once
+ *   step 2 has players it asks first — "Discard this list?" (gap list #16:
+ *   Back/Cancel asks when there are edits) — and a reload asks too.
+ * - **Save** makes the list and leaves for its List view, which takes New
+ *   list's place in history (step 2 steps back to step 1, which is replaced),
+ *   so Back from the List view goes where New list came from. A list
+ *   Community started returns there instead, "List created" (gap list §3 #8).
+ * - A reload or link on step 2 has no draft to show, so it opens step 1.
+ */
+export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
+  const nav = useListsNav()
+  const router = useRouter()
+  const params = useSearchParams()
+  const qc = useQueryClient()
+  const from = params.get('from')
+  const onStep2 = params.get(NEW_LIST_STEP_PARAM) === '2'
+  const d = useDetailsDraft(null)
+  const [draftKey] = React.useState(newListKey)
+  /** Step 2's draft — the players, Ranked / Tiers — kept across Back. */
+  const [draft, setDraft] = React.useState<ListDraft | null>(null)
+  const [confirmClose, setConfirmClose] = React.useState(false)
+  /** Saved: where New list's place in history goes (see `leave`). */
+  const [leavingTo, setLeavingTo] = React.useState<string | null>(null)
+  /** The list, once a Save has made it — so Save again never makes another. */
+  const created = React.useRef<CreatedList | null>(null)
+  const [exists, setExists] = React.useState(false)
+
+  const createList = useCreateList()
+  const thumbnail = useMobileListsThumbnail()
+  const videoIO = useVideoSaveIO()
+  const colourProbe = useListCoverColorSupport(true)
+  const coloursReady = colourProbe.data === true
+
+  const save = useMutation({
+    mutationFn: async (current: ListDraft): Promise<NewListOutcome> => {
+      const outcome = await saveNewList(
+        {
+          details: {
+            desc: d.desc,
+            position: d.position,
+            coverColor: d.coverColor,
+            coloursReady,
+            team: d.team,
+            roster: d.roster,
+            isPrivate: !d.isPublic,
+          },
+          cover: d.thumb === 'upload' ? d.file : null,
+          videos: d.videos,
+          draft: current,
+          created: created.current,
+        },
+        {
+          create: (input) => createList.mutateAsync(input),
+          uploadCover: (listId, file) => thumbnail.mutateAsync({ listId, file }),
+          videos: videoIO,
+          commit: (listId, next) => commitDraft(listId, next),
+        },
+      )
+      created.current = outcome.created
+      return outcome
+    },
+    onSettled: (outcome) => {
+      const made = outcome?.created
+      if (!made) return
+      setExists(true)
+      if (outcome.list) qc.setQueryData(listsKeys.detail(made.id), outcome.list)
+      else void qc.invalidateQueries({ queryKey: listsKeys.detail(made.id) })
+      void qc.invalidateQueries({ queryKey: listsKeys.collections() })
+      void qc.invalidateQueries({ queryKey: listsKeys.bigBoard() })
+    },
+  })
+
+  // Step 2 shows its draft — and stays up, locked, while Save writes and
+  // while it leaves (even if the OS gesture stepped back meanwhile).
+  const showStep2 = draft !== null && (onStep2 || save.isPending || leavingTo !== null)
+
+  // Step 2 with no draft (a reload, a link): nothing to edit yet — step 1.
+  React.useEffect(() => {
+    if (onStep2 && !draft && !leavingTo) window.history.replaceState(null, '', newListStepHref(params, 1))
+  }, [onStep2, draft, leavingTo, params])
+
+  // Back on step 1: a name changed in step 2's header comes back with it.
+  const [wasStep2, setWasStep2] = React.useState(showStep2)
+  if (wasStep2 !== showStep2) {
+    setWasStep2(showStep2)
+    if (!showStep2 && draft && listTitleSchema.safeParse(draft.title).success) d.setTitle(draft.title)
+  }
+
+  // Saved: once the URL is back on step 1, it's replaced by where we go.
+  React.useEffect(() => {
+    if (leavingTo && !onStep2) router.replace(leavingTo)
+  }, [leavingTo, onStep2, router])
+
+  // A reload or tab close would drop the players step 2 added.
+  const holdsPlayers = newListCloseAsks(draft) && leavingTo === null
+  React.useEffect(() => {
+    if (!holdsPlayers) return
+    const onUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onUnload)
+    return () => window.removeEventListener('beforeunload', onUnload)
+  }, [holdsPlayers])
+
+  /** Next: on to step 2, keeping whatever an earlier step 2 held. */
+  const next = () => {
+    const title = listTitleSchema.safeParse(d.title)
+    if (!title.success || !detailsReady(d)) return
+    setDraft((kept) => stepTwoDraft(kept, title.data))
+    window.history.pushState(null, '', newListStepHref(params, 2))
+  }
+
+  /** Leave New list for `href`, in its place: step 2 steps back to step 1,
+   *  which the effect above then replaces. */
+  const leave = (href: string) => {
+    setLeavingTo(href)
+    if (onStep2) window.history.back()
+  }
+
+  /** Step 2's Back: step 1, draft kept — the entry Next pushed. Once a Save
+   *  has made the list, it's that list's editor: its List view. */
+  const backFromStep2 = () => {
+    if (created.current) leave(listHref(created.current.id, from === 'grid' ? 'grid' : undefined))
+    else window.history.back()
+  }
+
+  const saved = () => {
+    const made = created.current
+    if (!made) return
+    toast(createdToast(made))
+    carryListSession(draftKey, made.id)
+    if (from === 'community') {
+      refreshCommunity(qc)
+      if (nav.returnToCommunity()) setLeavingTo(COMMUNITY_HREF)
+      else leave(COMMUNITY_HREF)
+      return
+    }
+    leave(listHref(made.id, from === 'grid' ? 'grid' : undefined))
+  }
+
+  const commit: EditorCommit = {
+    mutate: (current, callbacks) => save.mutate(current, callbacks),
+    isPending: save.isPending || leavingTo !== null,
+  }
+
+  return (
+    <>
+      {showStep2 && draft ? (
+        <NewListEditor
+          draftKey={draftKey}
+          title={draft.title}
+          positionFilter={d.team || d.position === 'ALL' ? null : d.position}
+          draft={draft}
+          exists={exists}
+          commit={commit}
+          currentWeek={currentWeek}
+          onDraftChange={setDraft}
+          onBack={backFromStep2}
+          onSaved={saved}
+        />
+      ) : (
+        <DetailsForm
+          mode="new"
+          list={null}
+          d={d}
+          onClose={() => (newListCloseAsks(draft) ? setConfirmClose(true) : nav.closeNew())}
+          onNext={next}
+        />
+      )}
+      <DiscardSheet
+        open={confirmClose}
+        onOpenChange={setConfirmClose}
+        title="Discard this list?"
+        subtitle="The players you added haven’t been saved."
+        detail="Leaving now drops this list and the players you added."
+        onDiscard={nav.closeNew}
+      />
+    </>
+  )
 }
 
 export function ListDetailsScreen({ listId }: { listId: string }) {
@@ -135,7 +343,13 @@ export function ListDetailsScreen({ listId }: { listId: string }) {
       </Frame>
     )
   }
-  return <DetailsForm mode="edit" list={list} />
+  return <EditDetails list={list} />
+}
+
+function EditDetails({ list }: { list: ListWithDetails }) {
+  const nav = useListsNav()
+  const d = useDetailsDraft(list)
+  return <DetailsForm mode="edit" list={list} d={d} onClose={() => nav.closeEdit(list.id)} />
 }
 
 function Frame({ children }: { children: React.ReactNode }) {
@@ -163,18 +377,14 @@ function Header({ title, step, onClose }: { title: string; step: string; onClose
   )
 }
 
-function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetails | null }) {
-  const nav = useListsNav()
-  const qc = useQueryClient()
-  const createList = useCreateList()
-  const updateList = useUpdateList(list?.id ?? '')
-  const thumbnail = useMobileListsThumbnail()
-  const fileRef = React.useRef<HTMLInputElement | null>(null)
-
+/**
+ * The details form's draft. New list keeps it across its two steps (so Back
+ * from step 2 finds it as it was); Edit details, for its own life.
+ */
+function useDetailsDraft(list: ListWithDetails | null) {
   // The links as the form opened: Done changes only what was changed HERE,
   // so a video attached elsewhere meanwhile (a refetch) is never removed.
   const [openedLinks] = React.useState(() => list?.links ?? [])
-  const videoMax = maxVideos(list?.links ?? openedLinks)
   const [title, setTitle] = React.useState(list?.title ?? '')
   const [desc, setDesc] = React.useState(list?.description ?? '')
   const [thumb, setThumb] = React.useState<'collage' | 'upload'>(list?.thumbnail_url ? 'upload' : 'collage')
@@ -192,7 +402,6 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
     list?.is_team ? rosterDraftOf(list.roster_settings) : DEFAULT_TEAM_ROSTER,
   )
   const [tagText, setTagText] = React.useState('')
-  const [busy, setBusy] = React.useState(false)
 
   React.useEffect(
     () => () => {
@@ -201,7 +410,131 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
     [preview],
   )
 
-  const valid = listTitleSchema.safeParse(title).success && (!team || rosterValid(roster))
+  return {
+    openedLinks,
+    title,
+    setTitle,
+    desc,
+    setDesc,
+    thumb,
+    setThumb,
+    file,
+    setFile,
+    preview,
+    setPreview,
+    isPublic,
+    setIsPublic,
+    videos,
+    setVideos,
+    link,
+    setLink,
+    linkProblem,
+    setLinkProblem,
+    tags,
+    setTags,
+    position,
+    setPosition,
+    coverColor,
+    setCoverColor,
+    team,
+    setTeam,
+    roster,
+    setRoster,
+    tagText,
+    setTagText,
+  }
+}
+
+type DetailsDraftState = ReturnType<typeof useDetailsDraft>
+
+/** Whether the form can move on: a name, and for a team a roster that saves. */
+function detailsReady(d: Pick<DetailsDraftState, 'title' | 'team' | 'roster'>): boolean {
+  return listTitleSchema.safeParse(d.title).success && (!d.team || rosterValid(d.roster))
+}
+
+/** Done's (and Save's) video calls, for `saveVideoChanges` (which pins their order). */
+function useVideoSaveIO(): VideoSaveIO {
+  const qc = useQueryClient()
+  return React.useMemo(
+    () => ({
+      del: async (listId, linkId) => {
+        const res = await fetch(`/api/lists/${listId}/links/${linkId}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error(VIDEO_REMOVE_FAILED)
+      },
+      post: async (listId, body) => {
+        const res = await fetch(`/api/lists/${listId}/links`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }).catch(() => {
+          throw new Error(VIDEO_ATTACH_FAILED)
+        })
+        if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? VIDEO_ATTACH_FAILED)
+      },
+      // The title the row showed, from the same lookup (`useYouTubeTitle`).
+      titleOf: (yt) => qc.getQueryData<string | null>(youTubeTitleKey(yt)),
+    }),
+    [qc],
+  )
+}
+
+function DetailsForm({
+  mode,
+  list,
+  d,
+  onClose,
+  onNext,
+}: {
+  mode: 'new' | 'edit'
+  list: ListWithDetails | null
+  d: DetailsDraftState
+  onClose: () => void
+  /** New list's Next: on to step 2 — nothing is saved yet. */
+  onNext?: () => void
+}) {
+  const nav = useListsNav()
+  const qc = useQueryClient()
+  const updateList = useUpdateList(list?.id ?? '')
+  const thumbnail = useMobileListsThumbnail()
+  const videoIO = useVideoSaveIO()
+  const fileRef = React.useRef<HTMLInputElement | null>(null)
+  const {
+    openedLinks,
+    title,
+    setTitle,
+    desc,
+    setDesc,
+    thumb,
+    setThumb,
+    file,
+    setFile,
+    preview,
+    setPreview,
+    isPublic,
+    setIsPublic,
+    videos,
+    setVideos,
+    link,
+    setLink,
+    linkProblem,
+    setLinkProblem,
+    tags,
+    setTags,
+    position,
+    setPosition,
+    coverColor,
+    setCoverColor,
+    team,
+    setTeam,
+    roster,
+    setRoster,
+    tagText,
+    setTagText,
+  } = d
+  const videoMax = maxVideos(list?.links ?? openedLinks)
+  const [busy, setBusy] = React.useState(false)
+
+  const valid = detailsReady(d)
   // Swatches only once `lists.cover_color` exists (main deploys before the
   // migration is pushed): a loaded row proves it; a new list asks.
   const colourProbe = useListCoverColorSupport(mode === 'new')
@@ -209,7 +542,7 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
   // A team has no position group, so its cover shows the default colour.
   const positionFilter = team || position === 'ALL' ? null : position
   const showPosition = !team
-  const close = () => (mode === 'new' ? nav.closeNew() : nav.closeEdit(list!.id))
+  const close = onClose
 
   const attach = () => {
     const result = addVideo(videos, link, videoMax)
@@ -249,26 +582,6 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
     setTagText('')
   }
 
-  /** Done's video calls, for `saveVideoChanges` (which pins their order). */
-  const videoIO: VideoSaveIO = {
-    del: async (listId, linkId) => {
-      const res = await fetch(`/api/lists/${listId}/links/${linkId}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error(VIDEO_REMOVE_FAILED)
-    },
-    post: async (listId, body) => {
-      const res = await fetch(`/api/lists/${listId}/links`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      }).catch(() => {
-        throw new Error(VIDEO_ATTACH_FAILED)
-      })
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? VIDEO_ATTACH_FAILED)
-    },
-    // The title the row showed, from the same lookup (`useYouTubeTitle`).
-    titleOf: (yt) => qc.getQueryData<string | null>(youTubeTitleKey(yt)),
-  }
-
   /** One toast for what went wrong with the videos (only one shows at a time). */
   const videoFailureToast = (failures: readonly string[], saved: string) =>
     toast({
@@ -279,23 +592,11 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
   const submit = async () => {
     const parsed = listTitleSchema.safeParse(title)
     if (!parsed.success || !valid || busy) return
+    // New list's Next saves nothing: the editor's Save makes the list.
+    if (mode === 'new') return onNext?.()
     setBusy(true)
     try {
       const draft = { title: parsed.data, desc, position, coverColor, coloursReady, team, roster, isPrivate: !isPublic }
-      if (mode === 'new') {
-        const created = await createList.mutateAsync(detailsCreateInput(draft))
-        if (file && thumb === 'upload') {
-          await thumbnail.mutateAsync({ listId: created.id, file }).catch((error: Error) =>
-            toast({ title: 'The cover image didn’t upload', description: error.message }),
-          )
-        }
-        const failures = videos.length > 0 ? await saveVideoChanges(created.id, { remove: [], add: videos }, videoIO) : []
-        if (failures.length > 0) videoFailureToast(failures, 'List created')
-        qc.invalidateQueries({ queryKey: listsKeys.detail(created.id) })
-        nav.createdList(created.id)
-        return
-      }
-
       const current = list!
       const patch = detailsPatch(current, { ...draft, tags })
       if (Object.keys(patch).length > 0) await updateList.mutateAsync(patch)
@@ -314,7 +615,7 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
       nav.closeEdit(current.id)
     } catch (error) {
       toast({
-        title: mode === 'new' ? 'Could not create the list' : 'Could not save the details',
+        title: 'Could not save the details',
         description: error instanceof Error ? error.message : undefined,
       })
     } finally {
@@ -551,7 +852,7 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
             valid ? 'bg-accent text-white active:bg-accent-strong' : 'bg-m-b3s text-m-t3',
           )}
         >
-          {busy ? (mode === 'new' ? 'Creating…' : 'Saving…') : mode === 'new' ? 'Next: add players' : 'Done'}
+          {busy ? 'Saving…' : mode === 'new' ? 'Next: add players' : 'Done'}
         </button>
       </div>
     </Frame>

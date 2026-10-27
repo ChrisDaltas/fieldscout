@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
+import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { ScoringSheet } from '@/components/mobile/ui/scoring-sheet'
 import type { ThumbnailPlayer } from '@/hooks/use-lists'
 import type { ListScoring, TimeFrame } from '@/hooks/use-mobile-lists-timeframe-stats'
@@ -395,5 +396,60 @@ export function PillButton({
     >
       {children}
     </button>
+  )
+}
+
+/**
+ * "Discard changes?" (Chris, 2026-10-15, gap list #16: Back/Cancel discards,
+ * asking first when there are edits) — Keep editing, the accent, over
+ * Discard, its label in red. The editor asks it on Back with changes; New
+ * list asks "Discard this list?" on ✕ once step 2 has players.
+ */
+export function DiscardSheet({
+  open,
+  onOpenChange,
+  title,
+  subtitle,
+  detail,
+  onDiscard,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string
+  subtitle: string
+  /** For screen readers: what Discard drops. */
+  detail: string
+  onDiscard: () => void
+}) {
+  return (
+    <MobileSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={title}
+      subtitle={subtitle}
+      footer={
+        <div className="flex flex-col gap-2 px-4 pb-[max(30px,env(safe-area-inset-bottom))] pt-1">
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="flex h-12 items-center justify-center rounded-[14px] bg-accent text-[15px] font-semibold text-white active:bg-accent-strong"
+          >
+            Keep editing
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onOpenChange(false)
+              onDiscard()
+            }}
+            className="flex h-12 items-center justify-center rounded-[14px] bg-m-b2 text-[15px] font-semibold text-m-red active:bg-m-b2h"
+          >
+            Discard
+          </button>
+        </div>
+      }
+    >
+      <span className="sr-only">{detail}</span>
+    </MobileSheet>
   )
 }
