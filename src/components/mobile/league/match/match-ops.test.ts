@@ -6,6 +6,7 @@ import {
   cardProjection,
   gameLine,
   isBareMatchHref,
+  lineupProjection,
   metaTeam,
   orderMatchups,
   pointsDisplay,
@@ -117,6 +118,18 @@ describe('mobile Match — the card', () => {
     expect(cardProjection({ total: 70, missing: 1 }, 9)).toBeNull()
     expect(cardProjection({ total: 0, missing: 0 }, 0)).toBeNull()
     expect(cardProjection(null, 9)).toBeNull()
+  })
+  it('a lineup’s projected total — the one rule for the Match card, the Team tab card and the Team view header', () => {
+    const proj = (id: string) => ({ qb: 19.71, rb: 16.03, wr: 10 } as Record<string, number>)[id] ?? null
+    expect(lineupProjection(['qb', 'rb', 'wr', null], proj)).toBe('45.74')
+    // A filled starter without a projection: no partial sum.
+    expect(lineupProjection(['qb', 'rb', 'te'], proj)).toBeNull()
+    // Projections loading or failed (nobody has one): never "0.00".
+    expect(lineupProjection(['qb', 'rb'], () => null)).toBeNull()
+    expect(lineupProjection(['qb', 'rb'], () => undefined)).toBeNull()
+    // An empty lineup: nothing to project.
+    expect(lineupProjection([null, null], proj)).toBeNull()
+    expect(lineupProjection([], proj)).toBeNull()
   })
 })
 

@@ -4,10 +4,10 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
 import { commishTeamHref } from '@/components/leagues/activity-page-ops'
-import { projectedTotal } from '@/components/leagues/my-team-ops'
 import { LOCKED_DROP_TITLE } from '@/components/leagues/players-page-ops'
 import { COMMISH_CHANGED_BADGE } from '@/components/leagues/team-commish-ops'
 import type { SlotInstance, WeekEditability } from '@/components/leagues/lineup-editor-ops'
+import { lineupProjection } from '@/components/mobile/league/match/match-ops'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import type { TeamLineupRow } from '@/hooks/use-lineup'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
@@ -79,7 +79,14 @@ export function LineupSection(props: LineupSectionProps) {
     sheetOpen && selection !== null && selection.kind === sel.kind && JSON.stringify(selection) === JSON.stringify(sel)
 
   const benchSeats = Math.max(0, settings.bench - model.bench.length)
-  const starterTotal = projectedTotal(model.starters.map((r) => r.player?.player_id ?? null), stats.proj)
+  // The Team view header's "Proj": the Match card's rule (`lineupProjection`)
+  // over the starters on screen, a kept starter's seat counted as filled —
+  // "–" unless every filled starter has a projection, so never a partial
+  // sum, and never "0.00" while the projections load or after they failed.
+  const starterProj = lineupProjection(
+    model.starters.map((r) => r.player?.player_id ?? kept.get(r.slot.key) ?? null),
+    stats.proj,
+  )
 
   // Own team: the selected player's Drop (moves open, not locked).
   const selectedPlayer = options?.selected.player ?? null
@@ -142,8 +149,8 @@ export function LineupSection(props: LineupSectionProps) {
           <h2 className="text-[17px] font-semibold tracking-[-0.01em]">Starters</h2>
           <span className="flex items-center gap-0.5">
             {weekNav && <WeekArrow dir="prev" week={weekNav.prev} disabled={saving} onWeek={weekNav.onWeek} />}
-            <span className="text-[12px] font-medium text-m-t3 tabular-nums">
-              Week {week} · Proj {starterTotal.total.toFixed(2)}
+            <span className="text-[12px] font-medium text-m-t3 tabular-nums" data-view-proj>
+              Week {week} · Proj {starterProj ?? '–'}
             </span>
             {weekNav && <WeekArrow dir="next" week={weekNav.next} disabled={saving} onWeek={weekNav.onWeek} />}
           </span>
