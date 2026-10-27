@@ -254,10 +254,12 @@ function TeamPageContent({
       games: games.data ?? [],
       splits: splits.data ?? [],
       proj: (id) => values.byPlayer.get(id)?.projected_points ?? null,
+      // A failed refresh over projections already shown keeps them.
+      projections: values.isError && !values.data ? 'error' : values.isPending ? 'pending' : 'ready',
       points: (id) => pointsBy.get(id) ?? null,
       snap: (id) => usage.snapByPlayer.get(id) ?? null,
     }
-  }, [box.data, games.data, splits.data, values.byPlayer, usage.snapByPlayer])
+  }, [box.data, games.data, splits.data, values.byPlayer, values.isError, values.data, values.isPending, usage.snapByPlayer])
 
   const opponent = useMemo<LineupOpponent | { kind: 'bye' } | null>(() => {
     if (!pairing) return null
@@ -271,7 +273,8 @@ function TeamPageContent({
       href: `/app/leagues/${leagueId}/matchup/${pairing.id}`,
       myScore: home ? pairing.home_score : pairing.away_score,
       oppScore: home ? pairing.away_score : pairing.home_score,
-      oppProjected: oppStarters ? projectedTotal(oppStarters, (id) => values.byPlayer.get(id)?.projected_points ?? null) : null,
+      // An empty stored lineup has nothing to project ("—", never "0.0").
+      oppProjected: oppStarters && oppStarters.length > 0 ? projectedTotal(oppStarters, (id) => values.byPlayer.get(id)?.projected_points ?? null) : null,
     }
   }, [pairing, oppTeamId, teamId, isOwnTeam, teamName, oppLineup.data, detail.settings.roster_settings.ir_slots, detail.teams, leagueId, values.byPlayer])
 

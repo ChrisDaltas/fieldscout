@@ -34,6 +34,7 @@ import {
   STAT_COLUMNS_STORAGE_KEY,
   statusTag,
   toggleColumn,
+  wholeProjectedTotal,
   writeColumns,
   type AutosaveStatus,
   type QueuedMove,
@@ -161,6 +162,20 @@ describe('projected total + the Lineup check', () => {
     const proj = (id: string) => ({ qb: 20.5, rb: 10.25 })[id] ?? null
     expect(projectedTotal(['qb', 'rb', null], proj)).toEqual({ total: 30.75, missing: 0 })
     expect(projectedTotal(['qb', 'wr'], proj)).toEqual({ total: 20.5, missing: 1 })
+  })
+
+  it('a projected total is shown only when every filled starter has one — one rule, desktop and phone (audit match-team-1)', () => {
+    const proj = (id: string) => ({ qb: 20.5, rb: 10.25 })[id] ?? null
+    expect(wholeProjectedTotal(projectedTotal(['qb', 'rb', null], proj), 2)).toBe(30.75)
+    // A partial sum would understate the side.
+    expect(wholeProjectedTotal(projectedTotal(['qb', 'wr'], proj), 2)).toBeNull()
+    // Projections still loading / failed: nobody has one — never 0.
+    expect(wholeProjectedTotal(projectedTotal(['qb', 'rb'], () => null), 2)).toBeNull()
+    // An empty lineup has nothing to project — never 0.
+    expect(wholeProjectedTotal(projectedTotal([null, null], proj), 0)).toBeNull()
+    expect(wholeProjectedTotal(null, 2)).toBeNull()
+    // A real zero is a real total.
+    expect(wholeProjectedTotal({ total: 0, missing: 0 }, 1)).toBe(0)
   })
 
   it('every check from real data: starters set, injury risk naming them, bye naming them, Proj vs opponent', () => {

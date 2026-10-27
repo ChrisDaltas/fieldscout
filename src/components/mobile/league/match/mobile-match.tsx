@@ -45,7 +45,6 @@ import {
   teamName,
   type StarterCell,
 } from '@/components/leagues/matchup-view-ops'
-import { projectedTotal } from '@/components/leagues/my-team-ops'
 import { formatRecord } from '@/components/leagues/standings-table-ops'
 import { LIVE_STATS_DELAYED_COPY, STALE_SCORES_COPY } from '@/components/leagues/status-banners'
 import { problemCopy } from '@/components/leagues/team-page'
@@ -80,9 +79,9 @@ import { shortPlayerName } from '@/utils/format-name'
 import { MobileCorrectionNote } from './match-correction-note'
 import {
   BENCH_CHIP,
-  cardProjection,
   gameLine,
   isBareMatchHref,
+  lineupProjection,
   matchupHref,
   metaTeam,
   orderMatchups,
@@ -469,7 +468,7 @@ function usePrefetchNeighbours(leagueId: string, week: number, ordered: readonly
 function boxProjection(data: TeamBoxScore | undefined, projOf: (id: string) => number | null): string | null {
   if (!data?.lineup) return null
   const ids = data.starters.map((s) => s.player?.id ?? null)
-  return cardProjection(projectedTotal(ids, projOf), ids.filter(Boolean).length)
+  return lineupProjection(ids, projOf)
 }
 
 // ---------------------------------------------------------------------------

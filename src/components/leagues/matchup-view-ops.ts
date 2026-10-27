@@ -20,6 +20,7 @@ import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { ScheduleWeek } from '@/hooks/use-schedule'
 
 import { currentWeekOf } from './lineup-editor-ops'
+import { wholeProjectedTotal, type ProjectedTotal } from './my-team-ops'
 import { formatScore, weekKind, weekStatusBadge } from './schedule-view-ops'
 import { formatPoints } from './standings-table-ops'
 
@@ -598,10 +599,10 @@ export function yetToPlayCopy(n: number): string {
 
 /** A side's projected total — only when it has filled starters and EVERY one
  *  has a stored projection (a partial sum would understate the side; an
- *  empty lineup has nothing to project, never "Proj 0.0"). */
-export function projectedTotalText(total: { total: number; missing: number } | null, filled: number): string | null {
-  if (!total || filled === 0 || total.missing > 0) return null
-  return `Proj ${total.total.toFixed(1)}`
+ *  empty lineup has nothing to project, never "Proj 0.0"; `wholeProjectedTotal`). */
+export function projectedTotalText(total: ProjectedTotal | null, filled: number): string | null {
+  const whole = wholeProjectedTotal(total, filled)
+  return whole === null ? null : `Proj ${whole.toFixed(1)}`
 }
 
 /** The bench row's middle label: IR only when every player on the row is on
