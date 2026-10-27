@@ -6,6 +6,12 @@ import { useMemo } from 'react'
 import { appEntryBehind, useGoBack } from '@/components/mobile/ui/back-nav'
 
 import { compareHref } from './list-tools'
+import { listHref, type ListFrom } from './lists-routes'
+
+// The List view's address is built by a server page too (the public share
+// page's phone handoff), so it lives in a plain module; re-exported here for
+// the Lists screens.
+export { listHref }
 
 /**
  * FieldScout Mobile — Lists routes (lr-lists §4; the prototype has none, so
@@ -57,10 +63,7 @@ import { compareHref } from './list-tools'
  * step 1 again, then step 2, so it steps back three (`returnToCommunity`).
  */
 
-type From = 'grid' | 'view'
-
-export const listHref = (id: string, from?: From) =>
-  `/app/lists?list=${encodeURIComponent(id)}${from ? `&from=${from}` : ''}`
+type From = ListFrom
 
 export interface EditorHrefOptions {
   /** Open Add players on arrival (when the list has no players). */

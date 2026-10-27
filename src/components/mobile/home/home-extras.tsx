@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useMemo } from 'react'
 
 import { ListThumbnail } from '@/components/lists/list-thumbnail'
+import { listHref } from '@/components/mobile/lists/lists-routes'
 import { MPosChip } from '@/components/mobile/ui/m-pos-chip'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useLists } from '@/hooks/use-lists'
@@ -101,7 +102,9 @@ export function HomeAiExperts() {
     ...(boards.data ?? []).map((b) => ({
       id: `board-${b.id}`,
       title: b.title,
-      href: `/u/${b.owner.username}/lists/${b.slug}`,
+      // The phone List view, as a shared link opens on a phone (audit
+      // lists-2) — never the desktop share page.
+      href: listHref(b.id),
       meta: `${b.player_count} players`,
       date: b.updated_at,
       positionFilter: b.position_filter,

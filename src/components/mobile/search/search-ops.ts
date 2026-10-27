@@ -14,7 +14,7 @@
  *   aren't searchable yet).
  */
 import { communityDetailHref } from '@/components/mobile/community/community-ops'
-import { listHref } from '@/components/mobile/lists/lists-nav'
+import { listHref } from '@/components/mobile/lists/lists-routes'
 import { preDraftFor } from '@/components/mobile/player/profile-ops'
 import type { Availability } from '@/components/leagues/players-page-ops'
 

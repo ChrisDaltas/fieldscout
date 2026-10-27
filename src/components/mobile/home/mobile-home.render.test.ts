@@ -240,3 +240,26 @@ describe('mobile Home', () => {
     expect(out).toContain('>Out</span>')
   })
 })
+
+describe('From the AI experts (audit lists-2)', () => {
+  it('an expert’s board opens the phone List view — never the desktop share page', () => {
+    const qc = seeded()
+    qc.setQueryData(['persona-boards', 9], [
+      {
+        id: 'b1',
+        title: 'Week 9 RB rankings',
+        slug: 'week-9-rb-rankings',
+        description: null,
+        position_filter: 'RB',
+        player_count: 24,
+        updated_at: new Date().toISOString(),
+        persona: { username: 'bathew', display_name: 'Bathew Merry', avatar_url: null },
+        owner: { username: 'bathew_ai' },
+      },
+    ])
+    const out = render(qc)
+    expect(out).toContain('From the AI experts')
+    expect(out).toContain('href="/app/lists?list=b1"')
+    expect(out).not.toContain('/lists/week-9-rb-rankings')
+  })
+})
