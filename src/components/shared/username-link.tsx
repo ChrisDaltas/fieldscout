@@ -1,9 +1,12 @@
+'use client'
+
 import Link from 'next/link'
 import { Fragment, type ReactNode } from 'react'
 
+import { useProfileHref } from '@/hooks/use-profile-href'
 import { cn } from '@/lib/utils'
 
-import { splitActorName, userProfileHref, usernameParts } from './username-link-ops'
+import { splitActorName, usernameParts } from './username-link-ops'
 
 interface UsernameLinkProps {
   /** The person's username — the visible text and the profile it opens. */
@@ -30,7 +33,9 @@ interface UsernameLinkProps {
  * user profile they clicked on."*). The ONE person link in the app: every
  * rendered username that is not inside a text input, a toast, or another
  * link's hit area goes through here, so the URL has one spelling
- * (`userProfileHref`).
+ * (`userProfileHref`). In the phone layout it opens the person's phone
+ * screen inside the app instead (`useProfileHref` → `/app/u/…`), so a
+ * phone never lands on the desktop page with no dock and no Back.
  *
  * The treatment is the house inline-link convention (`TeamNameLink`,
  * `list-comments-tab.tsx`): the underline is reserved at rest with
@@ -39,9 +44,10 @@ interface UsernameLinkProps {
  * (CLAUDE.md — elevation is a hover state for things that float).
  */
 export function UsernameLink({ username, at = true, newTab = false, className }: UsernameLinkProps) {
+  const href = useProfileHref(username)
   return (
     <Link
-      href={userProfileHref(username)}
+      href={href}
       data-username-link={username}
       {...(newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
       className={cn(
