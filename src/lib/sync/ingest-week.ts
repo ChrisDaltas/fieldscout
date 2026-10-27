@@ -1161,9 +1161,12 @@ function correctionsReason(report: IngestReport, deltas: number, writes: number)
  * 2026-10-27, "Skip it, retry next update"); a DB failure after the provider
  * answered is counted on `io.degradation` as a failed poll BEFORE it is
  * re-thrown, and marked so (`pollFailureCounted`) for the caller (F832); the
- * tracker records a success only once every write is done; and the week
- * bounds (`nfl_weeks.last_game_ends_at`) are written AFTER the lines, so a
- * failed door never leaves a week stamped all-final without them (F832).
+ * tracker records a success only once every write is done; and a stored open
+ * game's move to final / postponed (R1741) and the week bounds
+ * (`nfl_weeks.last_game_ends_at`, F832) are written AFTER the lines, so a
+ * failed door never closes the live window or stamps a week all-final
+ * without them. What a failed poll may still have written: new game rows
+ * and the lines of the batches before the failing one (R1744).
  */
 export async function ingestWeek(
   provider: StatsProvider,
@@ -1229,7 +1232,7 @@ export function failedPollReport(providerName: string, season: number, week: num
   const report = emptyReport({ name: providerName } as StatsProvider, { season, week } as IngestIo, polledAt, degraded)
   report.ok = false
   report.error = error
-  report.reasons.push(`poll failed after the provider answered — counted as a failed poll (F832); stats_degraded=${degraded}`)
+  report.reasons.push(`poll failed after the provider answered — counted as a failed poll (F832); some writes may have landed (new games, lines before the failing batch), the week's moves to final and its completion stamp were withheld (R1741 / R1744); stats_degraded=${degraded}`)
   return report
 }
 
@@ -1377,17 +1380,29 @@ async function ingestAnswer(
   // league_week_advance reads — go LAST, so a door that fails never leaves a
   // week stamped all-final while its lines are missing (the next poll writes
   // both). Games stay first: `player_stats.game_id` references them.
-  const gameWrites = [...gameDiff.inserts, ...gameDiff.updates]
-  if (gameWrites.length > 0) {
+  // R1741 (M7 L.F2.3): a stored OPEN game (scheduled / live) that this poll
+  // closes (final / postponed) is moved only AFTER the lines are written. The
+  // live poll keeps a week hot while any of its games is stored open, so a
+  // door that fails leaves the game open and the week is retried at the live
+  // cadence, not the hourly sweep. New rows and every other change go first
+  // (`player_stats.game_id` references the row).
+  const closingMoves = gameDiff.updates.filter((row) => {
+    const prior = existingGames.get(row.id)
+    return prior !== undefined && isOpenStatus(prior.status) && !isOpenStatus(row.status)
+  })
+  const gameWrites = [...gameDiff.inserts, ...gameDiff.updates.filter((row) => !closingMoves.includes(row))]
+  const writeGames = async (rows: GameRow[]) => {
+    if (rows.length === 0) return
     await upsertCounted(
       db,
       'nfl_games',
-      gameWrites.map((row) => ({ ...row, updated_at: stamp })),
+      rows.map((row) => ({ ...row, updated_at: stamp })),
       'id',
       'id',
       `nfl_games (${season})`,
     )
   }
+  await writeGames(gameWrites)
   report.games.inserted = gameDiff.inserts.length
   report.games.updated = gameDiff.updates.length
   report.games.unchanged = gameDiff.unchanged
@@ -1407,6 +1422,7 @@ async function ingestAnswer(
     await writeThroughDoor(db, door, season, week, stamp, statWrites, new Set(deltas.map((r) => r.player_id)), corrections, report, teamColumn)
     report.write.path = 'door'
   }
+  await writeGames(closingMoves) // R1741: the moves to final / postponed, once the lines are in
 
   for (const w of weekWrites) {
     const { data, error } = await db

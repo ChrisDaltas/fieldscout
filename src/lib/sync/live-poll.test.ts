@@ -16,7 +16,7 @@ import type { StatsProvider } from '@/lib/leagues/stats/stats-provider'
 import { VirtualClock } from '@/lib/leagues/time/virtual-clock'
 
 import type { FlagsClient, StatsDegradedFlag } from './ingest-flags'
-import type { IngestReport } from './ingest-week'
+import { ingestWeek, type IngestReport } from './ingest-week'
 import {
   type CalendarGame,
   type CalendarWeek,
@@ -377,12 +377,103 @@ describe('M7 L.F2.3 — what a poll that misbehaves does to the round (F830 / R1
       [1, false],
       [2, true],
     ])
+    // R1740: the round's outcome is its worst poll — the success persists first, the failure last; both carry 1.
     expect(persisted).toEqual([
+      { week: 2, ok: true, failures: 1 },
       { week: 1, ok: false, failures: 1 },
-      { week: 2, ok: true, failures: 0 },
     ])
+    expect(world.flag.consecutive_failures).toBe(1)
     expect(report.rounds[0].polls[0].report.error).toBe('ingest_write_batch failed (2026 week 1, lines 1–3): a database error')
-    expect(report.problems[0]).toMatch(/^week 1: poll FAILED after the provider answered \(ingest_write_batch failed .*\) — no stat line written, the week not stamped; consecutive failures 1$/)
+    // R1744: honest about what may have landed, and about what was certainly withheld.
+    expect(report.problems[0]).toBe(
+      "week 1: poll FAILED after the provider answered (ingest_write_batch failed (2026 week 1, lines 1–3): a database error) — some writes may have landed (new games, lines before the failing batch); the week's moves to final and its completion stamp were withheld; consecutive failures 1",
+    )
+  })
+
+  /** Two hot weeks; `failing` throws on every poll, the other always succeeds; one round per invocation. */
+  async function twoWeekRounds(failing: 1 | 2, rounds: number) {
+    const world = makeWorld([game(1, TNF, 'live'), game(2, SNF, 'scheduled')])
+    const seen: Array<{ failures: number; degraded: boolean }> = []
+    for (let i = 0; i < rounds; i++) {
+      await runLivePollInvocation({
+        db: fakeDb(world),
+        provider: fakeProvider(world),
+        time: new VirtualClock(new Date(new Date(SNF).getTime() + (7 + i) * 60_000)),
+        season: 2026,
+        budgetMs: 1,
+        sleep: async () => {},
+        ingest: async (_p, time, io) => {
+          if (io.week === failing) throw new Error(`week ${failing} fails every time`)
+          io.degradation.recordPollResult(true)
+          return fakeReport(io.season, io.week, time.now().toISOString(), true, io.degradation.degraded)
+        },
+        loadTracker: async () => new DegradationTracker(world.flag.consecutive_failures),
+        persist: async (_db, tracker) => {
+          world.flag = { ...world.flag, degraded: tracker.degraded, consecutive_failures: tracker.consecutiveFailures }
+          return world.flag
+        },
+      })
+      seen.push({ failures: world.flag.consecutive_failures, degraded: world.flag.degraded })
+    }
+    return seen
+  }
+
+  it('R1740: a week that fails EVERY round raises stats_degraded by the third round while the other week succeeds — in either order', async () => {
+    const rising = [
+      { failures: 1, degraded: false },
+      { failures: 2, degraded: false },
+      { failures: 3, degraded: true },
+    ]
+    expect(await twoWeekRounds(1, 3)).toEqual(rising) // the failing week polled first
+    expect(await twoWeekRounds(2, 3)).toEqual(rising) // …and polled last: a success never clears it
+  })
+
+  it('R1740: two failed weeks in one round are ONE failed instant (counted once), and an all-success round clears the count', async () => {
+    const world = makeWorld([game(1, TNF, 'live'), game(2, SNF, 'scheduled')])
+    world.flag = { ...world.flag, consecutive_failures: 1 }
+    const report = await run(world, new VirtualClock(new Date(new Date(SNF).getTime() + 7 * 60_000)), { budgetMs: 1, failPolls: true })
+    expect(world.flag.consecutive_failures).toBe(2)
+    expect(report.problems[1]).toMatch(/^week 2: provider poll FAILED again in the same round \(boom\) — counted once per round toward stats_degraded \(R1740\)$/)
+    await run(world, new VirtualClock(new Date(new Date(SNF).getTime() + 8 * 60_000)), { budgetMs: 1 })
+    expect(world.flag.consecutive_failures).toBe(0)
+  })
+
+  it('R1742: a REAL ingestWeek throw (a door failure after the provider answered) raises consecutive_failures by exactly ONE per round — counted by ingestWeek, never again by the loop', async () => {
+    const world = makeWorld([game(1, TNF, 'live')])
+    const ingestDb = {
+      from(table: string) {
+        const rows: Record<string, unknown[]> = { nfl_weeks: WEEKS.map((w) => ({ ...w, first_kickoff_at: null, last_game_ends_at: null, correction_window_ends_at: null })), players: [{ id: 'p-x' }], nfl_games: [], player_stats: [] }
+        const chain: Record<string, unknown> = {}
+        for (const m of ['select', 'eq', 'in', 'like', 'order', 'range', 'update', 'upsert']) chain[m] = () => chain
+        chain.then = (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) =>
+          Promise.resolve({ data: rows[table] ?? [], error: null, count: (rows[table] ?? []).length }).then(ok, ko)
+        return chain
+      },
+      rpc: async () => ({ data: null, error: { code: '57014', message: 'canceling statement due to statement timeout', details: null, hint: null } }),
+    }
+    const provider: StatsProvider = {
+      ...fakeProvider(world),
+      getWeekStats: async (season, week) => [{ playerId: 'p-x', season, week, stats: { rush_yards: 10 }, advanced: {} }],
+    }
+    for (let i = 1; i <= 2; i++) {
+      const report = await runLivePollInvocation({
+        db: fakeDb(world),
+        provider,
+        time: new VirtualClock(new Date(`2026-09-10T01:0${i}:00Z`)),
+        season: 2026,
+        budgetMs: 1,
+        sleep: async () => {},
+        ingest: (p, time, io) => ingestWeek(p, time, { ...io, db: ingestDb as unknown as typeof io.db }),
+        loadTracker: async () => new DegradationTracker(world.flag.consecutive_failures),
+        persist: async (_db, tracker, r) => {
+          world.flag = { ...world.flag, degraded: tracker.degraded, consecutive_failures: tracker.consecutiveFailures, last_error: r.error ?? null }
+          return world.flag
+        },
+      })
+      expect(report.rounds[0].polls[0].report.ok).toBe(false)
+      expect(world.flag.consecutive_failures).toBe(i) // +1 exactly — never +2
+      expect(world.flag.last_error).toMatch(/^ingest_write_batch failed \(2026 week 1, lines 1–1\): canceling statement due to statement timeout$/)
+    }
   })
 })
 

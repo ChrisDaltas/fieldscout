@@ -72,7 +72,7 @@
  * testable without waiting.
  */
 
-import type { DegradationTracker } from '@/lib/leagues/stats/degradation'
+import { DegradationTracker } from '@/lib/leagues/stats/degradation'
 import type { ProviderGame, StatsProvider } from '@/lib/leagues/stats/stats-provider'
 import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 import { pageAll } from '@/lib/supabase/page-all'
@@ -394,39 +394,60 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
 
     provider.resetScheduleMemo()
     const round: PollRound = { plan, polls: [] }
-    // R1314 (M6 L.E2.1): a SWEEP round reads the provider for up to three
-    // weeks at one instant (the current week, F270's open-window weeks,
-    // TD5's final weeks), so one provider blip would fail all of them at
-    // once. §23.2's "3 failed polls" means three polls in TIME — a sweep's
-    // failures count ONCE toward it: after the round's first failed poll,
-    // a further failure is not persisted (a success still is — it clears).
-    let sweepFailureCounted = false
+    // ONE ROUND, ONE OUTCOME (R1314, M6 L.E2.1; R1740, M7 L.F2.3). A round
+    // reads the provider for its weeks at one instant, and §23.2's "3 failed
+    // polls" means three polls in TIME — so the round, not each week, is what
+    // counts: every week is polled against the count as it stood when the
+    // round began (a scratch tracker each), and the round's outcome is the
+    // WORST of them — any failed week ⇒ the count rises (once: two failed
+    // weeks are one failed instant), only an all-success round clears it. A
+    // success on one week therefore never clears a failure on another, in
+    // either order, so a week that fails every round raises the flag on the
+    // third round however its neighbours fare.
+    const base = (await loadTracker(deps.db)).consecutiveFailures
+    const polled: Array<{ week: number; poll: IngestReport; scratch: DegradationTracker }> = []
     for (const week of [...plan.weeks, ...carried]) {
-      const tracker = await loadTracker(deps.db)
+      const scratch = new DegradationTracker(base)
       let poll: IngestReport
       try {
-        poll = await ingest(provider, deps.time, { db: deps.db, degradation: tracker, season: deps.season, week })
+        poll = await ingest(provider, deps.time, { db: deps.db, degradation: scratch, season: deps.season, week })
       } catch (err) {
         // F832 (M7 L.F2.3): a poll that fails AFTER the provider answered (a
         // door refusal, a database error) is a FAILED POLL — counted toward
         // stats_degraded (once: `ingestWeek` marks what it already counted),
         // persisted, named — and the round's other weeks are still polled.
-        if (!pollFailureCounted(err)) tracker.recordPollResult(false)
-        poll = failedPollReport(provider.name, deps.season, week, deps.time.now(), tracker.degraded, err instanceof Error ? err.message : String(err))
+        if (!pollFailureCounted(err)) scratch.recordPollResult(false)
+        poll = failedPollReport(provider.name, deps.season, week, deps.time.now(), scratch.degraded, err instanceof Error ? err.message : String(err))
       }
-      const alreadyCounted = oneInstant && !poll.ok && sweepFailureCounted
-      const flag = alreadyCounted && report.flag !== null ? report.flag : await persist(deps.db, tracker, poll)
-      if (oneInstant && !poll.ok) sweepFailureCounted = true
+      polled.push({ week, poll, scratch })
+    }
+    const failedPolls = polled.filter((p) => !p.poll.ok)
+    const roundCount = failedPolls.length === 0 ? 0 : Math.max(...failedPolls.map((p) => p.scratch.consecutiveFailures))
+    // Successes persist first (each writes its week's last-poll instant), the
+    // failures last — so the flag's final write names the failure.
+    const ordered = [...polled.filter((p) => p.poll.ok), ...failedPolls]
+    const flags = new Map<number, StatsDegradedFlag>()
+    for (const p of ordered) flags.set(p.week, await persist(deps.db, new DegradationTracker(roundCount), p.poll))
+    let failuresNamed = 0
+    for (const { week, poll } of polled) {
+      const flag = flags.get(week)!
       round.polls.push({ week, report: poll, flag })
-      report.flag = flag
-      if (alreadyCounted) {
-        report.problems.push(`week ${week}: provider poll FAILED again in the same sweep (${poll.error ?? 'unknown'}) — nothing written; counted once per sweep toward stats_degraded (R1314)`)
+      report.flag = flags.get(ordered[ordered.length - 1]!.week)!
+      if (!poll.ok && failuresNamed > 0) {
+        report.problems.push(
+          oneInstant
+            ? `week ${week}: provider poll FAILED again in the same sweep (${poll.error ?? 'unknown'}) — nothing written; counted once per sweep toward stats_degraded (R1314)`
+            : `week ${week}: provider poll FAILED again in the same round (${poll.error ?? 'unknown'}) — counted once per round toward stats_degraded (R1740)`,
+        )
       } else if (!poll.ok) {
-        // F832: a failure AFTER the provider answered may have written the
-        // week's games already — its lines and the week's stamp were not.
+        failuresNamed += 1
+        // F832 / R1744: a failure AFTER the provider answered may have
+        // written part of the poll (new games; the lines of the batches
+        // before the failing one) — what is CERTAINLY withheld is the week's
+        // completion: its games' moves to final and its last-game stamp.
         const afterAnswer = poll.reasons.some((r) => r.startsWith('poll failed after the provider answered'))
         report.problems.push(
-          `week ${week}: ${afterAnswer ? 'poll FAILED after the provider answered' : 'provider poll FAILED'} (${poll.error ?? 'unknown'}) — ${afterAnswer ? 'no stat line written, the week not stamped' : 'nothing written'}; consecutive failures ${flag.consecutive_failures}${flag.degraded ? ' — stats_degraded RAISED (§23.2/E45)' : ''}`,
+          `week ${week}: ${afterAnswer ? 'poll FAILED after the provider answered' : 'provider poll FAILED'} (${poll.error ?? 'unknown'}) — ${afterAnswer ? "some writes may have landed (new games, lines before the failing batch); the week's moves to final and its completion stamp were withheld" : 'nothing written'}; consecutive failures ${flag.consecutive_failures}${flag.degraded ? ' — stats_degraded RAISED (§23.2/E45)' : ''}`,
         )
       } else {
         // A successful poll that could not write the calendar is said out

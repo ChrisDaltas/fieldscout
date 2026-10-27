@@ -37,6 +37,7 @@ import {
   type StatRow,
   type ToStatRowContext,
 } from './ingest-week'
+import { planLivePoll, type CalendarGame, type CalendarWeek } from './live-poll'
 import type { SyncClient } from './types'
 
 const G1: ProviderGame = {
@@ -1146,7 +1147,7 @@ describe('L.F2.3 — F830 / F831 / F832 through ingestWeek', () => {
     expect([u2b.ok, world.doorCalls.length, tracker.consecutiveFailures]).toEqual([false, 1, 2])
 
     // U3 (F832) — a clean answer, but the door fails: thrown, COUNTED (and marked so), and week 2 is NOT stamped
-    // all-final although its games now are (games go first — player_stats.game_id references them).
+    // all-final, and (R1741) its games' moves to final are withheld too — they stay live, so the week stays HOT.
     state.lines = [wk2Line('p-wr', WK2_G1, { receptions: 3, receiving_yards: 41 }), wk2Line('p-te', WK2_G3, { receptions: 2, receiving_yards: 15 })]
     world.doorError = { code: '57014', message: 'canceling statement due to statement timeout', details: null, hint: null }
     const thrown = await poll('2026-09-21T03:01:00Z').then(
@@ -1158,6 +1159,10 @@ describe('L.F2.3 — F830 / F831 / F832 through ingestWeek', () => {
     expect(pollFailureCounted(new Error('elsewhere'))).toBe(false)
     expect([tracker.consecutiveFailures, tracker.degraded]).toEqual([3, true])
     expect(week2().last_game_ends_at).toBeNull()
+    expect([...world.games.values()].map((g) => g.status)).toEqual(['live', 'live'])
+    // R1741: retried at the LIVE cadence — one minute later, off the sweep minute, the plan is HOT on week 2.
+    const plan = (iso: string) => planLivePoll([...world.games.values()] as unknown as CalendarGame[], world.weeks as unknown as CalendarWeek[], new Date(iso))
+    expect([plan('2026-09-21T03:02:00Z').mode, plan('2026-09-21T03:02:00Z').weeks]).toEqual(['hot', [2]])
     expect(world.stats.get('p-wr')?.receiving_yards).toBe(40)
 
     // U4 — the next poll writes the lines, THEN stamps the week; the success clears the flag.
@@ -1166,6 +1171,8 @@ describe('L.F2.3 — F830 / F831 / F832 through ingestWeek', () => {
     expect([u4.ok, u4.degraded, u4.stats.updated, u4.weeks.updated]).toEqual([true, false, 2, 1])
     expect(world.stats.get('p-wr')?.receiving_yards).toBe(41)
     expect(week2().last_game_ends_at).not.toBeNull()
+    expect([...world.games.values()].map((g) => g.status)).toEqual(['final', 'final'])
+    expect(plan('2026-09-21T03:02:00Z').mode).toBe('idle') // the success closes the window
     expect(tracker.consecutiveFailures).toBe(0)
   })
 
