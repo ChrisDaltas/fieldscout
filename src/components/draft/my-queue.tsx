@@ -261,8 +261,10 @@ export function MyQueue({
  * The Auto-pick row under the Targets title (FieldScout Draft Room.dc.html's
  * Queue panel: caption left, "Auto-pick" switch right). Server-authoritative
  * (§15.6): the switch shows the value being sent while the toggle is in
- * flight and the server's value after — the league detail refetch settles
- * it, and a refusal toasts and falls back. Nothing here picks a player.
+ * flight and the server's value after. "In flight" lasts until the league
+ * detail re-read has LANDED (`useToggleAutodraft`'s onSettled returns it),
+ * so the switch never flashes back to the old value in between; a refusal
+ * toasts and falls back at once. Nothing here picks a player.
  */
 function AutoPickRow({ control }: { control: AutoPickControl }) {
   const toggle = useToggleAutodraft(control.leagueId)
@@ -288,7 +290,8 @@ function AutoPickRow({ control }: { control: AutoPickControl }) {
 
   return (
     <div className="flex items-center justify-between gap-3 px-card-pad pb-1 pt-3">
-      <p id={captionId} className="min-w-0 text-[11px] font-medium text-n-3">
+      {/* One line, like the design's caption (11.5px, nowrap + ellipsis). */}
+      <p id={captionId} className="min-w-0 truncate text-[11.5px] font-medium text-n-3">
         {autoPickCaption(control)}
       </p>
       <div className="flex shrink-0 items-center gap-2">

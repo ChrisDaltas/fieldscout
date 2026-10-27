@@ -5,10 +5,11 @@
  * so only the commissioner could put a seat on auto.
  *
  * Pins: who gets the switch (`selfAutoPickControl`), what it says
- * (`autoPickCaption` — the server picks at the DEADLINE, never early, and
- * never bids), that it shows the server's value and the in-flight value
- * while a toggle is pending, and that the Targets panel renders it only
- * when the room hands it a control. Rig: `renderToStaticMarkup` over the
+ * (`autoPickCaption` — one short line: the server picks at the DEADLINE,
+ * never early, and never bids), that it shows the server's value and the
+ * in-flight value while a toggle is pending (the hold until the re-read
+ * lands is `use-toggle-autodraft.test.ts`), and that the Targets panel
+ * renders it only when the room hands it a control. Rig: `renderToStaticMarkup` over the
  * REAL `MyQueue` with the queue cache pre-seeded (acting-as.render.test.ts).
  */
 import { readFileSync } from 'node:fs'
@@ -111,31 +112,38 @@ describe('who gets the switch', () => {
   })
 })
 
-describe('what it says (the server acts at the deadline, never early, never bids)', () => {
-  it('snake/linear: drafts from Targets when the clock runs out, without the away wait', () => {
-    const line = autoPickCaption({ isAuction: false, untimed: false })
-    expect(line).toBe(
-      'When your clock runs out, we draft from your Targets first — without waiting for you to come back.',
-    )
+describe('what it says (one short line; the server acts at the deadline, never early, never bids)', () => {
+  it('snake/linear: picks from Targets when time is up', () => {
+    expect(autoPickCaption({ isAuction: false, untimed: false })).toBe('Picks from Targets when time\u2019s up')
   })
 
-  it('auction: nominates on the nomination clock, never bids', () => {
+  it('auction: nominates from Targets when time is up (it never bids)', () => {
     const line = autoPickCaption({ isAuction: true, untimed: false })
-    expect(line).toContain('nomination clock runs out')
-    expect(line).toContain('We never bid for you.')
+    expect(line).toBe('Nominates from Targets when time\u2019s up')
+    expect(line).not.toMatch(/\bbid/i)
   })
 
-  it('no pick clock: says there is nothing to act on', () => {
-    expect(autoPickCaption({ isAuction: false, untimed: true })).toContain('no pick clock')
+  it('no pick clock: says it will not pick', () => {
+    expect(autoPickCaption({ isAuction: false, untimed: true })).toBe('No pick clock, so it won\u2019t pick')
   })
+
+  const ALL = [
+    { isAuction: false, untimed: false },
+    { isAuction: true, untimed: false },
+    { isAuction: false, untimed: true },
+  ]
 
   it('never promises an instant pick the server does not make', () => {
-    for (const control of [
-      { isAuction: false, untimed: false },
-      { isAuction: true, untimed: false },
-      { isAuction: false, untimed: true },
-    ]) {
+    for (const control of ALL) {
       expect(autoPickCaption(control)).not.toMatch(/right away|immediately|as soon as/i)
+    }
+  })
+
+  it('stays one short line — the design’s caption length, so it fits beside the switch on a phone', () => {
+    for (const control of ALL) {
+      const line = autoPickCaption(control)
+      expect(line.length, line).toBeLessThanOrEqual(40)
+      expect(line).not.toMatch(/[.!?]\s/) // one phrase, not sentences
     }
   })
 })
@@ -157,7 +165,7 @@ describe('the Targets panel', () => {
     expect(html).toContain('>Auto-pick</label>')
     expect(html).toContain('role="switch"')
     expect(html).toContain('aria-checked="false"')
-    expect(html).toContain('without waiting for you to come back')
+    expect(html).toContain('Picks from Targets when time’s up')
   })
 
   it('reflects the seat’s flag when it is on', () => {

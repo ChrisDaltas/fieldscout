@@ -739,7 +739,7 @@ export function useMakePick(leagueId: string | null, draftId: string) {
  * members' surface), not this hook.
  */
 export function useToggleAutodraft(leagueId: string) {
-  const invalidate = useInvalidateLeagueDetail(leagueId)
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (on: boolean) =>
       sendLeagueAction<{ team_id: string; is_autodraft: boolean; changed: boolean }>(
@@ -747,7 +747,16 @@ export function useToggleAutodraft(leagueId: string) {
         jsonInit('POST', { on }),
       ),
     // is_autodraft lives on league_members — the league detail feeds it.
-    onSettled: invalidate,
+    // A landed toggle RETURNS the re-read, so React Query holds the mutation
+    // pending until the fresh detail is in the cache: the switch keeps
+    // showing the value it sent until the server's own value replaces it,
+    // instead of snapping back to the old one for the length of the refetch
+    // (the Auto-pick bounce). A refusal does not wait — the switch falls back
+    // with its toast at once, and the re-read still resyncs it.
+    onSettled: (_data, error) => {
+      const reread = queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+      return error ? undefined : reread
+    },
   })
 }
 

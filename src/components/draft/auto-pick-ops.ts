@@ -76,15 +76,16 @@ export function selfAutoPickControl(input: SelfAutoPickInput): AutoPickControl |
   }
 }
 
-/** The line beside the switch — what it does, in a manager's words. */
+/** The one line beside the switch — what it does, in a manager's words.
+ *  ONE short line, like the design's Queue-header caption (Draft Room's
+ *  "Drafts top of queue on auto-pick", nowrap + ellipsis): it must fit
+ *  beside the switch at phone width, so the full story (the server acts at
+ *  the deadline, never early; nobody is ever bid for) lives in the header
+ *  comment above, not on screen. */
 export function autoPickCaption(control: Pick<AutoPickControl, 'isAuction' | 'untimed'>): string {
-  if (control.isAuction) {
-    return 'When your nomination clock runs out, we nominate from your Targets first. We never bid for you.'
-  }
-  if (control.untimed) {
-    return 'This draft has no pick clock, so Auto-pick has nothing to do unless the commissioner adds one.'
-  }
-  return 'When your clock runs out, we draft from your Targets first — without waiting for you to come back.'
+  if (control.isAuction) return 'Nominates from Targets when time’s up'
+  if (control.untimed) return 'No pick clock, so it won’t pick'
+  return 'Picks from Targets when time’s up'
 }
 
 /** What the switch shows: the value being sent while a toggle is in flight,
