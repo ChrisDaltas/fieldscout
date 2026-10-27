@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 212 — leagues are ARCHIVED, never deleted; the commissioner restores them
 --       (ledger F716; Chris 2026-10-27; spec §7.2 / §12.1 / §15.1 / §17
---       v2.16.109; PROGRESS D780–D788; FULL rigour — permissions, scheduled
+--       v2.16.109–110; PROGRESS D780–D790; FULL rigour — permissions, scheduled
 --       jobs; amended in place for the PR #543 review, unpushed)
 -- ============================================================================
 --
@@ -84,15 +84,15 @@
 --      commissioner_actions row (D671). op_set_commissioner can then seat a
 --      commissioner. 184's own prelude now names an archived league as
 --      archived ("restore it first") instead of "does not exist" (R1733).
---   1c. R1730 / R1750 — `finalize_matchups` never finalizes a league-week
---      while a score is still pending FOR THAT LEAGUE (skipped by name,
---      `scores_queued`): a `score_fanout` row for one of its rostered players
---      that is leased, has never yet been processed by a drain
---      (`deferred_until IS NULL`), or was re-armed by this league's own
---      restore (`deferred_until = leagues.restored_at`). A row a drain has
---      already processed and deferred — another league holding it, e.g. one
---      paused at `upcoming` — never holds this league: that drain scored
---      every open league it maps to. The general rule, for every league.
+--   1c. R1755 (supersedes R1730 / R1750's queue-introspection hold) — THE
+--      RESTORE WINDOW: `finalize_matchups` finalizes no week of a league for
+--      30 minutes after its latest restore (`leagues.restored_at`; skipped
+--      by name, `recently_restored`, with the seconds left —
+--      `league_restore_hold_internal`), so the restore's scoring catch-up
+--      lands first. League-local: nothing reads `score_fanout`, so no other
+--      league's restore, queue row or hold can move it. Finalize is
+--      otherwise 183's body. (That finalize never waits on the queue in
+--      general predates 212 — PROGRESS F859 / F860.)
 --   1d. R1725 — an ARCHIVED league still counts as a user of its scoring
 --      system: `scoring_system_league_use_internal` (170) and 104's rules
 --      guard drop `deleted_at IS NULL`, so an archived league's custom
@@ -149,7 +149,7 @@
 --   trade_tick                          199:7426-7592  2 hunks (+2 / -0)
 --   mock_draft_expire                   095:1308-1402  1 hunk  (+1 / -0)
 --   draft_tick                          097:55-1044    1 hunk  (+1 / -0)
---   finalize_matchups                   183:876-1149   1 hunk  (+6 / -0)   R1730
+--   finalize_matchups                   183:876-1149   1 hunk  (+5 / -0)   R1755
 --   op_verb_prelude_internal            184:573-617    1 hunk  (+1 / -0)   R1733
 --   scoring_system_league_use_internal  170:2480-2497  1 hunk  (+1 / -1)   R1725 — a REPLACED line, marked `-- F716 / 212`
 --   scoring_systems_rules_guard         104:391-468    1 hunk  (+1 / -1)   R1725 — likewise (their md5 pins are re-cut)
@@ -159,8 +159,9 @@
 -- filter: WHOEVER MERGES SECOND drops it under D137 against 210 (F858).
 --
 -- MIGRATION CHECKLIST (tasks-M* §4.4):
---   * One column (nullable, FK ON DELETE SET NULL, a CHECK that it is set
---     only while archived); no new table, no policy change (`leagues` keeps
+--   * Two columns: `archived_by` (nullable, FK ON DELETE SET NULL, a CHECK
+--     that it is set only while archived) and `restored_at` (nullable, the
+--     restore window's start — R1750 / R1755); no new table, no policy change (`leagues` keeps
 --     its one member SELECT — members still read an archived league's row,
 --     which is how "Archived leagues" lists it).
 --   * New functions all search_path ''. DEFINER only on the two doors (in-body
@@ -195,8 +196,8 @@ ALTER TABLE leagues
 ALTER TABLE leagues
   ADD CONSTRAINT leagues_archived_by_only_while_archived
   CHECK (archived_by IS NULL OR deleted_at IS NOT NULL);
--- R1750: the instant of the league's latest restore — the mark on the queue
--- rows that restore re-armed FOR THIS league (finalize's hold reads it).
+-- R1750 / R1755: the instant of the league's latest restore — the start of
+-- its restore window (finalize waits it out).
 ALTER TABLE leagues
   ADD COLUMN restored_at TIMESTAMPTZ;
 
@@ -205,7 +206,7 @@ COMMENT ON COLUMN leagues.deleted_at IS
 COMMENT ON COLUMN leagues.archived_by IS
   'Migration 212 (F716): the commissioner who archived the league; NULL while it is not archived (CHECK), or if that profile is gone.';
 COMMENT ON COLUMN leagues.restored_at IS
-  'Migration 212 (F716 / R1750): when the league was last restored (by its commissioner or by FieldScout); NULL if never. Written only by league_restore_apply_internal. The score_fanout rows that restore re-armed carry deferred_until = this instant, which is how finalize_matchups tells a score still pending FOR THIS league from a row another league is holding.';
+  'Migration 212 (F716 / R1755): when the league was last restored (by its commissioner or by FieldScout); NULL if never. Written only by league_restore_apply_internal. finalize_matchups finalizes none of the league''s weeks for 30 minutes after it (the restore window, league_restore_hold_internal), so the restore''s scoring catch-up lands first.';
 
 -- ---------------------------------------------------------------------------
 -- 2. The freeze — the trigger functions
@@ -605,14 +606,13 @@ BEGIN
   --     until the week opens. R1731: `deferred_until = p_at` marks the row
   --     as fresh at the restore, so the stall check (124) does not read an
   --     old stat stamp as a stalled drain; the row is claimable at once.
-  --     R1750: it is also THIS league's mark — `deferred_until =
-  --     leagues.restored_at` is how finalize's hold knows the row is still
-  --     pending for this league. A row that already exists (another league
-  --     may be holding it, and every drain skipped this league while it was
+  --     R1750 / R1755: a row that already exists (another league may be
+  --     holding it, and every drain skipped this league while it was
   --     archived) is RE-ARMED the same way — and its lease is taken back, so
   --     a drain that claimed it before this restore committed cannot ack it
   --     away without scoring this league (its ack finds the token gone and
-  --     leaves the row, 121's `lease_lost`).
+  --     leaves the row: 121's `lease_lost`, which the invoker's stale-write
+  --     alert names as a known, benign effect of a restore — R1757).
   INSERT INTO public.score_fanout (season, week, player_id, enqueued_at, deferred_until)
   SELECT ps.season, ps.week, ps.player_id, min(ps.updated_at), p_at
   FROM public.league_weeks lw
@@ -2133,34 +2133,31 @@ END;
 $$;
 REVOKE EXECUTE ON FUNCTION draft_tick() FROM PUBLIC, anon, authenticated;
 
--- R1730 / R1750 / R1752: the ONE reading of "a score still pending for this
--- league-week" — finalize's hold calls it, and the season-runner's finalize
--- oracle asks it (D289: the gate reports the job's reason, never a mirror).
--- A score_fanout row of the week for a player on this league's rosters that
--- is LEASED (a drain is on it), has NEVER been processed by a drain since it
--- was queued (`deferred_until IS NULL` — ingestion clears it on every fresh
--- delta), or was RE-ARMED by this league's own restore (`deferred_until =
--- leagues.restored_at`). A row a drain already processed and deferred —
--- another league holding it, e.g. one at `upcoming` — is not this league's:
--- that drain scored every open league the player maps to.
-CREATE OR REPLACE FUNCTION league_week_scores_pending_internal(p_league_id UUID, p_season INTEGER, p_week INTEGER)
+-- R1755: THE RESTORE WINDOW — 30 minutes after a league's latest restore.
+-- finalize_matchups holds every week of THAT league while it is open, so the
+-- restore's scoring catch-up (the re-queue above; the worker drains it within
+-- a minute or two) lands before any week closes. League-local: it reads only
+-- leagues.restored_at, never score_fanout, so no other league's restore,
+-- queue row or hold can move it (it replaces R1730 / R1750's queue hold). The
+-- season-runner's finalize oracle asks the same function (D289). Returns the
+-- whole seconds left, or NULL when the window is shut (or never opened).
+CREATE OR REPLACE FUNCTION league_restore_hold_internal(p_league_id UUID, p_at TIMESTAMPTZ)
 RETURNS INTEGER
 LANGUAGE sql
 STABLE
 SET search_path = ''
 AS $$
-  SELECT count(*)::int
-  FROM public.score_fanout f
-  JOIN public.leagues l ON l.id = p_league_id
-  WHERE f.season = p_season AND f.week = p_week
-    AND EXISTS (SELECT 1 FROM public.league_rosters r WHERE r.league_id = p_league_id AND r.player_id = f.player_id)
-    AND (f.claimed_at IS NOT NULL OR f.deferred_until IS NULL OR f.deferred_until = l.restored_at);
+  SELECT ceil(extract(epoch FROM w.ends_at - p_at))::int
+  FROM (SELECT l.restored_at + interval '30 minutes' AS ends_at   -- the restore window
+        FROM public.leagues l
+        WHERE l.id = p_league_id) w
+  WHERE p_at < w.ends_at;
 $$;
-REVOKE ALL ON FUNCTION league_week_scores_pending_internal(UUID, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
-COMMENT ON FUNCTION league_week_scores_pending_internal(UUID, INTEGER, INTEGER) IS
-  'Migration 212 (R1730 / R1750): how many scores are still pending FOR THIS league-week in score_fanout — leased, never yet processed by a drain, or re-armed by this league''s restore. finalize_matchups holds the week while it is > 0; the season-runner oracle reads it too.';
+REVOKE ALL ON FUNCTION league_restore_hold_internal(UUID, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+COMMENT ON FUNCTION league_restore_hold_internal(UUID, TIMESTAMPTZ) IS
+  'Migration 212 (F716 / R1755): the restore window — the whole seconds left of the 30 minutes after the league''s latest restore (leagues.restored_at), or NULL when it is shut. finalize_matchups finalizes none of the league''s weeks while it is open (skip reason recently_restored); the season-runner oracle reads it too. Reads no queue.';
 
--- finalize_matchups — 183_job_knobs.sql:876-1149 FILE TEXT (D137), 1 hunk (+6 / -0).
+-- finalize_matchups — 183_job_knobs.sql:876-1149 FILE TEXT (D137), 1 hunk (+5 / -0).
 CREATE OR REPLACE FUNCTION finalize_matchups(
   p_now       TIMESTAMPTZ DEFAULT now(),
   p_league_id UUID        DEFAULT NULL
@@ -2284,12 +2281,11 @@ BEGIN
               v_lg.id, v_lw.week, v_g.final_games, v_g.total_games - v_g.postponed_games, v_g.postponed_games, v_g.open_games;
             CONTINUE;
           END IF;
-          v_cnt := public.league_week_scores_pending_internal(v_lg.id, v_league.season, v_lw.week);   -- 212 / F716 (R1730 / R1750): scores still pending FOR THIS league — never a row another league holds
-          IF v_cnt > 0 THEN   -- 212 / F716 (R1730): a score still pending for this league's players — the week waits for it
-            v_skipped := v_skipped || jsonb_build_object('league_id', v_lg.id, 'week', v_lw.week, 'reason', 'scores_queued', 'queued', v_cnt, 'holding', 'this league — a score not yet written for its own players');   -- 212 / F716 (R1730 / R1750)
-            RAISE NOTICE 'finalize_matchups: league % week % not finalized — % score(s) for its rostered players are still pending for this league; never finalized over a pending score (R1730 / R1750)', v_lg.id, v_lw.week, v_cnt;   -- 212 / F716 (R1730)
-            CONTINUE;   -- 212 / F716 (R1730)
-          END IF;   -- 212 / F716 (R1730)
+          IF public.league_restore_hold_internal(v_lg.id, p_now) IS NOT NULL THEN   -- 212 / F716 (R1755): the RESTORE WINDOW — a league restored in the last 30 minutes waits, so its scoring catch-up lands first
+            v_skipped := v_skipped || jsonb_build_object('league_id', v_lg.id, 'week', v_lw.week, 'reason', 'recently_restored', 'restored_at', v_league.restored_at, 'remaining_seconds', public.league_restore_hold_internal(v_lg.id, p_now));   -- 212 / F716 (R1755)
+            RAISE NOTICE 'finalize_matchups: league % week % not finalized — the league was restored at % and waits out the 30-minute restore window (% s left), so the restore''s scoring catch-up lands first (R1755)', v_lg.id, v_lw.week, v_league.restored_at, public.league_restore_hold_internal(v_lg.id, p_now);   -- 212 / F716 (R1755)
+            CONTINUE;   -- 212 / F716 (R1755)
+          END IF;   -- 212 / F716 (R1755)
 
           v_matchups := 0;
 

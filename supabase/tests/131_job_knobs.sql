@@ -118,7 +118,7 @@ create function pg_temp.un183(p_src text) returns text language sql as $un183$
            E'        AND NOT public\\.job_paused_internal\\(''[a-z-]+'', l\\.id\\)   -- 183 / L\\.G1\\.3 \\(TD4\\)\n', '', 'g')
 $un183$;
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un183(pg_temp.un212(p.prosrc))), ' ' order by p.proname)   -- 212 (R1730): finalize's queue hold removed first
+  (select string_agg(p.proname || '=' || md5(pg_temp.un183(pg_temp.un212(p.prosrc))), ' ' order by p.proname)   -- 212 (R1755): finalize's restore-window hunk removed first
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('waiver_tick', 'league_week_advance', 'finalize_matchups')),
   'finalize_matchups=5239ab311af797a401bb91d00d78f9bd league_week_advance=1ea76a893bada31b54ebe1a82f004625 waiver_tick=8477f03af76d5117fa021e3b38cd1667',

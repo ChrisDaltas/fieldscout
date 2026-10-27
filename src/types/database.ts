@@ -6417,6 +6417,10 @@ export type Database = {
         Args: { p_at: string; p_league_id: string }
         Returns: number
       }
+      league_restore_hold_internal: {
+        Args: { p_at: string; p_league_id: string }
+        Returns: number
+      }
       league_roster_broadcast_payload: {
         Args: { r: Database["public"]["Tables"]["league_rosters"]["Row"] }
         Returns: Json
@@ -6445,10 +6449,6 @@ export type Database = {
       league_week_list_words_internal: {
         Args: { p_weeks: Json }
         Returns: string
-      }
-      league_week_scores_pending_internal: {
-        Args: { p_league_id: string; p_season: number; p_week: number }
-        Returns: number
       }
       league_weeks_rules_backfill_internal: {
         Args: { p_apply?: boolean }

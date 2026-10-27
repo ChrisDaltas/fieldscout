@@ -1747,7 +1747,7 @@ async function driveSeason(
       // exactly that status. So a post-window write to a HELD week is the
       // lawful-hold shape §3 Q47 asks Chris to rule on — and one to a week that
       // is neither final nor held is UNEXPLAINED, and fails the arm.
-      const hold = status === 'final' ? null : await readFinalizeHold(service, pair.leagueId, pair.week)
+      const hold = status === 'final' ? null : await readFinalizeHold(service, pair.leagueId, pair.week, pNow)
       if (status !== 'final' && hold !== null && hold.reason === null) {
         measured.postWindowWroteUnexplained += 1
       }
@@ -2353,11 +2353,10 @@ async function readClubLocks(
  * `correction_window`"):
  *   guard 1, 118:2054 — `week_games_state_internal(season, week).all_final`
  *                       false => `games_not_final` (§23.2, partial data);
- *   guard 1b, 212     — `league_week_scores_pending_internal(league, season,
- *                       week)` > 0 => `scores_queued` (R1730 / R1750: a score
- *                       still pending FOR THIS league in score_fanout — leased,
- *                       never yet drained, or re-armed by its restore; a row
- *                       another league holds never counts);
+ *   guard 1b, 212     — `league_restore_hold_internal(league, at)` non-NULL
+ *                       => `recently_restored` (R1755: the league was restored
+ *                       less than 30 minutes before `at` — its own restore
+ *                       window; league-local, it reads no queue);
  *   guard 2, 118:2074 — `week_results_pending_internal(league, season, week)`
  *                       non-NULL => `pending_scores` / `pending_results`
  *                       (E61 — absence is not a score, never coerced to 0.00).
@@ -2371,6 +2370,7 @@ async function readFinalizeHold(
   service: Supabase,
   leagueId: string,
   week: number,
+  at: string,
 ): Promise<{ reason: string | null; detail: string }> {
   const { data: games, error: gamesError } = await service.rpc('week_games_state_internal', {
     p_season: SYNTHETIC_SEASON,
@@ -2392,14 +2392,13 @@ async function readFinalizeHold(
         `${g?.postponed_games ?? '?'} postponed, ${g?.open_games ?? '?'} open)`,
     }
   }
-  const { data: queued, error: queuedError } = await service.rpc('league_week_scores_pending_internal', {
+  const { data: windowLeft, error: windowError } = await service.rpc('league_restore_hold_internal', {
     p_league_id: leagueId,
-    p_season: SYNTHETIC_SEASON,
-    p_week: week,
+    p_at: at,
   })
-  throwIfError(queuedError, `league_week_scores_pending_internal(${leagueId}, ${week})`)
-  if (typeof queued === 'number' && queued > 0) {
-    return { reason: 'scores_queued', detail: `scores_queued (guard 1b, 212 R1730 / R1750; ${queued} score(s) still pending for this league in score_fanout)` }
+  throwIfError(windowError, `league_restore_hold_internal(${leagueId}, ${at})`)
+  if (typeof windowLeft === 'number') {
+    return { reason: 'recently_restored', detail: `recently_restored (guard 1b, 212 R1755; the league's restore window has ${windowLeft} s left at ${at})` }
   }
   const { data: pending, error: pendingError } = await service.rpc('week_results_pending_internal', {
     p_league_id: leagueId,

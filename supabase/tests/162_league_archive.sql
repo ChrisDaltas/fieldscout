@@ -37,8 +37,11 @@
 --       run at trigger depth > 1).
 --   PR #543 review (Chris's rulings 2026-10-27 + fixes): §R's trades — archive
 --   CANCELS every unfinished trade (R1728), one line, both managers told;
---   §Q finalize never closes a week over a queued score (R1730); restore's
---   queue rows are fresh to the stall check (R1731); §S an archived league
+--   §Q finalize reads no queue (R1755 — R1730 / R1750's queue hold replaced)
+--   and §J19 a restored league waits out its own 30-minute restore window,
+--   never another league's (R1755); restore re-arms an existing queue row and
+--   takes its lease back (J16b); restore's queue rows are fresh to the stall
+--   check (R1731); §S an archived league
 --   still owns its scoring system — a direct rules write is refused (R1725);
 --   §O the operator's restore (F851) and the archived wording (R1733).
 -- Break probes (§4.3) — each injected after `begin;` (inside this file's own
@@ -48,6 +51,10 @@
 -- writes); (3) the freeze dropped on league_chat ⇒ A3 + R9 red; (4) the
 -- missed-draft-time rule removed ⇒ J14 red; (5) restore's re-queue removed ⇒
 -- R25 + R29 red; (6) the leagues row guard opened ⇒ R20 / R21 / R30 + 5 red.
+-- Round 3 (R1755): (15) finalize's window hunk removed ⇒ J19 + J19b red;
+-- (16) the window shut one instant late (`<=`) ⇒ J19c + J19n red; (17) the window
+-- read off ANY league's latest restore ⇒ J19m + J19n red; (14) restore's
+-- re-arm turned back into DO NOTHING ⇒ J16b red.
 -- World: u1 commissioner (of every league), u2 co-commissioner (LA), u3 / u5
 -- managers, u4 outsider, u6 a manager of LX only.
 -- ============================================================================
@@ -56,7 +63,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(108);
+select plan(109);
 
 -- ---------------------------------------------------------------------------
 -- A. Form
@@ -77,8 +84,8 @@ select is(
      'restore_league_internal', 'league_archive_who_internal', 'league_archived_guard_internal',
      'league_row_archived_guard_internal', 'soft_delete_league', 'league_archive_trade_reason_internal',
      'league_restore_apply_internal', 'op_archived_league_prelude_internal', 'op_restore_league', 'op_restore_league_internal',
-     'league_week_scores_pending_internal')),
-  'archive_league=t:search_path="":f:t archive_league_internal=f:search_path="":f:f league_archive_trade_reason_internal=f:search_path="":f:f league_archive_who_internal=f:search_path="":f:f league_archived_guard_internal=t:search_path="":f:f league_restore_apply_internal=f:search_path="":f:f league_row_archived_guard_internal=t:search_path="":f:f league_week_scores_pending_internal=f:search_path="":f:f op_archived_league_prelude_internal=f:search_path="":f:f op_restore_league=t:search_path="":f:t op_restore_league_internal=f:search_path="":f:f restore_league=t:search_path="":f:t restore_league_internal=f:search_path="":f:f soft_delete_league=t:search_path="":f:t',
+     'league_restore_hold_internal')),
+  'archive_league=t:search_path="":f:t archive_league_internal=f:search_path="":f:f league_archive_trade_reason_internal=f:search_path="":f:f league_archive_who_internal=f:search_path="":f:f league_archived_guard_internal=t:search_path="":f:f league_restore_apply_internal=f:search_path="":f:f league_restore_hold_internal=f:search_path="":f:f league_row_archived_guard_internal=t:search_path="":f:f op_archived_league_prelude_internal=f:search_path="":f:f op_restore_league=t:search_path="":f:t op_restore_league_internal=f:search_path="":f:f restore_league=t:search_path="":f:t restore_league_internal=f:search_path="":f:f soft_delete_league=t:search_path="":f:t',
   'A2 doors DEFINER + search_path '''' + authenticated only; internals plain + closed; trigger functions DEFINER + closed (the operator''s door F851 included)');
 
 -- THE CENSUS. Every public table with a league_id column carries the freeze
@@ -141,8 +148,8 @@ select is(
   (select string_agg(p.proname || ':' || (length(p.prosrc) - length(replace(p.prosrc, '-- 212 / F716', ''))) / length('-- 212 / F716'), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and pg_temp.un212(p.prosrc) <> p.prosrc),
-  'draft_tick:1 finalize_matchups:6 mock_draft_expire:1 op_verb_prelude_internal:1 trade_tick:2',
-  'A10 …and only those five bodies carry 212 lines (2 + 1 + 1 + 6 + 1)');
+  'draft_tick:1 finalize_matchups:5 mock_draft_expire:1 op_verb_prelude_internal:1 trade_tick:2',
+  'A10 …and only those five bodies carry 212 lines (2 + 1 + 1 + 5 + 1)');
 -- R1725's two REPLACED lines (marker `-- F716 / 212`): the full bodies are
 -- pinned as 212's FILE TEXT, and undoing the one line gives 170 / 104 back.
 create function pg_temp.un212r(p_src text) returns text language sql as $un$
@@ -221,9 +228,8 @@ from (values
   ('b1620000-0000-4000-8000-000000000073', 'DR', 'scheduled', null),                       -- restored AFTER its draft time
   ('b1620000-0000-4000-8000-000000000074', 'DL', 'scheduled', null),                       -- restored BEFORE its draft time
   ('b1620000-0000-4000-8000-000000000081', 'LX', 'in_season', null),                       -- account deletion
-  ('b1620000-0000-4000-8000-000000000033', 'FQ', 'in_season', null),                       -- finalize over a queued score (R1730)
-  ('b1620000-0000-4000-8000-000000000034', 'FS', 'in_season', null),                       -- shares a player with PU (R1750)
-  ('b1620000-0000-4000-8000-000000000035', 'PU', 'in_season', null),                       -- sits at `upcoming` and HOLDS the row (R1750)
+  ('b1620000-0000-4000-8000-000000000033', 'FQ', 'in_season', null),                       -- finalize reads no queue (R1755)
+  ('b1620000-0000-4000-8000-000000000034', 'FM', 'in_season', null),                       -- shares FW's player; FW's restore never holds it (R1755)
   ('b1620000-0000-4000-8000-000000000091', 'LR', 'setup', null),                           -- its own scoring system (R1725)
   ('b1620000-0000-4000-8000-000000000092', 'LO', 'in_season', null)                        -- the operator's restore (F851)
 ) v(id, nm, st, nx);
@@ -334,28 +340,20 @@ insert into trades (id, league_id, proposer_team_id, recipient_team_id, status, 
  ('e1620000-0000-4000-8000-000000000004', pg_temp.lg('LA'), pg_temp.team('LA', 2), pg_temp.team('LA', 1), 'complete',
   '99162000-0000-4000-8000-000000000005', gen_random_uuid(), now() - interval '9 days', '99162000-0000-4000-8000-000000000003', null, null, now() - interval '8 days', now() - interval '9 days');
 -- FQ: week 7 in its window, its game final — and a score still QUEUED for
--- its rostered QB (R1730).
+-- its rostered QB. Finalize reads no queue (R1755 — 183's rule; the queue's
+-- own gaps predate 212: F859 / F860), so the row does not hold the week.
 insert into league_weeks (league_id, season, week, status) values (pg_temp.lg('FQ'), 2026, 7, 'correction_window');
 insert into players (id, full_name, position, team, status) values ('x162-q2', 'X162 Q Two', 'QB', 'MIA', 'Active');
 insert into league_rosters (league_id, team_id, player_id) values (pg_temp.lg('FQ'), pg_temp.team('FQ', 1), 'x162-q2');
 insert into score_fanout (season, week, player_id, enqueued_at) values (2026, 7, 'x162-q2', '2026-10-26 20:00:00+00');
--- R1750: FS (week 7 in its window) and PU (week 7 still `upcoming` — e.g. a
--- week paused at upcoming) roster the same player. A drain already PROCESSED
--- his row — scored FS, then deferred the row because PU's week is not open —
--- so the row stays queued with deferred_until set. That row must not hold FS.
-insert into players (id, full_name, position, team, status) values
- ('x162-q4', 'X162 Q Four', 'QB', 'MIA', 'Active'),
- ('x162-q3', 'X162 Q Three', 'QB', 'MIA', 'Active');
-insert into league_weeks (league_id, season, week, status) values
- (pg_temp.lg('FS'), 2026, 7, 'correction_window'), (pg_temp.lg('PU'), 2026, 7, 'upcoming');
+insert into players (id, full_name, position, team, status) values ('x162-q3', 'X162 Q Three', 'QB', 'MIA', 'Active');
+-- FW (archived in §J, restored at J16) and FM (never archived; its week 7
+-- enters the window just before J16) both roster x162-q3, who has a week-7
+-- line and an existing queue row a drain is holding — LEASED when FW's
+-- restore lands. The restore must re-arm it and take the lease back; FW's
+-- restore window must hold FW alone, never FM (R1755).
 insert into league_rosters (league_id, team_id, player_id) values
- (pg_temp.lg('FS'), pg_temp.team('FS', 1), 'x162-q4'), (pg_temp.lg('PU'), pg_temp.team('PU', 1), 'x162-q4');
-insert into score_fanout (season, week, player_id, enqueued_at, deferred_until)
-values (2026, 7, 'x162-q4', '2026-10-26 20:00:00+00', '2026-10-29 11:04:30+00');
--- FW (archived in §J, restored at J16) rosters x162-q3, who has a week-7 line
--- and an existing queue row a drain was holding — LEASED when the restore
--- lands. The restore must re-arm it for FW and take the lease back.
-insert into league_rosters (league_id, team_id, player_id) values (pg_temp.lg('FW'), pg_temp.team('FW', 1), 'x162-q3');
+ (pg_temp.lg('FW'), pg_temp.team('FW', 1), 'x162-q3'), (pg_temp.lg('FM'), pg_temp.team('FM', 1), 'x162-q3');
 insert into player_stats (player_id, season, week, stat_type, updated_at, pass_yards)
 values ('x162-q3', 2026, 7, 'weekly', '2026-10-26 20:00:00+00', 180);
 -- LR: plays by its OWN scoring system, owned by u1 (R1725).
@@ -665,24 +663,17 @@ select is(
   'FC:final FW:correction_window', 'J6 week finalize: the control''s week 7 is final, the archived league''s is not');
 select ok((select not (r::text like '%' || pg_temp.lg('FW')::text || '%') from r162 where tag = 'J6'),
   'J7 …the archived league was never claimed by the run');
--- §Q — R1730: a queued score holds the week, by name; once it drains the
--- week finalizes under the same run.
-insert into r162 select 'Q1', finalize_matchups('2026-10-29 11:05:00+00', pg_temp.lg('FQ'));
+-- §Q — R1755: finalize reads no queue. R1730 / R1750's queue hold is gone
+-- (it leaked across leagues — R1755 / R1756); a restored league waits out its
+-- own restore window instead (§J19). A score still queued for a rostered
+-- player does not hold the week — 183's rule, unchanged by 212.
 select is(
   (select format('%s|%s', (select status from league_weeks where league_id = pg_temp.lg('FQ')),
-     (select s ->> 'reason' || ':' || (s ->> 'queued') from jsonb_array_elements(r -> 'skipped') s where s ->> 'league_id' = pg_temp.lg('FQ')::text))
-   from r162 where tag = 'Q1'),
-  'correction_window|scores_queued:1', 'Q1 R1730: a score still queued for a rostered player holds the week — skipped BY NAME, never finalized over it (the every-league run in J6 held it too)');
-delete from score_fanout where season = 2026 and week = 7 and player_id = 'x162-q2';
-insert into r162 select 'Q2', finalize_matchups('2026-10-29 11:06:00+00', pg_temp.lg('FQ'));
-select is((select status from league_weeks where league_id = pg_temp.lg('FQ')), 'final', 'Q2 …once it is written (the row gone) the week finalizes');
-select is(
-  (select format('%s|%s', (select status from league_weeks where league_id = pg_temp.lg('FS')),
-     (select count(*) from jsonb_array_elements(r -> 'skipped') x where x ->> 'league_id' = pg_temp.lg('FS')::text))
+     (select count(*) from jsonb_array_elements(r -> 'skipped') x where x ->> 'league_id' = pg_temp.lg('FQ')::text))
    from r162 where tag = 'J6'),
-  'final|0', 'Q3 R1750: a row another league HOLDS (PU at upcoming — a drain already processed it and scored FS) never holds FS: the every-league run finalized it');
-select is((select count(*)::int from score_fanout where season = 2026 and week = 7 and player_id = 'x162-q4'), 1,
-  'Q4 …and the row is still queued for PU (the hold''s premise is real)');
+  'final|0', 'Q1 R1755: a queued score for a rostered player does not hold the week — the every-league run finalized FQ with no skip (finalize reads no queue; the queue''s own gaps are F859 / F860)');
+select is((select count(*)::int from score_fanout where season = 2026 and week = 7 and player_id = 'x162-q2'), 1,
+  'Q2 …and the row is still queued: finalize neither read nor consumed it (the premise is real)');
 -- Lineup lock.
 insert into r162 select 'J8', lineup_lock_tick('2026-11-04 06:00:00+00', null);
 select is(
@@ -725,6 +716,7 @@ select is(
 
 -- Restore, and each job catches up through its normal rule.
 select pg_temp.as_user(1);
+insert into league_weeks (league_id, season, week, status) values (pg_temp.lg('FM'), 2026, 7, 'correction_window');   -- after J6, so J6 could not finalize it
 insert into score_fanout (season, week, player_id, enqueued_at, deferred_until, claimed_at, claim_token)
 values (2026, 7, 'x162-q3', '2026-10-26 20:00:00+00', null, '2026-11-04 06:59:50+00', gen_random_uuid());   -- a drain holds the lease as FW comes back
 insert into r162 select 'J16' || x, restore_league_internal(pg_temp.lg(x), null, '2026-11-04 07:00:00+00')
@@ -732,24 +724,47 @@ from unnest(array['JW', 'VW', 'FW']) x;
 select is(
   (select format('%s|%s|%s', deferred_until = '2026-11-04 07:00:00+00'::timestamptz, claimed_at is null, claim_token is null)
    from score_fanout where season = 2026 and week = 7 and player_id = 'x162-q3'),
-  't|t|t', 'J16b R1750: the restore RE-ARMS an existing row for FW (deferred_until = its restore instant) and takes the lease back — a drain that skipped FW cannot ack it away');
+  't|t|t', 'J16b R1750 / R1755: the restore RE-ARMS an existing row (deferred_until = its restore instant) and takes the lease back — a drain that leased it before the restore cannot ack it away without scoring FW (its ack reads lease_lost — R1757)');
 select is((select restored_at from leagues where id = pg_temp.lg('FW')), '2026-11-04 07:00:00+00'::timestamptz,
-  'J16c …and leagues.restored_at records the instant (the mark the hold reads)');
+  'J16c …and leagues.restored_at records the instant (the restore window opens there — R1755)');
 select set_config('request.jwt.claims', '', true);
 insert into r162 select 'J17', waiver_tick('2026-11-04 07:01:00+00', pg_temp.lg('JW'));
 select is(pg_temp.wstate(pg_temp.lg('JW')), '1[x162-x:won|$70|x162-x] 2[x162-x:lost:outbid,x162-y:won|$95|x162-y]',
   'J17 restored: the due waiver run settles to the control''s IDENTICAL outcome (stored literal)');
 insert into r162 select 'J18', league_week_advance('2026-11-04 07:05:00+00', pg_temp.lg('VW'));
 select is((select status from league_weeks where league_id = pg_temp.lg('VW')), 'live', 'J18 restored: the week opens at the next advance');
+-- R1755 — THE RESTORE WINDOW (30 minutes from leagues.restored_at = 07:00):
+-- held at :05 and at :29:59 (the boundary), finalized at :30:00 exactly.
 insert into r162 select 'J19', finalize_matchups('2026-11-04 07:05:00+00', pg_temp.lg('FW'));
 select is(
   (select format('%s|%s', (select status from league_weeks where league_id = pg_temp.lg('FW')),
-     (select x ->> 'reason' || ':' || (x ->> 'queued') from jsonb_array_elements(r -> 'skipped') x where x ->> 'league_id' = pg_temp.lg('FW')::text))
+     (select x ->> 'reason' || ':' || (x ->> 'remaining_seconds') || ':' || (x ->> 'restored_at') from jsonb_array_elements(r -> 'skipped') x where x ->> 'league_id' = pg_temp.lg('FW')::text))
    from r162 where tag = 'J19'),
-  'correction_window|scores_queued:1', 'J19 restored: the finished week WAITS while its own re-armed score is pending (R1730 / R1750)');
-delete from score_fanout where season = 2026 and week = 7 and player_id = 'x162-q3';   -- the drain scores FW and consumes the row
-insert into r162 select 'J19b', finalize_matchups('2026-11-04 07:06:00+00', pg_temp.lg('FW'));
-select is((select status from league_weeks where league_id = pg_temp.lg('FW')), 'final', 'J19b …and once it is written the week is finalized by the normal rule');
+  'correction_window|recently_restored:1500:2026-11-04T07:00:00+00:00', 'J19 R1755: restored at 07:00, the 07:05 finalize SKIPS the finished week BY NAME — recently_restored, 1500 s left — so the restore''s scoring catch-up lands first');
+insert into r162 select 'J19b', finalize_matchups('2026-11-04 07:29:59+00', pg_temp.lg('FW'));
+select is(
+  (select format('%s|%s', (select status from league_weeks where league_id = pg_temp.lg('FW')),
+     (select x ->> 'reason' || ':' || (x ->> 'remaining_seconds') from jsonb_array_elements(r -> 'skipped') x where x ->> 'league_id' = pg_temp.lg('FW')::text))
+   from r162 where tag = 'J19b'),
+  'correction_window|recently_restored:1', 'J19b …one second before the window shuts it still waits (the boundary instant)');
+insert into r162 select 'J19c', finalize_matchups('2026-11-04 07:30:00+00', pg_temp.lg('FW'));
+select is(
+  (select format('%s|%s', (select status from league_weeks where league_id = pg_temp.lg('FW')),
+     (select count(*) from jsonb_array_elements(r -> 'skipped') x where x ->> 'league_id' = pg_temp.lg('FW')::text))
+   from r162 where tag = 'J19c'),
+  'final|0', 'J19c …and at 07:30:00 exactly the window is shut: the week is finalized by the normal rule (the queue row is not read — it is still there)');
+insert into r162 select 'J19m', finalize_matchups('2026-11-04 07:05:00+00', pg_temp.lg('FM'));
+select is(
+  (select format('%s|%s|%s', (select status from league_weeks where league_id = pg_temp.lg('FM')),
+     (select count(*) from jsonb_array_elements(r -> 'skipped') x where x ->> 'league_id' = pg_temp.lg('FM')::text),
+     (select count(*) from score_fanout where season = 2026 and week = 7 and player_id = 'x162-q3'))
+   from r162 where tag = 'J19m'),
+  'final|0|1', 'J19m R1755: FM shares FW''s player and its re-armed queue row, and FW was restored five minutes earlier — FM''s week is finalized at 07:05 all the same (the window is league-local; nothing reads the queue)');
+select is(
+  (select format('%s|%s|%s', coalesce(league_restore_hold_internal(pg_temp.lg('FW'), '2026-11-04 07:04:00+00')::text, 'null'),
+     coalesce(league_restore_hold_internal(pg_temp.lg('FW'), '2026-11-04 07:30:00+00')::text, 'null'),
+     coalesce(league_restore_hold_internal(pg_temp.lg('FM'), '2026-11-04 07:04:00+00')::text, 'null'))),
+  '1560|null|null', 'J19n league_restore_hold_internal: 1560 s left at 07:04, shut at 07:30, and never open for a league that was never restored');
 
 -- ---------------------------------------------------------------------------
 -- S. R1725 — an archived league still owns its scoring system
