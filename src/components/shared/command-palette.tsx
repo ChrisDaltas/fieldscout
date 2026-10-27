@@ -18,9 +18,10 @@ import {
 import { Icon, type IconName } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { featureFlags } from '@/lib/feature-flags'
+import { useLayoutModeValue } from '@/hooks/use-layout-mode'
 import { openPlayer } from '@/hooks/use-open-player'
 import { useUIStore } from '@/stores/ui-store'
-import { userProfileHref } from './username-link-ops'
+import { profileHrefFor } from './username-link-ops'
 
 interface PlayerHit {
   id: string
@@ -114,6 +115,9 @@ export function CommandPalette() {
   const isOpen = useUIStore((s) => s.isCommandPaletteOpen)
   const setOpen = useUIStore((s) => s.setCommandPaletteOpen)
   const toggle = useUIStore((s) => s.toggleCommandPalette)
+  // A person opens on their phone screen in the phone layout (an iPad with a
+  // keyboard), their public page everywhere else (`profileHrefFor`).
+  const layout = useLayoutModeValue()
 
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
@@ -272,7 +276,7 @@ export function CommandPalette() {
               <CommandItem
                 key={u.id}
                 value={`${u.username} ${u.id}`}
-                onSelect={() => navigate(userProfileHref(u.username))}
+                onSelect={() => navigate(profileHrefFor(u.username, layout))}
               >
                 <UserAvatar
                   src={u.avatar_url}

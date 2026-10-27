@@ -158,6 +158,45 @@ describe('the landing page: signed-in visitors go to the app (F744)', () => {
   })
 })
 
+describe('a person’s phone screen is shareable: signed out, it opens the public page (audit profile-1)', () => {
+  it('signed out → /app/u/<name> goes to the public /u/<name>, not the sign-in page', async () => {
+    const res = await middleware(request('/app/u/devpro'))
+    expect(res.status).toBe(307)
+    const location = new URL(res.headers.get('location')!)
+    expect(location.pathname).toBe('/u/devpro')
+    expect(location.search).toBe('')
+  })
+
+  it('…and their Followers / Following go to the public lists', async () => {
+    for (const kind of ['followers', 'following']) {
+      const res = await middleware(request(`/app/u/devpro/${kind}`))
+      expect(res.status).toBe(307)
+      expect(new URL(res.headers.get('location')!).pathname).toBe(`/u/devpro/${kind}`)
+    }
+  })
+
+  it('signed in → the phone screen is served', async () => {
+    currentUser = { id: 'u1' }
+    const res = await middleware(request('/app/u/devpro'))
+    expect(res.status).toBe(200)
+  })
+
+  it('every other /app page still asks a signed-out visitor to sign in', async () => {
+    for (const path of ['/app/u', '/app/profile', '/app/u/devpro/lists']) {
+      const res = await middleware(request(path))
+      expect(res.status, path).toBe(307)
+      expect(new URL(res.headers.get('location')!).pathname, path).toBe('/login')
+    }
+  })
+
+  it('the redirect keeps the cookies the request produced (D148(b))', async () => {
+    cookiesWritten = CLEARED
+    const res = await middleware(request('/app/u/devpro', 'sb-127-auth-token=base64-DEAD'))
+    expect(res.status).toBe(307)
+    expect(authCookie(res)).toMatch(/^sb-127-auth-token=;/)
+  })
+})
+
 describe('a redirect never loses the cookies the refresh just minted (D148(b))', () => {
   it('the protected-path branch keeps them — this arm was always correct', async () => {
     // The control. If this ever goes red the fake is wrong, not the middleware.

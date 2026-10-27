@@ -5,8 +5,10 @@
  * user profile they clicked on. and user profile names should virtually
  * always be clickable."* A person's public page is `/u/[username]` (spec §3's
  * identity table: "public URLs (`/u/[username]`)"). This file is the ONE
- * spelling of that URL for a person, and the two ways a username reaches a
- * rendered sentence:
+ * spelling of that URL for a person — and of its phone screen inside the app
+ * (`phoneProfileHref`, `/app/u/[username]`; the phone layout opens people
+ * there, `profileHrefFor`) — and the two ways a username reaches a rendered
+ * sentence:
  *
  *  - **Marked names** (`markUsername` / `usernameParts`). A sentence the app
  *    composes itself (the commissioner log's "made jason the manager of
@@ -32,6 +34,48 @@
 /** The profile page of a person — `/u/[username]` (spec §3). */
 export function userProfileHref(username: string): string {
   return `/u/${encodeURIComponent(username)}`
+}
+
+/**
+ * The same profile as a PHONE screen, inside the app — `/app/u/[username]`.
+ *
+ * `/u/[username]` is the public, server-rendered page (SEO, signed-out
+ * visitors, desktop). On a phone it is the desktop layout with no dock, no
+ * Back and no dark mode, so the phone layout opens a person here instead:
+ * the app shell's dock, the Back rule and the phone's light/dark come with
+ * it. Desktop never links here; a desktop visit is sent to `/u/…`, and a
+ * signed-out one too (middleware — the URL stays shareable).
+ */
+export function phoneProfileHref(username: string): string {
+  return `/app/u/${encodeURIComponent(username)}`
+}
+
+export type PersonFollowsKind = 'followers' | 'following'
+
+/** A person's Followers / Following, on the phone (`phoneProfileHref` + the page). */
+export function phoneFollowsHref(username: string, kind: PersonFollowsKind): string {
+  return `${phoneProfileHref(username)}/${kind}`
+}
+
+/**
+ * Where a person link goes in a layout (`<html data-layout>`): the phone
+ * screen in the phone layout, the public page everywhere else — desktop,
+ * and every page outside the app (no layout attribute; `null`).
+ */
+export function profileHrefFor(username: string, layout: 'desktop' | 'mobile' | null): string {
+  return layout === 'mobile' ? phoneProfileHref(username) : userProfileHref(username)
+}
+
+const PHONE_PERSON_PATH = /^\/app\/u\/([^/]+)(\/followers|\/following)?\/?$/
+
+/**
+ * The public page a phone person path stands for — `/app/u/x[/followers|
+ * /following]` → `/u/x[…]` — or `null` for any other path. A desktop visit
+ * and a signed-out visit go there instead.
+ */
+export function publicPersonPath(pathname: string): string | null {
+  const m = PHONE_PERSON_PATH.exec(pathname)
+  return m ? `/u/${m[1]}${m[2] ?? ''}` : null
 }
 
 /**
