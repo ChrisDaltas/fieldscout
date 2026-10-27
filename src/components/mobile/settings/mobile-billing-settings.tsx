@@ -25,7 +25,9 @@ export const BILLING_PARENT = '/app/settings'
  * restyled only (CLAUDE.md, free-only launch): your plan with its Free / Pro
  * chip, what Pro includes, and — on Free — Upgrade to Pro, which still says
  * checkout is almost ready (there is no checkout yet). Back goes to where
- * you came from, else Settings.
+ * you came from, else Settings. Unreachable while the app offers no Pro: the
+ * route's `layout.tsx` sends you to Settings until `PRO_UPSELL_ENABLED` is
+ * turned back on.
  */
 export function MobileBillingSettings() {
   const goBack = useGoBack()
