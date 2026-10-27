@@ -25,17 +25,54 @@ import type { ListDraft } from './lists-model'
  * a second list.
  */
 
-/** New list's step 2 is New list's own URL plus `step=2`. Next pushes it, so
- *  Back — on screen or the OS gesture — is history back to step 1. */
+/**
+ * New list's own history entries, by `step=` in its URL. New list opens on
+ * its plain URL (step 1). The first Next pushes **step 1 again** (`step=1`)
+ * and then **step 2** (`step=2`), so Back from step 2 — on screen or the OS
+ * gesture — is history back to a step 1 that is still New list's page, and
+ * the gesture from *that* step 1 lands on New list's first entry, where the
+ * screen is still up to ask before the players go (gap list #16). Without
+ * it the gesture would leave New list's route with the draft unasked.
+ */
 export const NEW_LIST_STEP_PARAM = 'step'
 
-/** `/app/lists/new` with its markers kept (`from=`), at step 1 or 2. */
+/** `/app/lists/new` with its markers kept (`from=`): step 1 again or step 2. */
 export function newListStepHref(search: string | URLSearchParams, step: 1 | 2): string {
   const params = new URLSearchParams(search)
+  params.set(NEW_LIST_STEP_PARAM, String(step))
+  return `/app/lists/new?${params.toString()}`
+}
+
+/** New list's first entry — the URL it opened on — with its markers kept. */
+export function newListStartHref(search: string | URLSearchParams): string {
+  const params = new URLSearchParams(search)
   params.delete(NEW_LIST_STEP_PARAM)
-  if (step === 2) params.set(NEW_LIST_STEP_PARAM, '2')
   const query = params.toString()
   return `/app/lists/new${query ? `?${query}` : ''}`
+}
+
+/** How many of New list's entries are above its first: 0 on the first,
+ *  1 on step 1 again, 2 on step 2. */
+export function newListDepth(step: string | null): 0 | 1 | 2 {
+  if (step === '2') return 2
+  if (step === '1') return 1
+  return 0
+}
+
+/**
+ * A Back New list didn't take itself — the OS gesture or the browser's Back
+ * from step 1 (or step 2) down to New list's first entry — while it holds a
+ * draft and isn't leaving: `'ask'` "Discard this list?" when the draft holds
+ * players (the screen puts step 1 back first), else `'leave'` on to where
+ * New list came from, as ✕ would — one gesture, not two.
+ */
+export function newListStrayBack(
+  fromDepth: number,
+  toDepth: number,
+  { draft, leaving }: { draft: ListDraft | null; leaving: boolean },
+): 'ask' | 'leave' | null {
+  if (fromDepth === 0 || toDepth !== 0 || !draft || leaving) return null
+  return newListCloseAsks(draft) ? 'ask' : 'leave'
 }
 
 /** The id the editor's session choices (stat columns, time frame, scoring)

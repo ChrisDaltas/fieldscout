@@ -6,6 +6,7 @@ import * as React from 'react'
 
 import { rosterTotal, type RosterDraft } from '@/components/lists/list-form-payload'
 import { refreshCommunity } from '@/components/mobile/community/community-store'
+import { appEntryBehind, pathBehind } from '@/components/mobile/ui/back-nav'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { MSwitch } from '@/components/mobile/trades/m-overlay'
@@ -58,8 +59,11 @@ import {
   NEW_LIST_STEP_PARAM,
   createdToast,
   newListCloseAsks,
+  newListDepth,
   newListKey,
+  newListStartHref,
   newListStepHref,
+  newListStrayBack,
   saveNewList,
   stepTwoDraft,
   type CreatedList,
@@ -126,18 +130,25 @@ import {
  * Save, lr-lists §4).
  *
  * - **Next** checks the name and opens step 2 as a pushed `step=2` entry of
- *   this URL, so **Back** — the editor's, or the OS gesture — is history back
- *   to step 1, with the name, description, cover, videos and settings as
- *   they were, and the players kept for the next Next. A name changed in
- *   step 2's header comes back to step 1 with it.
+ *   this URL, over a pushed `step=1` (step 1 again, `NEW_LIST_STEP_PARAM`),
+ *   so **Back** — the editor's, or the OS gesture — is history back to step
+ *   1, with the name, description, cover, videos and settings as they were,
+ *   and the players kept for the next Next. A name changed in step 2's
+ *   header comes back to step 1 with it.
  * - **✕** on step 1 leaves (where you came from, #27) without a list. Once
  *   step 2 has players it asks first — "Discard this list?" (gap list #16:
- *   Back/Cancel asks when there are edits) — and a reload asks too.
+ *   Back/Cancel asks when there are edits) — and so does the **OS back
+ *   gesture** from step 1: it lands on New list's first entry, still this
+ *   page, which puts step 1 back and asks (`newListStrayBack`; the editor's
+ *   guard in `mobile-lists.tsx` is the same pattern). Without players the
+ *   gesture carries on to where New list came from. A reload asks too.
  * - **Save** makes the list and leaves for its List view, which takes New
- *   list's place in history (step 2 steps back to step 1, which is replaced),
- *   so Back from the List view goes where New list came from. A list
- *   Community started returns there instead, "List created" (gap list §3 #8).
- * - A reload or link on step 2 has no draft to show, so it opens step 1.
+ *   list's place in history (step 2 steps back to New list's first entry,
+ *   which is replaced), so Back from the List view goes where New list came
+ *   from. A list Community started returns there instead, "List created"
+ *   (gap list §3 #8).
+ * - A reload, link or Forward onto step 1 again or step 2 has no draft to
+ *   show: it steps back to New list's first entry, step 1.
  */
 export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
   const nav = useListsNav()
@@ -145,17 +156,24 @@ export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
   const params = useSearchParams()
   const qc = useQueryClient()
   const from = params.get('from')
-  const onStep2 = params.get(NEW_LIST_STEP_PARAM) === '2'
+  /** New list's entries above its first (0, 1 = step 1 again, 2 = step 2). */
+  const depth = newListDepth(params.get(NEW_LIST_STEP_PARAM))
+  const onStep2 = depth === 2
   const d = useDetailsDraft(null)
   const [draftKey] = React.useState(newListKey)
   /** Step 2's draft — the players, Ranked / Tiers — kept across Back. */
   const [draft, setDraft] = React.useState<ListDraft | null>(null)
   const [confirmClose, setConfirmClose] = React.useState(false)
-  /** Saved: where New list's place in history goes (see `leave`). */
-  const [leavingTo, setLeavingTo] = React.useState<string | null>(null)
+  /** Leaving New list (see `leave` and `close`). Set before the history
+   *  steps it takes, so they aren't read as a stray Back. */
+  const [exit, setExit] = React.useState<NewListExit | null>(null)
+  /** The OS gesture left step 1 with players: put step 1 back and ask. */
+  const [caught, setCaught] = React.useState(false)
   /** The list, once a Save has made it — so Save again never makes another. */
   const created = React.useRef<CreatedList | null>(null)
   const [exists, setExists] = React.useState(false)
+  /** Leaving from step 2 (Save, or Back once Save has made the list). */
+  const leavingStep2 = exit !== null && exit.kind !== 'close'
 
   const createList = useCreateList()
   const thumbnail = useMobileListsThumbnail()
@@ -191,7 +209,13 @@ export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
       created.current = outcome.created
       return outcome
     },
-    onSettled: (outcome) => {
+    onSettled: (outcome, _error, current) => {
+      // Not saved, and the OS gesture stepped back to New list's first
+      // entry meanwhile (Save holds step 2 up until it's done): put step 1
+      // again back over it, so the gesture asks before the players go.
+      if (!outcome?.ok && liveDepth() === 0 && newListCloseAsks(current)) {
+        window.history.pushState(null, '', newListStepHref(window.location.search, 1))
+      }
       const made = outcome?.created
       if (!made) return
       setExists(true)
@@ -204,12 +228,22 @@ export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
 
   // Step 2 shows its draft — and stays up, locked, while Save writes and
   // while it leaves (even if the OS gesture stepped back meanwhile).
-  const showStep2 = draft !== null && (onStep2 || save.isPending || leavingTo !== null)
+  const showStep2 = draft !== null && (onStep2 || save.isPending || leavingStep2)
 
-  // Step 2 with no draft (a reload, a link): nothing to edit yet — step 1.
+  // Opened on step 1 again or step 2 (a reload, a link, Forward): no draft
+  // to show — back to New list's first entry, step 1. Back through history
+  // when that entry is behind, so it isn't left there twice.
+  const settled = React.useRef(false)
   React.useEffect(() => {
-    if (onStep2 && !draft && !leavingTo) window.history.replaceState(null, '', newListStepHref(params, 1))
-  }, [onStep2, draft, leavingTo, params])
+    if (settled.current) return
+    settled.current = true
+    if (depth === 0) return
+    const behind = pathBehind()
+    if (appEntryBehind(depth) && (behind === null || behind === NEW_LIST_PATH)) window.history.go(-depth)
+    else window.history.replaceState(null, '', newListStartHref(params))
+    // Mount only: this settles the entry the page loaded on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Back on step 1: a name changed in step 2's header comes back with it.
   const [wasStep2, setWasStep2] = React.useState(showStep2)
@@ -218,13 +252,36 @@ export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
     if (!showStep2 && draft && listTitleSchema.safeParse(draft.title).success) d.setTitle(draft.title)
   }
 
-  // Saved: once the URL is back on step 1, it's replaced by where we go.
+  // The OS gesture (or the browser's Back) down to New list's first entry,
+  // with a draft: ask before the players go, or carry on out (✕'s way).
+  // Not while Save writes: step 2 stays up, and Save leaves from wherever
+  // the gesture got to.
+  const [prevDepth, setPrevDepth] = React.useState(depth)
+  if (prevDepth !== depth) {
+    setPrevDepth(depth)
+    const stray = newListStrayBack(prevDepth, depth, { draft, leaving: exit !== null || save.isPending })
+    if (stray === 'ask') setCaught(true)
+    else if (stray === 'leave') setExit({ kind: 'close' })
+  }
   React.useEffect(() => {
-    if (leavingTo && !onStep2) router.replace(leavingTo)
-  }, [leavingTo, onStep2, router])
+    if (!caught) return
+    setCaught(false)
+    window.history.pushState(null, '', newListStepHref(window.location.search, 1))
+    setConfirmClose(true)
+  }, [caught])
+
+  // Leaving: once the URL is back on New list's first entry, it's replaced
+  // by where we go — or, for ✕, left the usual way (where you came from).
+  const exited = React.useRef(false)
+  React.useEffect(() => {
+    if (!exit || exit.kind === 'gone' || depth > 0 || exited.current) return
+    exited.current = true
+    if (exit.kind === 'to') router.replace(exit.href)
+    else nav.closeNew()
+  }, [exit, depth, router, nav])
 
   // A reload or tab close would drop the players step 2 added.
-  const holdsPlayers = newListCloseAsks(draft) && leavingTo === null
+  const holdsPlayers = newListCloseAsks(draft) && exit === null
   React.useEffect(() => {
     if (!holdsPlayers) return
     const onUnload = (event: BeforeUnloadEvent) => {
@@ -235,19 +292,33 @@ export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
     return () => window.removeEventListener('beforeunload', onUnload)
   }, [holdsPlayers])
 
-  /** Next: on to step 2, keeping whatever an earlier step 2 held. */
+  /** Next: on to step 2, keeping whatever an earlier step 2 held. From New
+   *  list's first entry, step 1 again goes under it (see the doc above). */
   const next = () => {
     const title = listTitleSchema.safeParse(d.title)
     if (!title.success || !detailsReady(d)) return
     setDraft((kept) => stepTwoDraft(kept, title.data))
+    if (liveDepth() === 0) window.history.pushState(null, '', newListStepHref(params, 1))
     window.history.pushState(null, '', newListStepHref(params, 2))
   }
 
-  /** Leave New list for `href`, in its place: step 2 steps back to step 1,
+  /** Leave New list for `href`, in its place: back to its first entry,
    *  which the effect above then replaces. */
   const leave = (href: string) => {
-    setLeavingTo(href)
-    if (onStep2) window.history.back()
+    setExit({ kind: 'to', href })
+    const above = liveDepth()
+    if (above > 0) window.history.go(-above)
+  }
+
+  /** ✕, or Discard: leave without a list, to where New list came from. */
+  const close = () => {
+    const above = liveDepth()
+    if (above === 0) {
+      nav.closeNew()
+      return
+    }
+    setExit({ kind: 'close' })
+    window.history.go(-above)
   }
 
   /** Step 2's Back: step 1, draft kept — the entry Next pushed. Once a Save
@@ -264,7 +335,7 @@ export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
     carryListSession(draftKey, made.id)
     if (from === 'community') {
       refreshCommunity(qc)
-      if (nav.returnToCommunity()) setLeavingTo(COMMUNITY_HREF)
+      if (nav.returnToCommunity(liveDepth() + 1)) setExit({ kind: 'gone' })
       else leave(COMMUNITY_HREF)
       return
     }
@@ -273,7 +344,7 @@ export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
 
   const commit: EditorCommit = {
     mutate: (current, callbacks) => save.mutate(current, callbacks),
-    isPending: save.isPending || leavingTo !== null,
+    isPending: save.isPending || leavingStep2,
   }
 
   return (
@@ -296,7 +367,7 @@ export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
           mode="new"
           list={null}
           d={d}
-          onClose={() => (newListCloseAsks(draft) ? setConfirmClose(true) : nav.closeNew())}
+          onClose={() => (newListCloseAsks(draft) ? setConfirmClose(true) : close())}
           onNext={next}
         />
       )}
@@ -306,10 +377,24 @@ export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
         title="Discard this list?"
         subtitle="The players you added haven’t been saved."
         detail="Leaving now drops this list and the players you added."
-        onDiscard={nav.closeNew}
+        onDiscard={close}
       />
     </>
   )
+}
+
+/** How New list is leaving: for `href` in its place (Save), without a list
+ *  (✕, Discard), or already gone (back to Community, which opened it). */
+type NewListExit = { kind: 'to'; href: string } | { kind: 'close' } | { kind: 'gone' }
+
+/** New list's path, to tell its own entries from the screen behind it. */
+const NEW_LIST_PATH = '/app/lists/new'
+
+/** New list's entries above its first, as the address has them now — a
+ *  Back taken while Save wrote may not have rendered yet. */
+function liveDepth(): 0 | 1 | 2 {
+  if (window.location.pathname !== NEW_LIST_PATH) return 0
+  return newListDepth(new URLSearchParams(window.location.search).get(NEW_LIST_STEP_PARAM))
 }
 
 export function ListDetailsScreen({ listId }: { listId: string }) {

@@ -17,7 +17,7 @@ import { compareHref } from './list-tools'
  * | List view     | `/app/lists?list=<id>` (`/app/lists/<id>` redirects here) |
  * | List editor   | `/app/lists?list=<id>&edit=1` (`&add=1` opens Add players) |
  * | Edit details  | `/app/lists?list=<id>&details=1`      |
- * | New list      | `/app/lists/new` (`step=2` in its query is step 2 of 2, `new-list-save.ts`) |
+ * | New list      | `/app/lists/new` (`step=2` in its query is step 2 of 2, `step=1` step 1 again, `new-list-save.ts`) |
  * | Side by side  | `/app/lists?compare=<id>,<id>`        |
  *
  * ## Back
@@ -41,18 +41,20 @@ import { compareHref } from './list-tools'
  * ## New list: one draft until Save (lr-lists §4)
  *
  * New list's Next opens its step 2 — the editor, for a list that doesn't
- * exist yet — as a pushed `step=2` entry of New list's own URL, so Back from
- * it (on screen or the OS gesture) is history back to step 1 with the draft
- * kept. Only Save makes the list; it then takes New list's place in history
- * with the List view (`NewListScreen`), or —
+ * exist yet — as a pushed `step=2` entry of New list's own URL, over a
+ * pushed `step=1` (step 1 again), so Back from step 2 (on screen or the OS
+ * gesture) is history back to step 1 with the draft kept, and the gesture
+ * from there stays on New list's page, which asks before it drops added
+ * players (`newListStrayBack`). Only Save makes the list; it then takes New
+ * list's place in history with the List view (`NewListScreen`), or —
  *
  * ## A list started from Community (gap list §3 #8)
  *
  * — Community's Create sheet opens New list with `from=community`, and Save
  * returns there — the handoff's composer posts and stays on the screen that
  * opened it — with "List created", the feed refreshed and on For you
- * (`refreshCommunity`). History there is Community, New list's step 1, then
- * step 2, so it steps back two entries (`returnToCommunity`).
+ * (`refreshCommunity`). History there is Community, New list's first entry,
+ * step 1 again, then step 2, so it steps back three (`returnToCommunity`).
  */
 
 type From = 'grid' | 'view'
@@ -112,12 +114,13 @@ export function useListsNav() {
         goBack('/app/lists')
       },
       /** A new list Community started, saved: back to Community (gap list
-       *  §3 #8) — two entries behind New list's step 2, past its step 1.
-       *  `false` when Community isn't there to step back to (New list was
-       *  opened fresh); the caller then leaves for `COMMUNITY_HREF`. */
-      returnToCommunity(): boolean {
-        if (!appEntryBehind(2)) return false
-        window.history.go(-2)
+       *  §3 #8) — `entries` behind (New list's step 2 is three: past step 1
+       *  again and New list's first entry). `false` when Community isn't
+       *  there to step back to (New list was opened fresh); the caller then
+       *  leaves for `COMMUNITY_HREF`. */
+      returnToCommunity(entries: number): boolean {
+        if (!appEntryBehind(entries)) return false
+        window.history.go(-entries)
         return true
       },
       /** The grid's back: where you came from (normally Profile), else

@@ -143,17 +143,17 @@ describe('a new list started from Community returns to Community (gap list §3 #
     expect(router.back).toHaveBeenCalledTimes(1)
   })
 
-  it('saved: two entries back — past New list’s step 1 — to Community', () => {
-    const go = behindBy(2)
-    expect(navOn('from=community&step=2').returnToCommunity()).toBe(true)
-    expect(go).toHaveBeenCalledWith(-2)
+  it('saved: three entries back — past step 1 again and New list’s first entry — to Community', () => {
+    const go = behindBy(3)
+    expect(navOn('from=community&step=2').returnToCommunity(3)).toBe(true)
+    expect(go).toHaveBeenCalledWith(-3)
     expect(router.replace).not.toHaveBeenCalled()
     expect(router.back).not.toHaveBeenCalled()
   })
 
-  it('saved with only step 1 behind (New list opened fresh): no step back — the caller leaves for Community', () => {
-    const go = behindBy(1)
-    expect(navOn('from=community&step=2').returnToCommunity()).toBe(false)
+  it('saved with only New list’s own entries behind (opened fresh): no step back — the caller leaves for Community', () => {
+    const go = behindBy(2)
+    expect(navOn('from=community&step=2').returnToCommunity(3)).toBe(false)
     expect(go).not.toHaveBeenCalled()
     expect(router.replace).not.toHaveBeenCalled()
   })

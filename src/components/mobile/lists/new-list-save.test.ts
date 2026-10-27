@@ -3,7 +3,11 @@
  * lists-1: backing out of "2 of 2" left an empty list in My lists).
  *
  * Pinned here:
- *   - Step 2's URL is New list's own plus `step=2`, keeping `from=`.
+ *   - New list's entries: its first (the URL it opened on), step 1 again
+ *     (`step=1`) and step 2 (`step=2`), each keeping `from=`.
+ *   - A Back New list didn't take (the OS gesture) down to its first entry
+ *     asks when the draft holds players, else carries on out — never while
+ *     New list is leaving, and not without a draft.
  *   - Next's draft: fresh and empty, or the one Back kept — its players —
  *     under step 1's name.
  *   - ✕ on step 1 asks only once step 2 has players.
@@ -28,7 +32,10 @@ import { carryListSession, useListsSessionStore } from './lists-session-store'
 import {
   createdToast,
   newListCloseAsks,
+  newListDepth,
+  newListStartHref,
   newListStepHref,
+  newListStrayBack,
   saveNewList,
   stepTwoDraft,
   type CreatedList,
@@ -105,12 +112,51 @@ function io(overrides: Partial<NewListSaveIO> = {}) {
   return { fake, calls, commitDrafts }
 }
 
-describe('step 2’s URL', () => {
-  it('is New list’s own, with `step=2`, keeping where it came from', () => {
+describe('New list’s entries', () => {
+  it('step 2 and step 1 again are New list’s own URL, with `step=`, keeping where it came from', () => {
     expect(newListStepHref('from=grid', 2)).toBe('/app/lists/new?from=grid&step=2')
     expect(newListStepHref('', 2)).toBe('/app/lists/new?step=2')
-    expect(newListStepHref('from=community&step=2', 1)).toBe('/app/lists/new?from=community')
-    expect(newListStepHref(new URLSearchParams('step=2'), 1)).toBe('/app/lists/new')
+    expect(newListStepHref('from=community&step=2', 1)).toBe('/app/lists/new?from=community&step=1')
+    expect(newListStepHref(new URLSearchParams('step=2'), 1)).toBe('/app/lists/new?step=1')
+  })
+
+  it('the first is the URL New list opened on', () => {
+    expect(newListStartHref('from=community&step=2')).toBe('/app/lists/new?from=community')
+    expect(newListStartHref(new URLSearchParams('step=1'))).toBe('/app/lists/new')
+  })
+
+  it('counts the entries above the first', () => {
+    expect(newListDepth(null)).toBe(0)
+    expect(newListDepth('1')).toBe(1)
+    expect(newListDepth('2')).toBe(2)
+    expect(newListDepth('9')).toBe(0)
+  })
+})
+
+describe('the OS back gesture from step 1 (gap list #16)', () => {
+  const empty = stepTwoDraft(null, 'x')
+  const held = withPlayers(empty, 'p1')
+
+  it('down to New list’s first entry with players added: asks "Discard this list?"', () => {
+    expect(newListStrayBack(1, 0, { draft: held, leaving: false })).toBe('ask')
+    // Two back at once (the long-press Back menu) from step 2.
+    expect(newListStrayBack(2, 0, { draft: held, leaving: false })).toBe('ask')
+  })
+
+  it('with no players: carries on out, as ✕ does — one gesture, not two', () => {
+    expect(newListStrayBack(1, 0, { draft: empty, leaving: false })).toBe('leave')
+  })
+
+  it('leaves New list alone when it is leaving (Save, ✕, Discard) or has no draft (a reload)', () => {
+    expect(newListStrayBack(1, 0, { draft: held, leaving: true })).toBeNull()
+    expect(newListStrayBack(2, 0, { draft: empty, leaving: true })).toBeNull()
+    expect(newListStrayBack(1, 0, { draft: null, leaving: false })).toBeNull()
+  })
+
+  it('only the step down to the first entry: Back from step 2 to step 1, and Next, are not it', () => {
+    expect(newListStrayBack(2, 1, { draft: held, leaving: false })).toBeNull()
+    expect(newListStrayBack(0, 1, { draft: held, leaving: false })).toBeNull()
+    expect(newListStrayBack(1, 2, { draft: held, leaving: false })).toBeNull()
   })
 })
 
