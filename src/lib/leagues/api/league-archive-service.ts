@@ -16,7 +16,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
-import { isDoorNotPushed, type PostgrestErrorLike } from '@/lib/supabase/postgrest-errors'
+import { isDoorNotPushed } from '@/lib/supabase/postgrest-errors'
 import type { Database, Json } from '@/types/database'
 
 import { optionalReason } from './commish-matchup-service'
@@ -32,10 +32,6 @@ export const ARCHIVE_NOT_LIVE_MESSAGE = 'Archiving leagues isn’t switched on y
 /** DELETE /api/leagues/[id] — leagues are never deleted any more (212). */
 export const LEAGUE_DELETE_RETIRED_MESSAGE =
   'Leagues aren’t deleted — the commissioner can archive the league from League settings, and restore it any time.'
-/** The freeze's own words (212's guard, SQLSTATE 55000), for any route that meets it. */
-export const LEAGUE_ARCHIVED_MESSAGE =
-  'This league is archived, so nothing in it can change. Its commissioner can restore it from Leagues › Archived leagues.'
-
 export const archiveLeagueInputSchema = z.strictObject({ reason: optionalReason })
 
 /** 212's result document (both verbs). */
@@ -48,11 +44,6 @@ export interface ArchiveLeagueResult {
   commissioner_action_id: string | null
   /** The restore's scoring catch-up (D782); absent on archive. */
   scores_requeued?: number
-}
-
-/** The freeze refusal (212's `league_archived_guard_internal`). */
-export function isLeagueArchivedError(error: PostgrestErrorLike | null | undefined): boolean {
-  return Boolean(error) && error!.code === '55000' && (error!.message ?? '').startsWith('This league is archived')
 }
 
 async function callVerb(

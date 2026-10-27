@@ -261,7 +261,7 @@ set local role authenticated;
 insert into r158 select 'N', op_set_commissioner('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-000000000002',
   'a1580000-0000-4000-8000-000000000002');
 select is(pg_temp.err($$select op_set_commissioner('b1580000-0000-4000-8000-0000000000dd', 'd1580000-0000-4000-8000-0000000000d2', 'a1580000-0000-4000-8000-000000000003')$$),
-  'P0002: set_commissioner: league b1580000-0000-4000-8000-0000000000dd does not exist', 'N2 a deleted league is refused');
+  'P0002: set_commissioner: league b1580000-0000-4000-8000-0000000000dd is archived — restore it first (the admin league page''s Restore)', 'N2 a deleted league is refused — RE-CUT BY 212 (R1733): named as archived, not "does not exist"');
 select is(pg_temp.err($$select op_set_commissioner('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-000000000006', 'a1580000-0000-4000-8000-000000000004')$$),
   'P0002: set_commissioner: member d1580000-0000-4000-8000-000000000006 is not in this league', 'N3 another league''s member is refused');
 select is(pg_temp.err($$select op_set_commissioner('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-0000000000ff', 'a1580000-0000-4000-8000-000000000005')$$),

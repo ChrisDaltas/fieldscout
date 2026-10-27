@@ -75,11 +75,17 @@ select is(
      'op_verb_prelude_internal', 'week_release_floor_internal')),
   'commish_matchup_edit_lock_internal=f:search_path="":f:f lineup_kickoff_internal=f:search_path="":f:f op_set_game_status=t:search_path="":f:t op_set_game_status_internal=f:search_path="":f:f op_verb_prelude_internal=f:search_path="":f:f week_games_state_internal=f:search_path="":f:f week_release_floor_internal=f:search_path="":f:f',
   'A4 the door DEFINER + search_path '''' + authenticated only; every other 184 body plain and closed to anon / authenticated');
+-- pg_temp.un212 — migration 212's inserted lines removed (each ends
+-- `-- 212 / F716…`; pgTAP 162 A9 pins them); an identity on every body
+-- without them.
+create function pg_temp.un212(p_src text) returns text language sql as $un212$
+  select regexp_replace(p_src, E'\n[^\n]*-- 212 / F716[^\n]*', '', 'g')
+$un212$;
 create function pg_temp.un184(p_src text) returns text language sql as $un184$
   select regexp_replace(p_src, E'\n[^\n]*   -- 184 / L\\.G1\\.4 \\(TD7\\)', '', 'g')
 $un184$;
 select is(
-  (select string_agg(p.proname || '=' || md5(p.prosrc), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un212(p.prosrc)), ' ' order by p.proname)   -- 212 (R1733): the prelude's archived line removed first
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('week_games_state_internal', 'commish_matchup_edit_lock_internal',
      'lineup_kickoff_internal', 'op_verb_prelude_internal')),
@@ -92,7 +98,7 @@ select is(
   'commish_matchup_edit_lock_internal=22e166d7b568e70ae6a24153d0f564fe lineup_kickoff_internal=80b9c63efa3cb5bbef7b79863e9801a7 week_games_state_internal=00910b5cb8e851d10cbaf1fd710d5d86',
   'A6 D137: with 184''s lines removed each body is its newest definer''s FILE TEXT (142:156-450 = pgTAP 090 A1''s pin; 116:317-359; 112:380-428 — md5 of the file text)');
 select is(
-  (select md5(replace(p.prosrc, 'can use the operator tools (M8 TD1)', 'can use the job knobs (M8 TD1)'))
+  (select md5(replace(pg_temp.un212(p.prosrc), 'can use the operator tools (M8 TD1)', 'can use the job knobs (M8 TD1)'))
    from pg_proc p where p.oid = 'public.op_verb_prelude_internal(text,uuid,uuid,text)'::regprocedure),
   '57867ee5196cce4ed433866fe02f009c',
   'A6b R1548: the prelude''s ONE change is its gate wording — reversed, it is 183:239-283''s FILE TEXT');

@@ -181,7 +181,7 @@ select alike(pg_temp.err($$ select op_send_notification('all_users', 'Hi', null,
 select alike(pg_temp.err($$ select op_send_notification('league', 'Hi', null, null, 'b1330000-0000-4000-8000-0000000000ff', array['in_app'], gen_random_uuid()) $$),
   'P0002: %does not exist%', 'K13 an unknown league is refused');
 select alike(pg_temp.err($$ select op_send_notification('league', 'Hi', null, null, 'b1330000-0000-4000-8000-000000000005', array['in_app'], gen_random_uuid()) $$),
-  'P0002: %does not exist%', 'K14 a deleted league is refused');
+  'P0002: %is archived — restore it first (the admin league page''s Restore)', 'K14 a deleted league is refused — RE-CUT BY 212 (R1733): an archived league is named as archived, not "does not exist"');
 select alike(pg_temp.err($$ select op_send_notification('league', 'Hi', null, null, 'b1330000-0000-4000-8000-000000000004', array['in_app'], gen_random_uuid()) $$),
   'P0002: send_notification: this audience has no recipients — nothing was sent', 'K15 ZERO recipients refuses loudly (§24.4)');
 reset role;

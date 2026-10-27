@@ -1053,8 +1053,10 @@ select is(
                        'scoring_systems_league_rules_guard_internal', 'scoring_system_league_use_internal')),
   'commish_action_pointer_guard_internal=069afb1780a25cf45852683947cd7b7d commish_edit_lineup_internal=dfef11dc37d1770ef64f1b876185e39c '
   || 'commish_rename_team_internal=5248f36bd9f29217c7775d3d24fe9776 commish_roster_override_internal=c5ccb46010badc722cd77c356cd0bd15 '
-  || 'scoring_system_league_use_internal=e04d488051a3a637c5f6d87312284254 scoring_systems_league_rules_guard_internal=9464bce068098165c39590bc49a19f11',
-  'A4 the six live prosrc md5s — 170 as written (stored literals)');
+  -- RE-PINNED BY 212 (R1725): scoring_system_league_use_internal's one line lost `AND l.deleted_at IS NULL` (an archived league still
+  -- plays by its scoring) — 212's FILE body hashed; with that line undone it is 170's e04d4880… again (pgTAP 162 A11).
+  || 'scoring_system_league_use_internal=10b9b9123c62ae50f41a127a907b2ead scoring_systems_league_rules_guard_internal=9464bce068098165c39590bc49a19f11',
+  'A4 the six live prosrc md5s — 170 as written (stored literals; scoring_system_league_use_internal as 212 amended it, R1725)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'

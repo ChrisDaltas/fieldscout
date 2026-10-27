@@ -35,6 +35,12 @@
 --       passed while archived does not start the draft; a later one does.
 --   §X  ACCOUNT DELETION is never blocked by an archived league (FK actions
 --       run at trigger depth > 1).
+--   PR #543 review (Chris's rulings 2026-10-27 + fixes): §R's trades — archive
+--   CANCELS every unfinished trade (R1728), one line, both managers told;
+--   §Q finalize never closes a week over a queued score (R1730); restore's
+--   queue rows are fresh to the stall check (R1731); §S an archived league
+--   still owns its scoring system — a direct rules write is refused (R1725);
+--   §O the operator's restore (F851) and the archived wording (R1733).
 -- Break probes (§4.3) — each injected after `begin;` (inside this file's own
 -- rolled-back transaction), shown red in the PR, reverted: (1) the gate
 -- widened to co-commissioners ⇒ K5 + 7 downstream red; (2) trade_tick's claim
@@ -50,7 +56,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(79);
+select plan(103);
 
 -- ---------------------------------------------------------------------------
 -- A. Form
@@ -69,9 +75,10 @@ select is(
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('archive_league', 'restore_league', 'archive_league_internal',
      'restore_league_internal', 'league_archive_who_internal', 'league_archived_guard_internal',
-     'league_row_archived_guard_internal', 'soft_delete_league')),
-  'archive_league=t:search_path="":f:t archive_league_internal=f:search_path="":f:f league_archive_who_internal=f:search_path="":f:f league_archived_guard_internal=t:search_path="":f:f league_row_archived_guard_internal=t:search_path="":f:f restore_league=t:search_path="":f:t restore_league_internal=f:search_path="":f:f soft_delete_league=t:search_path="":f:t',
-  'A2 doors DEFINER + search_path '''' + authenticated only; internals plain + closed; trigger functions DEFINER + closed');
+     'league_row_archived_guard_internal', 'soft_delete_league', 'league_archive_trade_reason_internal',
+     'league_restore_apply_internal', 'op_archived_league_prelude_internal', 'op_restore_league', 'op_restore_league_internal')),
+  'archive_league=t:search_path="":f:t archive_league_internal=f:search_path="":f:f league_archive_trade_reason_internal=f:search_path="":f:f league_archive_who_internal=f:search_path="":f:f league_archived_guard_internal=t:search_path="":f:f league_restore_apply_internal=f:search_path="":f:f league_row_archived_guard_internal=t:search_path="":f:f op_archived_league_prelude_internal=f:search_path="":f:f op_restore_league=t:search_path="":f:t op_restore_league_internal=f:search_path="":f:f restore_league=t:search_path="":f:t restore_league_internal=f:search_path="":f:f soft_delete_league=t:search_path="":f:t',
+  'A2 doors DEFINER + search_path '''' + authenticated only; internals plain + closed; trigger functions DEFINER + closed (the operator''s door F851 included)');
 
 -- THE CENSUS. Every public table with a league_id column carries the freeze
 -- with key 'league_id' — except the two operator tables, by name.
@@ -126,15 +133,34 @@ $un$;
 select is(
   (select string_agg(p.proname || '=' || md5(pg_temp.un212(p.prosrc)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname in ('trade_tick', 'mock_draft_expire', 'draft_tick')),
-  'draft_tick=87977590c0d9f597664192798cdfccec mock_draft_expire=b25eabbf469bb29a445bcd34d52e249f trade_tick=6ad1184263167e6ebb1d013550bb171c',
-  'A9 D137: with 212''s lines removed each job body is its newest definer''s FILE TEXT (097 / 095 / 199 — stored md5 literals)');
+   where n.nspname = 'public' and p.proname in ('trade_tick', 'mock_draft_expire', 'draft_tick', 'finalize_matchups', 'op_verb_prelude_internal')),
+  'draft_tick=87977590c0d9f597664192798cdfccec finalize_matchups=55c40a017c775f4bab6febb25db3a436 mock_draft_expire=b25eabbf469bb29a445bcd34d52e249f op_verb_prelude_internal=69e0a040fd961551a792fd486c107f58 trade_tick=6ad1184263167e6ebb1d013550bb171c',
+  'A9 D137: with 212''s lines removed each body is its newest definer''s FILE TEXT (097 / 183 / 095 / 184 / 199 — stored md5 literals)');
 select is(
   (select string_agg(p.proname || ':' || (length(p.prosrc) - length(replace(p.prosrc, '-- 212 / F716', ''))) / length('-- 212 / F716'), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and pg_temp.un212(p.prosrc) <> p.prosrc),
-  'draft_tick:1 mock_draft_expire:1 trade_tick:2',
-  'A10 …and only those three bodies carry 212 lines (2 + 1 + 1)');
+  'draft_tick:1 finalize_matchups:6 mock_draft_expire:1 op_verb_prelude_internal:1 trade_tick:2',
+  'A10 …and only those five bodies carry 212 lines (2 + 1 + 1 + 6 + 1)');
+-- R1725's two REPLACED lines (marker `-- F716 / 212`): the full bodies are
+-- pinned as 212's FILE TEXT, and undoing the one line gives 170 / 104 back.
+create function pg_temp.un212r(p_src text) returns text language sql as $un$
+  select replace(replace(p_src,
+    '  JOIN public.leagues l ON l.scoring_system_id = s.id   -- F716 / 212 (R1725): an ARCHIVED league still plays by it (was `AND l.deleted_at IS NULL`)',
+    '  JOIN public.leagues l ON l.scoring_system_id = s.id AND l.deleted_at IS NULL'),
+    '           -- F716 / 212 (R1725): an ARCHIVED league still uses it (was `AND l.deleted_at IS NULL`)',
+    '           AND l.deleted_at IS NULL')
+$un$;
+select is(
+  (select string_agg(format('%s=%s/%s', p.proname, md5(p.prosrc), md5(pg_temp.un212r(p.prosrc))), ' ' order by p.proname)
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname in ('scoring_system_league_use_internal', 'scoring_systems_rules_guard')),
+  'scoring_system_league_use_internal=10b9b9123c62ae50f41a127a907b2ead/e04d488051a3a637c5f6d87312284254 scoring_systems_rules_guard=07fb3088ab838f1f783f8187ace84316/009f9c68b41f1ff6fb58dfcc3d7725b1',
+  'A11 R1725 (D137, 170 / 104): each body is 212''s FILE TEXT, and with its ONE replaced line undone it is its newest definer''s FILE TEXT (stored md5 literals)');
+select ok(
+  (select bool_and(regexp_replace(p.prosrc, '--[^\n]*', '', 'g') !~ 'deleted_at IS NULL') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname in ('scoring_system_league_use_internal', 'scoring_systems_rules_guard')),
+  'A12 …and neither filters out an archived league any more');
 
 -- ---------------------------------------------------------------------------
 -- World
@@ -159,7 +185,8 @@ insert into auth.users
 select '00000000-0000-0000-0000-000000000000', ('99162000-0000-4000-8000-00000000000' || i)::uuid,
   'authenticated', 'authenticated', 'pgtap-x162-u' || i || '@fieldscout.local', 'x', now(),
   '{"provider": "email", "providers": ["email"]}', json_build_object('username', 'x162_user' || i)::jsonb, now(), now()
-from generate_series(1, 6) i;
+from generate_series(1, 7) i;
+update profiles set is_admin = true where id = '99162000-0000-4000-8000-000000000007';   -- u7: the platform operator (F851)
 
 -- Leagues. Two letters = role + (W archived / C control). Every league is
 -- the commissioner u1's.
@@ -192,7 +219,10 @@ from (values
   ('b1620000-0000-4000-8000-000000000072', 'DC', 'scheduled', null),                       -- auto-start, control
   ('b1620000-0000-4000-8000-000000000073', 'DR', 'scheduled', null),                       -- restored AFTER its draft time
   ('b1620000-0000-4000-8000-000000000074', 'DL', 'scheduled', null),                       -- restored BEFORE its draft time
-  ('b1620000-0000-4000-8000-000000000081', 'LX', 'in_season', null)                        -- account deletion
+  ('b1620000-0000-4000-8000-000000000081', 'LX', 'in_season', null),                       -- account deletion
+  ('b1620000-0000-4000-8000-000000000033', 'FQ', 'in_season', null),                       -- finalize over a queued score (R1730)
+  ('b1620000-0000-4000-8000-000000000091', 'LR', 'setup', null),                           -- its own scoring system (R1725)
+  ('b1620000-0000-4000-8000-000000000092', 'LO', 'in_season', null)                        -- the operator's restore (F851)
 ) v(id, nm, st, nx);
 -- The draft leagues' instant: an hour ago (the auto-start arm reads now()).
 update leagues set settings = settings || jsonb_build_object('draft', jsonb_build_object(
@@ -288,6 +318,29 @@ select pg_temp.lg(x), pg_temp.team(x, 1), 'x162-k' from unnest(array['KW', 'KC']
 insert into trades (league_id, proposer_team_id, recipient_team_id, status, proposed_by, action_id)
 select pg_temp.lg(x), pg_temp.team(x, 1), pg_temp.team(x, 2), 'proposed', '99162000-0000-4000-8000-000000000003', gen_random_uuid()
 from unnest(array['TW', 'TC']) x;
+-- LA's trades (R1728): offered, in review, accepted but deferred — and one
+-- already complete, which archiving must leave alone.
+insert into trades (id, league_id, proposer_team_id, recipient_team_id, status, proposed_by, action_id,
+                    accepted_at, accepted_by, review_deadline, execute_after, resolved_at, created_at) values
+ ('e1620000-0000-4000-8000-000000000001', pg_temp.lg('LA'), pg_temp.team('LA', 1), pg_temp.team('LA', 2), 'proposed',
+  '99162000-0000-4000-8000-000000000003', gen_random_uuid(), null, null, null, null, null, now() - interval '4 hours'),
+ ('e1620000-0000-4000-8000-000000000002', pg_temp.lg('LA'), pg_temp.team('LA', 2), pg_temp.team('LA', 1), 'in_review',
+  '99162000-0000-4000-8000-000000000005', gen_random_uuid(), now() - interval '3 hours', '99162000-0000-4000-8000-000000000003', now() + interval '1 day', null, null, now() - interval '3 hours'),
+ ('e1620000-0000-4000-8000-000000000003', pg_temp.lg('LA'), pg_temp.team('LA', 1), pg_temp.team('LA', 2), 'accepted',
+  '99162000-0000-4000-8000-000000000003', gen_random_uuid(), now() - interval '2 hours', '99162000-0000-4000-8000-000000000005', null, now() + interval '2 days', null, now() - interval '2 hours'),
+ ('e1620000-0000-4000-8000-000000000004', pg_temp.lg('LA'), pg_temp.team('LA', 2), pg_temp.team('LA', 1), 'complete',
+  '99162000-0000-4000-8000-000000000005', gen_random_uuid(), now() - interval '9 days', '99162000-0000-4000-8000-000000000003', null, null, now() - interval '8 days', now() - interval '9 days');
+-- FQ: week 7 in its window, its game final — and a score still QUEUED for
+-- its rostered QB (R1730).
+insert into league_weeks (league_id, season, week, status) values (pg_temp.lg('FQ'), 2026, 7, 'correction_window');
+insert into players (id, full_name, position, team, status) values ('x162-q2', 'X162 Q Two', 'QB', 'MIA', 'Active');
+insert into league_rosters (league_id, team_id, player_id) values (pg_temp.lg('FQ'), pg_temp.team('FQ', 1), 'x162-q2');
+insert into score_fanout (season, week, player_id, enqueued_at) values (2026, 7, 'x162-q2', '2026-10-26 20:00:00+00');
+-- LR: plays by its OWN scoring system, owned by u1 (R1725).
+insert into scoring_systems (id, name, owner_id, is_template, rules)
+values ('51620000-0000-4000-8000-000000000001', 'pgtap-x162-LR scoring', '99162000-0000-4000-8000-000000000001', false,
+        (select rules from scoring_systems where is_template and name = 'ESPN Standard'));
+update leagues set scoring_system_id = '51620000-0000-4000-8000-000000000001' where id = pg_temp.lg('LR');
 -- LX: an archived league whose manager u6 deletes his account (§X).
 insert into league_chat (league_id, user_id, message, context, is_system)
 values (pg_temp.lg('LX'), '99162000-0000-4000-8000-000000000006', 'bye', 'league', false);
@@ -319,9 +372,11 @@ create or replace function pg_temp.lines(p_league uuid) returns text language sq
   where league_id = p_league and is_system and user_id is null
 $$;
 grant execute on function pg_temp.lines(uuid) to authenticated;
--- The league's data, every guarded table, as one md5 — commissioner_actions
--- and league_chat are left out (the archive's own record lands there) and
--- leagues compares everything but the three columns the round trip moves.
+-- The league's data as one md5: every table with a league_id AND the eight
+-- that reach it through a draft / team / trade (R1732), the leagues row but
+-- for the three columns the round trip moves. commissioner_actions and
+-- league_chat are left out — the archive's and the restore's own record
+-- lands there, and R3–R5 / R27–R28 count it exactly.
 create or replace function pg_temp.fingerprint(p_league uuid) returns text language plpgsql as $$
 declare
   v_out text := '';
@@ -339,9 +394,17 @@ begin
       into v_part using p_league;
     v_out := v_out || r.relname || '=' || v_part || ';';
   end loop;
-  select md5(string_agg(to_jsonb(tl)::text, '|' order by tl.id)) into v_part
-  from team_lineups tl where tl.team_id in (select id from teams where league_id = p_league);
-  v_out := v_out || 'team_lineups=' || coalesce(v_part, '-') || ';';
+  for r in
+    select * from (values
+      ('draft_dnd_marks', 'draft_id', 'drafts'), ('draft_liveness', 'draft_id', 'drafts'), ('draft_queues', 'draft_id', 'drafts'),
+      ('team_autopilot', 'team_id', 'teams'), ('team_lineups', 'team_id', 'teams'),
+      ('trade_drops', 'trade_id', 'trades'), ('trade_items', 'trade_id', 'trades'), ('trade_votes', 'trade_id', 'trades')) v(tbl, key, parent)
+  loop
+    execute format('select coalesce(md5(string_agg(to_jsonb(t)::text, ''|'' order by to_jsonb(t)::text)), ''-'') from public.%I t where t.%I in (select id from public.%I where league_id = $1)',
+                   r.tbl, r.key, r.parent)
+      into v_part using p_league;
+    v_out := v_out || r.tbl || '=' || v_part || ';';
+  end loop;
   select md5((to_jsonb(l) - array['deleted_at', 'archived_by', 'updated_at'])::text) into v_part from leagues l where l.id = p_league;
   return md5(v_out || 'leagues=' || v_part);
 end;
@@ -350,7 +413,6 @@ $$;
 -- ---------------------------------------------------------------------------
 -- K. The gate — per role (F716)
 -- ---------------------------------------------------------------------------
-insert into r162 select 'FP0', to_jsonb(pg_temp.fingerprint(pg_temp.lg('LA')));
 
 set local role anon;
 select set_config('request.jwt.claims', '{"role": "anon"}', true);
@@ -379,7 +441,7 @@ select is(pg_temp.err($$ select soft_delete_league('b1620000-0000-4000-8000-0000
 select is(pg_temp.err(format($f$ select archive_league('b1620000-0000-4000-8000-0000000000a1', %L) $f$, repeat('x', 501))),
   '22023: archive_league: the reason is 501 characters — keep it to 500 or fewer', 'K9 a reason past 500 characters is refused by name');
 select is(pg_temp.err($$ select archive_league('b1620000-0000-4000-8000-0000000000b1') $$),
-  '55000: archive_league: the draft is in progress — finish or reset the draft before archiving the league', 'K10 a league that is drafting cannot be archived (D781)');
+  '55000: archive_league: the draft is in progress — finish or reset the draft before archiving the league', 'K10 a league that is drafting cannot be archived (D781 — Chris ruled R1726 2026-10-27: "Block it until the draft ends")');
 select is(pg_temp.err($$ select archive_league('b1620000-0000-4000-8000-0000000000b2') $$),
   '55000: archive_league: the draft is in progress — finish or reset the draft before archiving the league', 'K11 …nor one whose real draft is paused');
 reset role;
@@ -407,9 +469,30 @@ select is(
   (select format('%s|%s|%s|%s|%s', actor_id, target_type, target_id = pg_temp.lg('LA')::text, reason, metadata ->> 'verb')
    from commissioner_actions where league_id = pg_temp.lg('LA')),
   '99162000-0000-4000-8000-000000000001|league|t|season on hold|archive_league', 'R4 …the receipt names the actor, the league and the reason');
-select is(pg_temp.lines(pg_temp.lg('LA')), 'x162_user1 archived the league — reason: season on hold.', 'R5 ONE league line in plain words');
+select is((select message from league_chat where league_id = pg_temp.lg('LA') and is_system and message like 'x162_user1 %'), 'x162_user1 archived the league — reason: season on hold.', 'R5 ONE archive line in plain words');
 select is((select r ->> 'commissioner_action_id' from r162 where tag = 'R1'),
   (select id::text from commissioner_actions where league_id = pg_temp.lg('LA')), 'R6 the result names its receipt');
+-- R1728 (Chris 2026-10-27: "the trade goes away and has to be redone later").
+select is(
+  (select string_agg(right(id::text, 1) || ':' || status || ':' || (resolved_at = now()) || ':' || coalesce(resolved_by::text, '-'), ' ' order by id)
+   from trades where league_id = pg_temp.lg('LA')),
+  '1:cancelled:true:99162000-0000-4000-8000-000000000001 2:cancelled:true:99162000-0000-4000-8000-000000000001 3:cancelled:true:99162000-0000-4000-8000-000000000001 4:complete:false:-',
+  'R6a archiving CANCELS every unfinished trade — offered, in review, accepted but deferred — and leaves a finished one alone (R1728)');
+select is((select string_agg(distinct status_reason, ' | ') from trades where league_id = pg_temp.lg('LA') and status = 'cancelled'),
+  'Cancelled because the league was archived — propose it again after it''s restored.', 'R6b …each with the plain reason');
+select is((select format('%s|%s', r ->> 'trades_cancelled', jsonb_array_length(r -> 'cancelled_trade_ids')) from r162 where tag = 'R1'),
+  '3|3', 'R6c …the result counts them');
+select is(
+  (select count(*)::int from league_chat where league_id = pg_temp.lg('LA') and is_system
+     and message like 'Archiving the league cancelled 3 trades that weren''t finished — propose them again after the league is restored: %'),
+  1, 'R6d …ONE league line lists them');
+select is(
+  (select string_agg(format('%s:%s', right(user_id::text, 1), count), ' ' order by user_id)
+   from (select user_id, count(*) from notifications where type = 'league_trade_cancelled' and data ->> 'league_id' = pg_temp.lg('LA')::text group by user_id) x),
+  '3:3 5:3', 'R6e …and both managers are told, once per trade');
+select is((select jsonb_array_length(metadata -> 'cancelled_trade_ids') from commissioner_actions where league_id = pg_temp.lg('LA') and action_type = 'archive_league'),
+  3, 'R6f …the receipt names the cancelled trades');
+insert into r162 select 'FP0', to_jsonb(pg_temp.fingerprint(pg_temp.lg('LA')));
 
 -- Replay: nothing written.
 set local role authenticated;
@@ -419,7 +502,7 @@ reset role;
 select is((select format('%s|%s', r ->> 'changed', r ->> 'why') from r162 where tag = 'R7'),
   'false|already_archived — this league is already archived; nothing was written', 'R7 archiving again is a no-op that says why');
 select is(format('%s|%s', pg_temp.receipts(pg_temp.lg('LA')), (select count(*) from league_chat where league_id = pg_temp.lg('LA') and is_system)),
-  'archive_league:false>true|1', 'R8 …no second receipt, no second line');
+  'archive_league:false>true|2', 'R8 …no second receipt, no further line (the archive line + the trades line)');
 
 -- While archived: members cannot act, nor can anyone write its rows.
 set local role authenticated;
@@ -479,13 +562,18 @@ select is((select format('%s|%s|%s', r ->> 'changed', r ->> 'archived', r ->> 's
   'true|false|2', 'R25 the commissioner restores; the QB''s two not-final weeks re-queued (D782)');
 select is((select format('%s|%s', deleted_at is null, archived_by is null) from leagues where id = pg_temp.lg('LA')), 't|t', 'R26 the stamp is cleared');
 select is(pg_temp.receipts(pg_temp.lg('LA')), 'archive_league:false>true,restore_league:true>false', 'R27 ONE restore receipt, true → false');
-select is(pg_temp.lines(pg_temp.lg('LA')), 'x162_user1 archived the league — reason: season on hold. || x162_user1 restored the league.', 'R28 ONE restore line');
+select is((select string_agg(message, ' || ' order by created_at, message) from league_chat where league_id = pg_temp.lg('LA') and is_system and message like 'x162_user1 %'),
+  'x162_user1 archived the league — reason: season on hold. || x162_user1 restored the league.', 'R28 ONE restore line');
 select is(
   (select string_agg(format('%s:%s=%s', week, player_id, enqueued_at), ',' order by week) from score_fanout where player_id = 'x162-qb'),
   '8:x162-qb=2026-11-02 20:00:00+00,9:x162-qb=2026-11-09 20:00:00+00',
   'R29 the queue rows carry each line''s own stamp — the worker reads them as landed');
+select ok((select bool_and(deferred_until = now()) from score_fanout where player_id = 'x162-qb'),
+  'R29b R1731: …and deferred_until = the restore instant — fresh to the stall check, claimable at once');
+select is((select status from trades where id = 'e1620000-0000-4000-8000-000000000003'), 'cancelled',
+  'R29c the deferred trade stays cancelled — nothing executes on restore (R1728)');
 select is(pg_temp.fingerprint(pg_temp.lg('LA')), (select r #>> '{}' from r162 where tag = 'FP0'),
-  'R30 THE LEAGUE CAME BACK EXACTLY AS IT WAS — every guarded table byte-identical to before the archive');
+  'R30 THE LEAGUE CAME BACK EXACTLY AS IT WAS ARCHIVED — every league_id table, the eight parent-keyed ones and the leagues row byte-identical to the moment after the archive (the receipts and lines are counted separately)');
 set local role authenticated;
 select pg_temp.as_user(1);
 insert into r162 select 'R31', restore_league('b1620000-0000-4000-8000-0000000000a1');
@@ -493,7 +581,7 @@ reset role;
 select is((select format('%s|%s', r ->> 'changed', r ->> 'why') from r162 where tag = 'R31'),
   'false|not_archived — this league is not archived; nothing was written', 'R31 restoring again is a no-op that says why');
 select is(format('%s|%s', (select count(*) from commissioner_actions where league_id = pg_temp.lg('LA')), (select count(*) from league_chat where league_id = pg_temp.lg('LA') and is_system)),
-  '2|2', 'R32 …no third receipt or line');
+  '2|3', 'R32 …no third receipt and no further line');
 set local role authenticated;
 select pg_temp.as_user(3);
 select is(pg_temp.err($$ insert into league_chat (league_id, user_id, message, context, is_system)
@@ -555,6 +643,17 @@ select is(
   'FC:final FW:correction_window', 'J6 week finalize: the control''s week 7 is final, the archived league''s is not');
 select ok((select not (r::text like '%' || pg_temp.lg('FW')::text || '%') from r162 where tag = 'J6'),
   'J7 …the archived league was never claimed by the run');
+-- §Q — R1730: a queued score holds the week, by name; once it drains the
+-- week finalizes under the same run.
+insert into r162 select 'Q1', finalize_matchups('2026-10-29 11:05:00+00', pg_temp.lg('FQ'));
+select is(
+  (select format('%s|%s', (select status from league_weeks where league_id = pg_temp.lg('FQ')),
+     (select s ->> 'reason' || ':' || (s ->> 'queued') from jsonb_array_elements(r -> 'skipped') s where s ->> 'league_id' = pg_temp.lg('FQ')::text))
+   from r162 where tag = 'Q1'),
+  'correction_window|scores_queued:1', 'Q1 R1730: a score still queued for a rostered player holds the week — skipped BY NAME, never finalized over it (the every-league run in J6 held it too)');
+delete from score_fanout where season = 2026 and week = 7 and player_id = 'x162-q2';
+insert into r162 select 'Q2', finalize_matchups('2026-10-29 11:06:00+00', pg_temp.lg('FQ'));
+select is((select status from league_weeks where league_id = pg_temp.lg('FQ')), 'final', 'Q2 …once it is written (the row gone) the week finalizes');
 -- Lineup lock.
 insert into r162 select 'J8', lineup_lock_tick('2026-11-04 06:00:00+00', null);
 select is(
@@ -568,7 +667,9 @@ insert into r162 select 'J10', trade_tick('2026-10-29 12:00:00+00', null);
 select is(
   (select string_agg(right(l.name, 2) || ':' || t.status, ' ' order by l.name) from trades t join leagues l on l.id = t.league_id
    where l.name in ('pgtap-x162-TW', 'pgtap-x162-TC')),
-  'TC:invalid TW:proposed', 'J10 trade tick: the control''s out-of-season offer is swept; the archived league''s stays EXACTLY as it was');
+  'TC:invalid TW:cancelled', 'J10 trade tick: the control''s out-of-season offer is swept; the archived league''s was CANCELLED at the archive (R1728) and the tick leaves it alone');
+select is((select resolved_at from trades t where t.league_id = pg_temp.lg('TW')), '2026-10-29 09:00:00+00'::timestamptz,
+  'J10b …resolved at the archive instant, never by the tick');
 select ok((select not (r::text like '%' || pg_temp.lg('TW')::text || '%') from r162 where tag = 'J10'),
   'J11 …the archived league is neither a candidate nor claimed');
 insert into r162 select 'J12', trade_tick('2026-10-29 12:00:00+00', pg_temp.lg('TW'));
@@ -605,6 +706,56 @@ insert into r162 select 'J18', league_week_advance('2026-11-04 07:05:00+00', pg_
 select is((select status from league_weeks where league_id = pg_temp.lg('VW')), 'live', 'J18 restored: the week opens at the next advance');
 insert into r162 select 'J19', finalize_matchups('2026-11-04 07:05:00+00', pg_temp.lg('FW'));
 select is((select status from league_weeks where league_id = pg_temp.lg('FW')), 'final', 'J19 restored: the finished week is finalized by the normal rule');
+
+-- ---------------------------------------------------------------------------
+-- S. R1725 — an archived league still owns its scoring system
+-- ---------------------------------------------------------------------------
+select pg_temp.as_user(1);
+insert into r162 select 'S0', archive_league_internal(pg_temp.lg('LR'), null, '2026-10-29 09:00:00+00');
+set local role authenticated;
+select pg_temp.as_user(1);
+select alike(pg_temp.err($$ update scoring_systems set rules = (select rules from scoring_systems where is_template and name = 'ESPN Full PPR')
+  where id = '51620000-0000-4000-8000-000000000001' $$),
+  '42501: scoring system 51620000-0000-4000-8000-000000000001 is the scoring of league "pgtap-x162-LR"%',
+  'S1 the owner''s DIRECT rules write on an archived league''s scoring is refused — it still belongs to the league (R1725)');
+reset role;
+select is((select rules = (select rules from scoring_systems where is_template and name = 'ESPN Standard') from scoring_systems where id = '51620000-0000-4000-8000-000000000001'),
+  true, 'S2 …and nothing moved');
+
+-- ---------------------------------------------------------------------------
+-- O. F851 — the operator restores; R1733 — the archived wording
+-- ---------------------------------------------------------------------------
+select pg_temp.as_user(1);
+insert into r162 select 'O0', archive_league_internal(pg_temp.lg('LO'), null, '2026-10-29 09:00:00+00');
+set local role authenticated;
+select pg_temp.as_user(1);
+select is(pg_temp.err($$ select op_restore_league('b1620000-0000-4000-8000-000000000092', gen_random_uuid()) $$),
+  '42501: restore_league: only a platform operator can use the operator tools (M8 TD1)', 'O1 the league''s own commissioner cannot use the operator''s door');
+select pg_temp.as_user(7);
+select is(pg_temp.err(format($f$ select op_set_commissioner('b1620000-0000-4000-8000-000000000092', %L, gen_random_uuid()) $f$,
+    (select id from league_members where league_id = pg_temp.lg('LO') and role = 'manager' limit 1))),
+  'P0002: set_commissioner: league b1620000-0000-4000-8000-000000000092 is archived — restore it first (the admin league page''s Restore)',
+  'O2 R1733: an operator verb on an archived league says ARCHIVED, not "does not exist"');
+insert into r162 select 'O3', op_restore_league('b1620000-0000-4000-8000-000000000092', 'a1620000-0000-4000-8000-000000000001', 'commissioner gone');
+reset role;
+select is((select format('%s|%s', r ->> 'changed', r ->> 'archived') from r162 where tag = 'O3'), 'true|false', 'O3 the operator restores the league');
+select is((select deleted_at is null from leagues where id = pg_temp.lg('LO')), true, 'O4 …the stamp is cleared');
+select is((select string_agg(message, ' || ' order by created_at, message) from league_chat where league_id = pg_temp.lg('LO') and is_system and message like 'FieldScout%'),
+  'FieldScout restored the league.', 'O5 …one "FieldScout" line, no operator named');
+select is((select format('%s|%s|%s|%s', verb, scope, reason, after ->> 'archived') from platform_operator_actions where action_id = 'a1620000-0000-4000-8000-000000000001'),
+  'restore_league|league|commissioner gone|false', 'O6 …one operator receipt');
+select is((select string_agg(action_type, ',' order by created_at) from commissioner_actions where league_id = pg_temp.lg('LO')),
+  'archive_league', 'O7 …and no commissioner-log row for the operator (D671)');
+set local role authenticated;
+select pg_temp.as_user(7);
+insert into r162 select 'O8', op_restore_league('b1620000-0000-4000-8000-000000000092', 'a1620000-0000-4000-8000-000000000001', 'commissioner gone');
+insert into r162 select 'O9', op_restore_league('b1620000-0000-4000-8000-000000000092', 'a1620000-0000-4000-8000-000000000002');
+reset role;
+select is((select format('%s|%s', (select r ->> 'replayed' from r162 where tag = 'O8'), (select r ->> 'why' from r162 where tag = 'O9'))),
+  'true|not_archived — this league is not archived; nothing was written', 'O8 a replay returns the receipt; a restore of a live league is the no-op');
+select is(format('%s|%s', (select count(*) from platform_operator_actions where league_id = pg_temp.lg('LO')),
+    (select count(*) from league_chat where league_id = pg_temp.lg('LO') and message like 'FieldScout%')),
+  '1|1', 'O9 …neither wrote a receipt or a line');
 
 -- ---------------------------------------------------------------------------
 -- X. Account deletion is never blocked by an archived league

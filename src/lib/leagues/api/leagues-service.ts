@@ -35,6 +35,7 @@ import {
   mintScheduleSeed,
 } from '../settings/league-settings'
 import { teamNameSchema } from '../team-name'
+import { archivedLeagueResult } from './inseason-errors'
 
 type Supabase = SupabaseClient<Database>
 
@@ -240,6 +241,8 @@ const PATCH_FIELD_ERRORS: ReadonlyArray<{ marker: string; field: string }> = [
 
 /** Shared error mapping for the two PATCH-path RPCs (D70). */
 function mapPatchRpcError(error: { code: string; message: string }): ServiceResult {
+  const archived = archivedLeagueResult(error)
+  if (archived) return archived
   if (error.code === '42501') {
     return { status: 403, body: { error: 'Only the commissioner can update this league.' } }
   }

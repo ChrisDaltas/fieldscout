@@ -22,6 +22,7 @@ import {
   ARCHIVE_CO_COMMISH_REASON,
   ARCHIVE_DRAFT_REASON,
   ARCHIVE_MEMBER_REASON,
+  ARCHIVE_TRADES_LINE,
   archiveConfirmLines,
   archivedOn,
   archiveGate,
@@ -119,9 +120,13 @@ describe('archiveGate — the commissioner only, never mid-draft', () => {
     expect(archiveGate({ role: 'manager', status: 'in_season', draftStatus: null })).toEqual({ kind: 'not_commissioner', reason: ARCHIVE_MEMBER_REASON })
     expect(archiveGate({ role: null, status: 'in_season', draftStatus: null })).toEqual({ kind: 'not_commissioner', reason: ARCHIVE_MEMBER_REASON })
   })
-  it('the confirm names the in-season catch-up and the missed draft time only when they apply', () => {
+  it('the confirm names the trades (R1727 / R1728), the in-season catch-up and the missed draft time only when they apply', () => {
     expect(archiveConfirmLines({ inSeason: false, draftScheduled: false })).toHaveLength(3)
-    expect(archiveConfirmLines({ inSeason: true, draftScheduled: false }).at(-1)).toMatch(/^When you restore it, anything that came due meanwhile/)
+    const season = archiveConfirmLines({ inSeason: true, draftScheduled: false })
+    expect(season).toContain(ARCHIVE_TRADES_LINE)
+    expect(ARCHIVE_TRADES_LINE).toMatch(/cancelled now/)
+    expect(season.at(-1)).toMatch(/^When you restore it, anything that came due meanwhile/)
+    expect(season.join(' ')).not.toMatch(/trade deadline expire/)
     expect(archiveConfirmLines({ inSeason: false, draftScheduled: true }).at(-1)).toMatch(/won’t start the draft/)
   })
   it('the date reads plainly', () => {

@@ -1,13 +1,16 @@
 -- ============================================================================
 -- 212 — leagues are ARCHIVED, never deleted; the commissioner restores them
 --       (ledger F716; Chris 2026-10-27; spec §7.2 / §12.1 / §15.1 / §17
---       v2.16.109; PROGRESS D780–D786; FULL rigour — permissions, scheduled
---       jobs)
+--       v2.16.109; PROGRESS D780–D788; FULL rigour — permissions, scheduled
+--       jobs; amended in place for the PR #543 review, unpushed)
 -- ============================================================================
 --
 -- THE RULING (Chris, 2026-10-27, relayed verbatim by the orchestrator):
 --   "I don't really see the need to delete the league permanently" — asked,
 --   he chose "Archive, commissioner can restore".
+-- And on the review's questions (2026-10-27, verbatim): trades (R1728) —
+--   "the trade goes away and has to be redone later"; mid-draft (R1726) —
+--   "Block it until the draft ends".
 -- So: "Delete league" becomes ARCHIVE LEAGUE. Only the commissioner archives
 -- (co-commissioners and managers are refused). An archived league leaves
 -- every member's league list and navigation but keeps all of its data and
@@ -50,20 +53,45 @@
 --      ORDER (forced by the backstop, D357(3)'s precedent): archive writes
 --      its receipt and line BEFORE it stamps `deleted_at`; restore clears it
 --      FIRST and then writes them — so the guard below never meets them.
---      ARCHIVE IS REFUSED WHILE A DRAFT IS IN PROGRESS (D781): the league
---      is `drafting`, or its real draft is live or paused — "finish or reset
---      the draft first". Everything else (setup, scheduled, in season,
---      playoffs, complete) archives.
+--      ARCHIVE IS REFUSED WHILE A DRAFT IS IN PROGRESS (D781 — Chris ruled
+--      it, R1726): the league is `drafting`, or its real draft is live or
+--      paused — "finish or reset the draft first". Everything else (setup,
+--      scheduled, in season, playoffs, complete) archives.
+--      ARCHIVE CANCELS EVERY TRADE NOT FINISHED (D787 — Chris ruled it,
+--      R1728): offered, in review or a league vote, accepted but waiting —
+--      status `cancelled`, reason "Cancelled because the league was archived
+--      — propose it again after it's restored.", both managers notified
+--      (`league_trade_cancelled`), one league line listing them, the ids in
+--      the receipt's metadata. Nothing is held, so nothing executes on
+--      restore.
 --      RESTORE CATCHES SCORING UP (D782): the scoring fan-out skipped the
 --      league while it was archived, so restore re-queues `score_fanout`
 --      for every rostered player with a stat line in each of the league's
 --      not-final weeks (upcoming rows are HELD by the worker until the week
---      opens — §22.2's own rule), exactly as ingestion would have. Nothing
+--      opens — §22.2's own rule), exactly as ingestion would have, stamped
+--      `deferred_until = p_at` (R1731: fresh to the stall check). Nothing
 --      else is replayed or shifted: waivers that came due run at the next
---      tick, offers past the trade deadline expire, trades whose review
---      ended go through, weeks advance and finalize — each under its normal
---      rule, as after an operator pause (TD4 / 183). The one exception is
---      the draft (below).
+--      tick and weeks advance and finalize under their normal rules, as
+--      after an operator pause (TD4 / 183) — BUILDER DEFAULTS pending Chris
+--      (Q104), as is the draft exception below. The two doors share
+--      `league_restore_apply_internal` (the unstamp + the re-queue).
+--   1b. F851 — `op_restore_league(league, action_id, reason?)`: a platform
+--      operator restores an archived league (its commissioner may be gone),
+--      through `op_archived_league_prelude_internal` (184's prelude, but the
+--      row lock is taken whatever the stamp and a missing league is named as
+--      missing — R1733), the shared apply, one `platform_operator_actions`
+--      receipt and a "FieldScout restored the league." line; no
+--      commissioner_actions row (D671). op_set_commissioner can then seat a
+--      commissioner. 184's own prelude now names an archived league as
+--      archived ("restore it first") instead of "does not exist" (R1733).
+--   1c. R1730 — `finalize_matchups` never finalizes a league-week while a
+--      score for one of the league's rostered players is still in
+--      `score_fanout` (skipped by name, `scores_queued`) — the general rule,
+--      for every league; it is what makes the restore's catch-up safe.
+--   1d. R1725 — an ARCHIVED league still counts as a user of its scoring
+--      system: `scoring_system_league_use_internal` (170) and 104's rules
+--      guard drop `deleted_at IS NULL`, so an archived league's custom
+--      scoring stays behind the receipted editor and the validator.
 --
 --   2. THE FREEZE — `league_archived_guard_internal()`, a BEFORE INSERT /
 --      UPDATE / DELETE ROW trigger on every table that holds a league's
@@ -113,10 +141,17 @@
 -- derived by script: only lines marked `-- 212 / F716` are inserted, each
 -- after an anchor asserted unique, and stripping those lines gives the file
 -- text back byte for byte (pgTAP 162 A9 pins that through pg_temp.un212):
---   trade_tick         199:7426-7592  2 hunks (+2 / -0)
---   mock_draft_expire  095:1308-1402  1 hunk  (+1 / -0)
---   draft_tick         097:55-1044    1 hunk  (+1 / -0)
---   soft_delete_league 169:1929-1973  replaced whole (retired — not a hunk)
+--   trade_tick                          199:7426-7592  2 hunks (+2 / -0)
+--   mock_draft_expire                   095:1308-1402  1 hunk  (+1 / -0)
+--   draft_tick                          097:55-1044    1 hunk  (+1 / -0)
+--   finalize_matchups                   183:876-1149   1 hunk  (+6 / -0)   R1730
+--   op_verb_prelude_internal            184:573-617    1 hunk  (+1 / -0)   R1733
+--   scoring_system_league_use_internal  170:2480-2497  1 hunk  (+1 / -1)   R1725 — a REPLACED line, marked `-- F716 / 212`
+--   scoring_systems_rules_guard         104:391-468    1 hunk  (+1 / -1)   R1725 — likewise (their md5 pins are re-cut)
+--   soft_delete_league                  169:1929-1973  replaced whole (retired — not a hunk)
+-- 210 (PR #541, unmerged when this was written) adds
+-- scoring_system_label_lock_internal with the same `deleted_at IS NULL`
+-- filter: WHOEVER MERGES SECOND drops it under D137 against 210 (F858).
 --
 -- MIGRATION CHECKLIST (tasks-M* §4.4):
 --   * One column (nullable, FK ON DELETE SET NULL, a CHECK that it is set
@@ -130,7 +165,7 @@
 --     anon / authenticated. Replaced bodies keep their DEFINER / search_path
 --     and their REVOKEs are restated.
 --   * Time only through p_at (the doors pass now()).
---   * Typegen: one column + two function signatures (additive; alias block
+--   * Typegen: one column + the doors' and internals' signatures (additive; alias block
 --     kept — hand-merged, F792).
 --   * WAIVERS: R6 — no staging clone; rehearsal evidence = applied to the
 --     shared local DB with psql over 001–210 (+ 211 if present) plus the
@@ -366,6 +401,19 @@ AS $$
 $$;
 REVOKE ALL ON FUNCTION league_archive_who_internal(UUID) FROM PUBLIC, anon, authenticated;
 
+-- The trade reason (R1728 — Chris 2026-10-27: "the trade goes away and has
+-- to be redone later"). One place, so the trade row, the notification and
+-- the league line say the same words.
+CREATE OR REPLACE FUNCTION league_archive_trade_reason_internal()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT 'Cancelled because the league was archived — propose it again after it''s restored.'::text;
+$$;
+REVOKE ALL ON FUNCTION league_archive_trade_reason_internal() FROM PUBLIC, anon, authenticated;
+
 CREATE OR REPLACE FUNCTION archive_league_internal(
   p_league_id UUID,
   p_reason    TEXT,
@@ -375,13 +423,20 @@ LANGUAGE plpgsql
 SET search_path = ''
 AS $$
 DECLARE
-  v_actor   UUID := auth.uid();
-  v_league  public.leagues;
-  v_found   BOOLEAN;
-  v_reason  TEXT;
-  v_receipt UUID;
-  v_post    TEXT;
-  v_cnt     INTEGER;
+  v_actor     UUID := auth.uid();
+  v_league    public.leagues;
+  v_found     BOOLEAN;
+  v_reason    TEXT;
+  v_receipt   UUID;
+  v_post      TEXT;
+  v_cnt       INTEGER;
+  v_t         RECORD;
+  v_n         UUID;
+  v_trade_ids UUID[] := '{}';
+  v_summaries TEXT[] := '{}';
+  v_notified  JSONB := '[]'::jsonb;
+  v_trade_why TEXT := public.league_archive_trade_reason_internal();
+  v_trade_post TEXT;
 BEGIN
   IF p_at IS NULL THEN
     RAISE EXCEPTION 'archive_league: p_at is required (the TimeProvider seam)' USING ERRCODE = '22023';
@@ -417,10 +472,11 @@ BEGIN
       'league_id', p_league_id, 'changed', FALSE, 'archived', TRUE,
       'archived_at', v_league.deleted_at,
       'why', 'already_archived — this league is already archived; nothing was written',
-      'commissioner_action_id', NULL, 'evaluated_at', p_at);
+      'commissioner_action_id', NULL, 'trades_cancelled', 0, 'evaluated_at', p_at);
   END IF;
 
-  -- (5) D781: never mid-draft.
+  -- (5) D781 — Chris ruled R1726 (2026-10-27, "Block it until the draft
+  --     ends"): never mid-draft.
   IF v_league.status = 'drafting' OR EXISTS (
        SELECT 1 FROM public.drafts d
        WHERE d.league_id = p_league_id AND NOT d.is_mock AND d.status IN ('live', 'paused')) THEN
@@ -428,19 +484,54 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
-  -- (6) THE RECEIPT AND THE LINE — BEFORE the stamp, so the freeze never
-  --     meets them (the banner's ORDER).
+  -- (6) R1728 — Chris 2026-10-27: "the trade goes away and has to be redone
+  --     later". Every trade not finished — offered, in review or a league
+  --     vote, accepted but waiting (deferred) — is CANCELLED now, with the
+  --     reason on the trade, both managers told, and one league line below.
+  --     Nothing is held, so nothing can execute on restore. Before the
+  --     stamp, so the freeze never meets these writes.
+  FOR v_t IN
+    UPDATE public.trades t
+    SET status = 'cancelled', status_reason = v_trade_why, resolved_at = p_at, resolved_by = v_actor
+    WHERE t.league_id = p_league_id AND t.status IN ('proposed', 'accepted', 'in_review')
+    RETURNING t.id, t.proposer_team_id, t.recipient_team_id, t.created_at
+  LOOP
+    v_trade_ids := v_trade_ids || v_t.id;
+    v_summaries := v_summaries || COALESCE(
+      public.trade_summary_internal(v_t.id),
+      (SELECT pt.name FROM public.teams pt WHERE pt.id = v_t.proposer_team_id) || ' ↔ '
+        || (SELECT rt.name FROM public.teams rt WHERE rt.id = v_t.recipient_team_id));
+    FOR v_n IN
+      SELECT public.trade_notify_team_internal(
+        p_league_id, side, 'league_trade_cancelled', 'A trade was cancelled',
+        COALESCE(v_summaries[array_upper(v_summaries, 1)], 'A trade') || ' — ' || v_trade_why,
+        jsonb_build_object('trade_id', v_t.id, 'status', 'cancelled', 'reason', 'league_archived'), FALSE)
+      FROM unnest(ARRAY[v_t.proposer_team_id, v_t.recipient_team_id]) side
+    LOOP
+      IF v_n IS NOT NULL THEN v_notified := v_notified || to_jsonb(v_n); END IF;
+    END LOOP;
+  END LOOP;
+
+  -- (7) THE RECEIPT AND THE LINES — BEFORE the stamp (the banner's ORDER).
   v_receipt := public.draft_commish_receipt_internal(
     p_league_id, FALSE, 'archive_league', 'archive_league', 'league', p_league_id::text, v_reason,
     jsonb_build_object('archived', FALSE),
     jsonb_build_object('archived', TRUE),
-    jsonb_build_object('status', v_league.status, 'season', v_league.season));
+    jsonb_build_object('status', v_league.status, 'season', v_league.season,
+                       'cancelled_trade_ids', to_jsonb(v_trade_ids)));
   v_post := public.league_archive_who_internal(v_actor) || ' archived the league'
     || CASE WHEN v_reason IS NOT NULL THEN ' — reason: ' || v_reason ELSE '' END || '.';
   INSERT INTO public.league_chat (league_id, user_id, message, context, is_system)
   VALUES (p_league_id, NULL, v_post, 'league', TRUE);
+  IF cardinality(v_trade_ids) > 0 THEN
+    v_trade_post := 'Archiving the league cancelled ' || cardinality(v_trade_ids)
+      || CASE WHEN cardinality(v_trade_ids) = 1 THEN ' trade that wasn''t finished — propose it' ELSE ' trades that weren''t finished — propose them' END
+      || ' again after the league is restored: ' || array_to_string(v_summaries, '; ') || '.';
+    INSERT INTO public.league_chat (league_id, user_id, message, context, is_system)
+    VALUES (p_league_id, NULL, v_trade_post, 'league', TRUE);
+  END IF;
 
-  -- (7) THE STAMP — from here the league is frozen.
+  -- (8) THE STAMP — from here the league is frozen.
   UPDATE public.leagues
   SET deleted_at = p_at, archived_by = v_actor, updated_at = p_at
   WHERE id = p_league_id;
@@ -454,12 +545,73 @@ BEGIN
     'league_id', p_league_id, 'changed', TRUE, 'archived', TRUE,
     'archived_at', p_at, 'status', v_league.status,
     'commissioner_action_id', v_receipt, 'post', v_post,
+    'trades_cancelled', cardinality(v_trade_ids), 'cancelled_trade_ids', to_jsonb(v_trade_ids),
+    'trade_post', v_trade_post, 'notified_user_ids', v_notified,
     'reason', v_reason, 'evaluated_at', p_at);
 END;
 $$;
 REVOKE ALL ON FUNCTION archive_league_internal(UUID, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
 COMMENT ON FUNCTION archive_league_internal(UUID, TEXT, TIMESTAMPTZ) IS
-  'Migration 212 (F716): archive_league at an injected instant. PLAIN, REVOKEd — reached through the door and the tests only.';
+  'Migration 212 (F716): archive_league at an injected instant. PLAIN, REVOKEd — reached through the door and the tests only. Cancels every unfinished trade first (R1728).';
+
+-- THE SHARED RESTORE (the commissioner's door and the operator's, F851): the
+-- unstamp and the scoring catch-up. The caller has locked the row, checked
+-- its gate and that the league IS archived; it writes its own receipt and
+-- line after this returns. Returns the number of queue rows written.
+CREATE OR REPLACE FUNCTION league_restore_apply_internal(p_league_id UUID, p_at TIMESTAMPTZ)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_season   INTEGER;
+  v_cnt      INTEGER;
+  v_requeued INTEGER := 0;
+BEGIN
+  IF p_league_id IS NULL OR p_at IS NULL THEN
+    RAISE EXCEPTION 'league_restore_apply_internal: a league and an instant are required' USING ERRCODE = '22023';
+  END IF;
+  SELECT l.season INTO v_season FROM public.leagues l WHERE l.id = p_league_id AND l.deleted_at IS NOT NULL;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'league_restore_apply_internal: league % is not archived', p_league_id USING ERRCODE = 'P0001';
+  END IF;
+
+  -- (1) THE UNSTAMP FIRST — the freeze lifts, then the caller's record is written.
+  UPDATE public.leagues
+  SET deleted_at = NULL, archived_by = NULL, updated_at = p_at
+  WHERE id = p_league_id;
+  GET DIAGNOSTICS v_cnt = ROW_COUNT;
+  IF v_cnt <> 1 THEN
+    RAISE EXCEPTION 'league_restore_apply_internal: the restore touched % rows, expected exactly 1 (league %)', v_cnt, p_league_id
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  -- (2) D782 — SCORING CATCHES UP. Every rostered player with a stat line in
+  --     one of the league's not-final weeks is queued exactly as ingestion
+  --     queues him (the stamp = his line's own updated_at, so the worker
+  --     reads him as landed); an existing row is left alone. An upcoming
+  --     week's rows are held by the worker until the week opens. R1731:
+  --     `deferred_until = p_at` marks the row as fresh at the restore, so
+  --     the stall check (124) does not read an old stat stamp as a stalled
+  --     drain; the row is claimable at once.
+  INSERT INTO public.score_fanout (season, week, player_id, enqueued_at, deferred_until)
+  SELECT ps.season, ps.week, ps.player_id, min(ps.updated_at), p_at
+  FROM public.league_weeks lw
+  JOIN public.league_rosters r ON r.league_id = lw.league_id
+  JOIN public.player_stats ps ON ps.player_id = r.player_id AND ps.season = lw.season AND ps.week = lw.week
+  WHERE lw.league_id = p_league_id
+    AND lw.season = v_season
+    AND lw.status IN ('upcoming', 'live', 'correction_window')
+    AND ps.updated_at IS NOT NULL
+  GROUP BY ps.season, ps.week, ps.player_id
+  ON CONFLICT (season, week, player_id) DO NOTHING;
+  GET DIAGNOSTICS v_requeued = ROW_COUNT;
+  RETURN v_requeued;
+END;
+$$;
+REVOKE ALL ON FUNCTION league_restore_apply_internal(UUID, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+COMMENT ON FUNCTION league_restore_apply_internal(UUID, TIMESTAMPTZ) IS
+  'Migration 212 (F716 / F851): the restore both doors share — clear the archived stamp, re-queue the league''s scoring for its not-final weeks (D782; deferred_until = p_at, R1731). PLAIN, REVOKEd; the caller gates and writes its own record.';
 
 CREATE OR REPLACE FUNCTION restore_league_internal(
   p_league_id UUID,
@@ -476,8 +628,7 @@ DECLARE
   v_reason   TEXT;
   v_receipt  UUID;
   v_post     TEXT;
-  v_cnt      INTEGER;
-  v_requeued INTEGER := 0;
+  v_requeued INTEGER;
 BEGIN
   IF p_at IS NULL THEN
     RAISE EXCEPTION 'restore_league: p_at is required (the TimeProvider seam)' USING ERRCODE = '22023';
@@ -507,15 +658,8 @@ BEGIN
       'commissioner_action_id', NULL, 'scores_requeued', 0, 'evaluated_at', p_at);
   END IF;
 
-  -- (1) THE UNSTAMP FIRST — the freeze lifts, then the record is written.
-  UPDATE public.leagues
-  SET deleted_at = NULL, archived_by = NULL, updated_at = p_at
-  WHERE id = p_league_id;
-  GET DIAGNOSTICS v_cnt = ROW_COUNT;
-  IF v_cnt <> 1 THEN
-    RAISE EXCEPTION 'restore_league: the restore touched % rows, expected exactly 1 (league %)', v_cnt, p_league_id
-      USING ERRCODE = 'P0001';
-  END IF;
+  -- (1) THE UNSTAMP + THE SCORING CATCH-UP (shared with the operator's door).
+  v_requeued := public.league_restore_apply_internal(p_league_id, p_at);
 
   -- (2) THE RECEIPT AND THE LINE.
   v_receipt := public.draft_commish_receipt_internal(
@@ -529,24 +673,6 @@ BEGIN
   INSERT INTO public.league_chat (league_id, user_id, message, context, is_system)
   VALUES (p_league_id, NULL, v_post, 'league', TRUE);
 
-  -- (3) D782 — SCORING CATCHES UP. Every rostered player with a stat line in
-  --     one of the league's not-final weeks is queued exactly as ingestion
-  --     queues him (the stamp = his line's own updated_at, so the worker
-  --     reads him as landed); an existing row is left alone. An upcoming
-  --     week's rows are held by the worker until the week opens.
-  INSERT INTO public.score_fanout (season, week, player_id, enqueued_at)
-  SELECT ps.season, ps.week, ps.player_id, min(ps.updated_at)
-  FROM public.league_weeks lw
-  JOIN public.league_rosters r ON r.league_id = lw.league_id
-  JOIN public.player_stats ps ON ps.player_id = r.player_id AND ps.season = lw.season AND ps.week = lw.week
-  WHERE lw.league_id = p_league_id
-    AND lw.season = v_league.season
-    AND lw.status IN ('upcoming', 'live', 'correction_window')
-    AND ps.updated_at IS NOT NULL
-  GROUP BY ps.season, ps.week, ps.player_id
-  ON CONFLICT (season, week, player_id) DO NOTHING;
-  GET DIAGNOSTICS v_requeued = ROW_COUNT;
-
   RETURN jsonb_build_object(
     'league_id', p_league_id, 'changed', TRUE, 'archived', FALSE,
     'archived_at_was', v_league.deleted_at, 'status', v_league.status,
@@ -558,6 +684,116 @@ $$;
 REVOKE ALL ON FUNCTION restore_league_internal(UUID, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
 COMMENT ON FUNCTION restore_league_internal(UUID, TEXT, TIMESTAMPTZ) IS
   'Migration 212 (F716): restore_league at an injected instant. PLAIN, REVOKEd — reached through the door and the tests only.';
+
+-- ---------------------------------------------------------------------------
+-- F851 — THE OPERATOR'S RESTORE. A league whose commissioner is gone could
+-- otherwise never come back (the commissioner restores; op_set_commissioner
+-- refuses an archived league). The operator restores it — "FieldScout
+-- restored the league." — and can then seat a commissioner with the existing
+-- op_set_commissioner. No commissioner_actions row (D671: the admin is never
+-- named to the league); one platform_operator_actions receipt.
+-- ---------------------------------------------------------------------------
+-- 184's prelude, the archived-league variant (R1733): the same gate, action
+-- id rule, reason bound and replay; the row lock taken WHATEVER the stamp,
+-- and a missing league named as missing.
+CREATE OR REPLACE FUNCTION op_archived_league_prelude_internal(
+  p_verb TEXT, p_league_id UUID, p_action_id UUID, p_reason TEXT
+) RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_rec public.platform_operator_actions;
+BEGIN
+  IF NOT public.is_platform_operator() THEN
+    RAISE EXCEPTION '%: only a platform operator can use the operator tools (M8 TD1)', p_verb
+      USING ERRCODE = '42501';
+  END IF;
+  IF p_action_id IS NULL THEN
+    RAISE EXCEPTION '%: p_action_id is required — it makes a retry safe (M8 TD3)', p_verb
+      USING ERRCODE = '22023';
+  END IF;
+  IF p_reason IS NOT NULL AND (length(btrim(p_reason, E' \t\r\n')) = 0 OR length(p_reason) > 500) THEN
+    RAISE EXCEPTION '%: a reason is optional, but when given it is non-blank and at most 500 characters', p_verb
+      USING ERRCODE = '22023';
+  END IF;
+  SELECT * INTO v_rec FROM public.platform_operator_actions a WHERE a.action_id = p_action_id;
+  IF FOUND THEN
+    IF v_rec.verb <> p_verb OR v_rec.actor_id <> auth.uid() OR v_rec.league_id IS DISTINCT FROM p_league_id THEN
+      RAISE EXCEPTION '%: action id % was already used for a different operator action', p_verb, p_action_id
+        USING ERRCODE = '22023';
+    END IF;
+    RETURN COALESCE(v_rec.after, '{}'::jsonb) || jsonb_build_object('replayed', TRUE, 'receipt_id', v_rec.id);
+  END IF;
+  PERFORM 1 FROM public.leagues l WHERE l.id = p_league_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION '%: league % does not exist', p_verb, p_league_id USING ERRCODE = 'P0002';
+  END IF;
+  RETURN NULL;
+END;
+$$;
+REVOKE ALL ON FUNCTION op_archived_league_prelude_internal(TEXT, UUID, UUID, TEXT) FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION op_restore_league_internal(
+  p_league_id UUID, p_action_id UUID, p_reason TEXT, p_at TIMESTAMPTZ
+) RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_replay   JSONB;
+  v_league   public.leagues;
+  v_requeued INTEGER;
+  v_after    JSONB;
+BEGIN
+  v_replay := public.op_archived_league_prelude_internal('restore_league', p_league_id, p_action_id, p_reason);
+  IF v_replay IS NOT NULL THEN
+    RETURN v_replay;
+  END IF;
+  IF p_at IS NULL THEN
+    RAISE EXCEPTION 'restore_league: p_at is required (the TimeProvider seam)' USING ERRCODE = '22023';
+  END IF;
+  SELECT l.* INTO v_league FROM public.leagues l WHERE l.id = p_league_id;
+
+  -- THE NO-OP (§24.4: writes nothing and says why).
+  IF v_league.deleted_at IS NULL THEN
+    RETURN jsonb_build_object('changed', FALSE, 'league_id', p_league_id,
+      'why', 'not_archived — this league is not archived; nothing was written');
+  END IF;
+
+  v_requeued := public.league_restore_apply_internal(p_league_id, p_at);
+  PERFORM public.op_league_line_internal(p_league_id, 'FieldScout restored the league.');
+  v_after := jsonb_build_object('changed', TRUE, 'league_id', p_league_id, 'archived', FALSE,
+    'archived_at_was', v_league.deleted_at, 'archived_by_was', v_league.archived_by,
+    'scores_requeued', v_requeued, 'restored_at', p_at);
+  PERFORM public.log_operator_action_internal(p_action_id, auth.uid(), 'restore_league',
+    'league', p_league_id, NULLIF(btrim(COALESCE(p_reason, ''), E' \t\r\n'), ''),
+    jsonb_build_object('archived', TRUE, 'archived_at', v_league.deleted_at), v_after);
+  RETURN v_after;
+END;
+$$;
+REVOKE ALL ON FUNCTION op_restore_league_internal(UUID, UUID, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+COMMENT ON FUNCTION op_restore_league_internal(UUID, UUID, TEXT, TIMESTAMPTZ) IS
+  'Migration 212 (F851): the body of op_restore_league at an injected instant. PLAIN, REVOKEd — reached through the door and the tests only.';
+
+CREATE OR REPLACE FUNCTION op_restore_league(
+  p_league_id UUID, p_action_id UUID DEFAULT NULL, p_reason TEXT DEFAULT NULL
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NOT public.is_platform_operator() THEN
+    RAISE EXCEPTION 'restore_league: only a platform operator can use the operator tools (M8 TD1)' USING ERRCODE = '42501';
+  END IF;
+  RETURN public.op_restore_league_internal(p_league_id, p_action_id, p_reason, now());
+END;
+$$;
+REVOKE ALL ON FUNCTION op_restore_league(UUID, UUID, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION op_restore_league(UUID, UUID, TEXT) TO authenticated;
+COMMENT ON FUNCTION op_restore_league(UUID, UUID, TEXT) IS
+  'Migration 212 (F851): an operator restores an archived league (its commissioner may be gone). Operators only (in-body gate); idempotent on p_action_id; a league that is not archived = no-op, nothing written. Shares the commissioner''s restore (league_restore_apply_internal); one platform_operator_actions receipt + a "FieldScout restored the league." line; no commissioner_actions row (D671). Then op_set_commissioner can seat a commissioner.';
 
 CREATE OR REPLACE FUNCTION archive_league(p_league_id UUID, p_reason TEXT DEFAULT NULL)
 RETURNS JSONB
@@ -649,7 +885,7 @@ BEGIN
   FOR v_lg IN
     SELECT l.id FROM public.leagues l
     WHERE (p_league_id IS NULL OR l.id = p_league_id)
-      AND l.deleted_at IS NULL   -- 212 / F716: an archived league is frozen — skipped, its trades left exactly as they are
+      AND l.deleted_at IS NULL   -- 212 / F716: an archived league is frozen — skipped (its open trades were cancelled at the archive, R1728)
       AND EXISTS (SELECT 1 FROM public.trades t
                   WHERE t.league_id = l.id AND t.status IN ('proposed', 'accepted', 'in_review'))
     ORDER BY l.id
@@ -1876,3 +2112,445 @@ BEGIN
 END;
 $$;
 REVOKE EXECUTE ON FUNCTION draft_tick() FROM PUBLIC, anon, authenticated;
+
+-- finalize_matchups — 183_job_knobs.sql:876-1149 FILE TEXT (D137), 1 hunk (+6 / -0).
+CREATE OR REPLACE FUNCTION finalize_matchups(
+  p_now       TIMESTAMPTZ DEFAULT now(),
+  p_league_id UUID        DEFAULT NULL
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  c_batch     CONSTANT INTEGER := 25;
+  c_max_loops CONSTANT INTEGER := 40;
+  v_seen         UUID[] := '{}';
+  v_loops        INTEGER := 0;
+  v_pass         INTEGER;
+  v_lg           RECORD;
+  v_league       public.leagues;
+  v_settings     JSONB;
+  v_mode         TEXT;
+  v_lw           RECORD;
+  v_g            RECORD;
+  v_m            RECORD;
+  v_res          TEXT;
+  v_cnt          INTEGER;
+  v_twr          INTEGER;
+  v_median       NUMERIC;
+  v_matchups     INTEGER;
+  v_pend         JSONB;
+  v_w            RECORD;
+  v_finalized    INTEGER := 0;
+  v_lg_finalized INTEGER := 0;
+  v_lg_report    JSONB := '[]'::jsonb;
+  v_leagues      INTEGER := 0;
+  v_report       JSONB := '[]'::jsonb;
+  v_skipped      JSONB := '[]'::jsonb;
+  v_failures     JSONB := '[]'::jsonb;
+  v_live_past    JSONB := '[]'::jsonb;
+  v_weeks        INTEGER[];
+  v_bracket      JSONB;
+  v_brackets     JSONB := '[]'::jsonb;
+  v_bracket_failures JSONB := '[]'::jsonb;
+  v_bracket_blocked  JSONB := '[]'::jsonb;
+  v_bracket_waiting  JSONB := '[]'::jsonb;
+BEGIN
+  IF auth.uid() IS NOT NULL THEN
+    RAISE EXCEPTION 'finalize_matchups: a job RPC is run by pg_cron or the service role, never by a signed-in user'
+      USING ERRCODE = '42501';
+  END IF;
+
+  PERFORM public.job_pause_note_internal('week-finalize', p_league_id, p_now);   -- 183 / L.G1.3 (TD4)
+
+  LOOP
+    v_loops := v_loops + 1;
+    v_pass := 0;
+
+    -- Claim LEAGUES with a due week (rule 8: the league row first).
+    FOR v_lg IN
+      SELECT l.id
+      FROM public.leagues l
+      WHERE l.status IN ('in_season', 'playoffs')
+        AND l.deleted_at IS NULL
+        AND (p_league_id IS NULL OR l.id = p_league_id)
+        AND NOT (l.id = ANY (v_seen))
+        AND NOT public.job_paused_internal('week-finalize', l.id)   -- 183 / L.G1.3 (TD4)
+        AND EXISTS (
+          SELECT 1
+          FROM public.league_weeks lw
+          JOIN public.nfl_weeks w ON w.season = lw.season AND w.week = lw.week
+          WHERE lw.league_id = l.id AND lw.season = l.season
+            AND (   (lw.status = 'correction_window' AND w.correction_window_ends_at <= p_now)
+                 OR (lw.status = 'live'              AND w.last_game_ends_at IS NULL
+                                                    AND w.correction_window_ends_at <= p_now)))
+      ORDER BY l.id
+      LIMIT c_batch
+      FOR UPDATE SKIP LOCKED
+    LOOP
+      v_pass := v_pass + 1;
+      v_seen := v_seen || v_lg.id;
+      v_leagues := v_leagues + 1;
+
+      -- F244: the league's count/report accumulate in LOCALS and merge only
+      -- after the subtransaction COMMITS (a later week's raise rolls the
+      -- league's writes back; PL/pgSQL keeps variables — the report must not).
+      v_lg_finalized := 0;
+      v_lg_report := '[]'::jsonb;
+      BEGIN
+        SELECT l.* INTO v_league FROM public.leagues l WHERE l.id = v_lg.id;
+        v_settings  := COALESCE(v_league.settings, '{}'::jsonb);
+        v_mode      := COALESCE(v_settings ->> 'schedule_mode', 'h2h');
+
+        -- LOUD (F238, the other side): live weeks past their window are not
+        -- finalizable — the advance job could not close them.
+        SELECT array_agg(lw.week ORDER BY lw.week) INTO v_weeks
+        FROM public.league_weeks lw
+        JOIN public.nfl_weeks w ON w.season = lw.season AND w.week = lw.week
+        WHERE lw.league_id = v_lg.id AND lw.season = v_league.season
+          AND lw.status = 'live' AND w.last_game_ends_at IS NULL
+          AND w.correction_window_ends_at <= p_now;
+        IF v_weeks IS NOT NULL THEN
+          v_live_past := v_live_past || jsonb_build_object('league_id', v_lg.id, 'weeks', to_jsonb(v_weeks));
+        END IF;
+
+        FOR v_lw IN
+          SELECT lw.id, lw.week, w.correction_window_ends_at
+          FROM public.league_weeks lw
+          JOIN public.nfl_weeks w ON w.season = lw.season AND w.week = lw.week
+          WHERE lw.league_id = v_lg.id
+            AND lw.season = v_league.season
+            AND lw.status = 'correction_window'
+            AND w.correction_window_ends_at <= p_now
+          ORDER BY lw.week
+          FOR UPDATE OF lw
+        LOOP
+          -- (a) §23.2: every non-postponed game of the week final, at run time.
+          SELECT * INTO v_g FROM public.week_games_state_internal(v_league.season, v_lw.week);
+          IF NOT v_g.all_final THEN
+            v_skipped := v_skipped || jsonb_build_object(
+              'league_id', v_lg.id, 'week', v_lw.week, 'reason', 'games_not_final',
+              'total', v_g.total_games, 'final', v_g.final_games,
+              'postponed', v_g.postponed_games, 'open', v_g.open_games);
+            RAISE NOTICE 'finalize_matchups: league % week % not finalized — % of % in-week games final (% postponed, % open); no league state advances on partial data (§23.2)',
+              v_lg.id, v_lw.week, v_g.final_games, v_g.total_games - v_g.postponed_games, v_g.postponed_games, v_g.open_games;
+            CONTINUE;
+          END IF;
+          SELECT count(*)::int INTO v_cnt FROM public.score_fanout f WHERE f.season = v_league.season AND f.week = v_lw.week AND EXISTS (SELECT 1 FROM public.league_rosters r WHERE r.league_id = v_lg.id AND r.player_id = f.player_id);   -- 212 / F716 (R1730)
+          IF v_cnt > 0 THEN   -- 212 / F716 (R1730): a score still queued for this league's players — the week waits for it
+            v_skipped := v_skipped || jsonb_build_object('league_id', v_lg.id, 'week', v_lw.week, 'reason', 'scores_queued', 'queued', v_cnt);   -- 212 / F716 (R1730)
+            RAISE NOTICE 'finalize_matchups: league % week % not finalized — % queued score(s) for its rostered players are not written yet; never finalized over a pending score (R1730)', v_lg.id, v_lw.week, v_cnt;   -- 212 / F716 (R1730)
+            CONTINUE;   -- 212 / F716 (R1730)
+          END IF;   -- 212 / F716 (R1730)
+
+          v_matchups := 0;
+
+          -- (b)/(c) THE PENDING SHAPES, BY NAME — 117's
+          --     `week_results_pending_internal` (D137: ONE reading of
+          --     "pending" for finalization AND the rebuild; called, never
+          --     copied): h2h — a NULL score on ANY matchup, overridden or
+          --     not (E61, R792); total_points — ANY seated team without a
+          --     result row (R788). The week is SKIPPED BY NAME and stays
+          --     `correction_window`; nothing is coerced to 0.00.
+          v_pend := public.week_results_pending_internal(v_lg.id, v_league.season, v_lw.week);
+          IF v_pend IS NOT NULL THEN
+            v_skipped := v_skipped || (jsonb_build_object('league_id', v_lg.id, 'week', v_lw.week) || v_pend);
+            RAISE NOTICE 'finalize_matchups: league % week % not finalized — % (pending; absence is not a score — E61/§23.2; never coerced to 0.00)',
+              v_lg.id, v_lw.week, v_pend ->> 'reason';
+            CONTINUE;
+          END IF;
+
+          IF v_mode = 'h2h' THEN
+            -- Results per matchup (E38: two decimals, ties are ties — 117's
+            -- `matchup_result_internal` is the ONE derivation, shared with
+            -- the rebuild's drift check); an overridden cell is never
+            -- touched (§22.2).
+            FOR v_m IN
+              SELECT m.* FROM public.matchups m
+              WHERE m.league_id = v_lg.id AND m.season = v_league.season AND m.week = v_lw.week
+              ORDER BY m.round_type, m.id
+              FOR UPDATE
+            LOOP
+              v_res := public.matchup_result_internal(v_m.home_score, v_m.away_score, v_m.away_team_id);
+              IF v_m.is_overridden THEN
+                -- The cell stands: scores untouched, an overridden result
+                -- untouched; a NULL result is read from the overridden scores.
+                UPDATE public.matchups
+                SET status = 'final', result = COALESCE(v_m.result, v_res), updated_at = p_now
+                WHERE id = v_m.id;
+              ELSE
+                UPDATE public.matchups
+                SET status = 'final', result = v_res, updated_at = p_now
+                WHERE id = v_m.id;
+              END IF;
+              v_matchups := v_matchups + 1;
+            END LOOP;
+          END IF;
+
+          -- (c)/(d) THE RESULTS MATH — 117's `week_results_write_internal`
+          --     (D137: the ONE writer of `team_week_results` for a closed
+          --     week; `rebuild_team_week_results` calls the same helper and
+          --     pgTAP 065 pins the two byte-identical): the h2h rows from the
+          --     now-final matchups (PF once; the primary + the `secondary`
+          --     row; the shape guards), the total_points rows flipped
+          --     `is_final`, the EXACT median (E39) compared and its cells
+          --     written. `median` is NULL when median_game is off or the
+          --     week is a playoff week.
+          SELECT * INTO v_w FROM public.week_results_write_internal(v_lg.id, v_league.season, v_lw.week);
+          v_twr := v_w.results;
+          v_median := v_w.median;
+
+          -- (e) the week → final (F4's last legal step).
+          UPDATE public.league_weeks
+          SET status = 'final', finalized_at = p_now, median_score = v_median
+          WHERE id = v_lw.id;
+          GET DIAGNOSTICS v_cnt = ROW_COUNT;
+          IF v_cnt <> 1 THEN
+            RAISE EXCEPTION 'finalize_matchups: finalizing week % of league % touched % rows, expected 1', v_lw.week, v_lg.id, v_cnt
+              USING ERRCODE = 'P0001';
+          END IF;
+
+          -- E43: the system note when a postponed game was excluded.
+          IF v_g.postponed_games > 0 THEN
+            INSERT INTO public.league_chat (league_id, user_id, message, context, is_system)
+            VALUES (v_lg.id, NULL,
+              'Week ' || v_lw.week || ' is final without the postponed game' ||
+              CASE WHEN v_g.postponed_games > 1 THEN 's ' ELSE ' ' END || v_g.postponed_list ||
+              ' — players in a game moved out of the week score 0 for the week. The commissioner can change a result.',
+              'league', TRUE);
+          END IF;
+
+          v_lg_finalized := v_lg_finalized + 1;
+          v_lg_report := v_lg_report || jsonb_build_object(
+            'league_id', v_lg.id, 'week', v_lw.week, 'schedule_mode', v_mode,
+            'matchups_final', v_matchups, 'results', v_twr,
+            'median_score', v_median,
+            'postponed_excluded', v_g.postponed_games);
+        END LOOP;
+
+        -- 118 (Q39 (D)/(E), the CORRECTION CLOSE): the bracket / champion
+        -- consequences after this league's weeks — every claim, idempotent:
+        -- the round rebuilt from FINAL results when a correction moved a
+        -- seed; the champion + `complete` at the last week's final (rank 1
+        -- through the full chain when there is no bracket — (C)/(D)). Guarded
+        -- so a bracket problem is LOUD (`bracket_failures` + WARNING) and
+        -- RETRIED next run — never a rollback of the week's finalization.
+        BEGIN
+          v_bracket := public.playoff_bracket_sync_internal(v_lg.id, p_now);
+          IF v_bracket ? 'action' THEN
+            v_brackets := v_brackets || (jsonb_build_object('league_id', v_lg.id) || v_bracket);
+          -- R841: a bracket a HUMAN must unblock (a seedless playoff row; a
+          -- played round the prior verdict moved under — R839) is named on
+          -- the hourly payload + WARNING; one WAITING on pending scores
+          -- (R840, §23.2/E61) likewise — retried next run. The calendar
+          -- `waiting_*` states (the prior stage not yet rolled) are the
+          -- every-hour normal and stay out of the payload.
+          ELSIF v_bracket ->> 'reason' IN ('bracket_foreign_rows', 'rebuild_refused_round_played') THEN
+            v_bracket_blocked := v_bracket_blocked || (jsonb_build_object('league_id', v_lg.id) || v_bracket);
+            RAISE WARNING 'finalize_matchups: league % playoff bracket BLOCKED at round % — % (a commissioner must act — M6 §10; retried next run)', v_lg.id, v_bracket ->> 'round', v_bracket ->> 'reason';
+          ELSIF v_bracket ->> 'reason' = 'bracket_waiting' THEN
+            v_bracket_waiting := v_bracket_waiting || (jsonb_build_object('league_id', v_lg.id) || v_bracket);
+            RAISE WARNING 'finalize_matchups: league % playoff bracket round % WAITING — the prior stage holds pending scores % (§23.2/E61: never seeded from an absent score; retried next run)', v_lg.id, v_bracket ->> 'round', v_bracket -> 'pending';
+          END IF;
+        EXCEPTION WHEN OTHERS THEN
+          v_bracket_failures := v_bracket_failures || jsonb_build_object(
+            'league_id', v_lg.id, 'sqlstate', SQLSTATE, 'error', SQLERRM);
+          RAISE WARNING 'finalize_matchups: playoff bracket sync failed for league %: % (%) — retried next run', v_lg.id, SQLERRM, SQLSTATE;
+        END;
+      EXCEPTION WHEN OTHERS THEN
+        v_failures := v_failures || jsonb_build_object(
+          'league_id', v_lg.id, 'sqlstate', SQLSTATE, 'error', SQLERRM);
+        RAISE WARNING 'finalize_matchups failed for league %: % (%)', v_lg.id, SQLERRM, SQLSTATE;
+        -- F244: everything this league reported ROLLED BACK with it.
+        v_lg_finalized := 0;
+        v_lg_report := '[]'::jsonb;
+      END;
+      -- F244: merge only what COMMITTED.
+      v_finalized := v_finalized + v_lg_finalized;
+      v_report := v_report || v_lg_report;
+    END LOOP;
+
+    EXIT WHEN v_pass < c_batch OR v_loops >= c_max_loops;
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'at',               p_now,
+    'scope',            p_league_id,
+    'leagues',          v_leagues,
+    'finalized',        v_finalized,
+    'weeks',            v_report,
+    'skipped',          v_skipped,
+    'live_past_window', v_live_past,
+    'brackets',         v_brackets,
+    'bracket_failures', v_bracket_failures,
+    'bracket_blocked',  v_bracket_blocked,
+    'bracket_waiting',  v_bracket_waiting,
+    'failures',         v_failures,
+    'loops',            v_loops,
+    'reason', CASE
+      WHEN v_leagues = 0 THEN 'nothing_due'
+      WHEN v_finalized = 0 AND jsonb_array_length(v_brackets) = 0 THEN 'nothing_finalized'
+      ELSE NULL END);
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION finalize_matchups(TIMESTAMPTZ, UUID)
+  FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 6. Review fixes (PR #543): R1733 — the operator's prelude names an
+--    archived league; R1725 — an archived league still uses its scoring
+--    system (so its rules stay behind the receipted editor and the walls).
+-- ---------------------------------------------------------------------------
+-- op_verb_prelude_internal — 184_game_status.sql:573-617 FILE TEXT (D137), 1 hunk (+1 / -0).
+CREATE OR REPLACE FUNCTION op_verb_prelude_internal(
+  p_verb TEXT, p_league_id UUID, p_action_id UUID, p_reason TEXT
+) RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_rec public.platform_operator_actions;
+BEGIN
+  IF NOT public.is_platform_operator() THEN
+    RAISE EXCEPTION '%: only a platform operator can use the operator tools (M8 TD1)', p_verb
+      USING ERRCODE = '42501';
+  END IF;
+  IF p_action_id IS NULL THEN
+    RAISE EXCEPTION '%: p_action_id is required — it makes a retry safe (M8 TD3)', p_verb
+      USING ERRCODE = '22023';
+  END IF;
+  IF p_reason IS NOT NULL AND (length(btrim(p_reason, E' \t\r\n')) = 0 OR length(p_reason) > 500) THEN
+    RAISE EXCEPTION '%: a reason is optional, but when given it is non-blank and at most 500 characters', p_verb
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT * INTO v_rec FROM public.platform_operator_actions a WHERE a.action_id = p_action_id;
+  IF FOUND THEN
+    IF v_rec.verb <> p_verb OR v_rec.actor_id <> auth.uid()
+       OR v_rec.league_id IS DISTINCT FROM p_league_id THEN
+      RAISE EXCEPTION '%: action id % was already used for a different operator action', p_verb, p_action_id
+        USING ERRCODE = '22023';
+    END IF;
+    RETURN COALESCE(v_rec.after, '{}'::jsonb) || jsonb_build_object('replayed', TRUE, 'receipt_id', v_rec.id);
+  END IF;
+
+  IF p_league_id IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM public.leagues l WHERE l.id = p_league_id AND l.deleted_at IS NOT NULL) THEN RAISE EXCEPTION '%: league % is archived — restore it first (the admin league page''s Restore)', p_verb, p_league_id USING ERRCODE = 'P0002'; END IF;   -- 212 / F716 (R1733)
+    -- The row lock: waits out an in-flight job run of this league (each job
+    -- claims the league FOR UPDATE SKIP LOCKED), and makes a concurrent
+    -- scheduled run SKIP the league while this verb commits.
+    PERFORM 1 FROM public.leagues l WHERE l.id = p_league_id AND l.deleted_at IS NULL FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION '%: league % does not exist', p_verb, p_league_id
+        USING ERRCODE = 'P0002';
+    END IF;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+REVOKE ALL ON FUNCTION op_verb_prelude_internal(TEXT, UUID, UUID, TEXT) FROM PUBLIC, anon, authenticated;
+
+-- scoring_system_league_use_internal — 170_commish_backstop.sql:2480-2497 FILE TEXT (D137), 1 hunk (+1 / -1).
+CREATE OR REPLACE FUNCTION scoring_system_league_use_internal(p_scoring_system_id UUID)
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  -- The name of a live league that plays by this scoring system — asked
+  -- ONLY about the caller's own row (the in-body gate: owner_id =
+  -- auth.uid()); for anyone else's row the answer is NULL, so nothing about
+  -- another user's system is ever told.
+  SELECT l.name
+  FROM public.scoring_systems s
+  JOIN public.leagues l ON l.scoring_system_id = s.id   -- F716 / 212 (R1725): an ARCHIVED league still plays by it (was `AND l.deleted_at IS NULL`)
+  WHERE s.id = p_scoring_system_id AND s.owner_id = (SELECT auth.uid())
+  ORDER BY l.created_at, l.id
+  LIMIT 1
+$$;
+REVOKE EXECUTE ON FUNCTION scoring_system_league_use_internal(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION scoring_system_league_use_internal(UUID) TO authenticated;
+
+-- scoring_systems_rules_guard — 104_scoring_write_walls.sql:391-468 FILE TEXT (D137), 1 hunk (+1 / -1).
+CREATE OR REPLACE FUNCTION public.scoring_systems_rules_guard()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_new_in_profile BOOLEAN;
+BEGIN
+  -- ── Is the NEW row in the league profile? (D175(2), the three arms) ─────
+  v_new_in_profile :=
+       COALESCE(NEW.is_template, FALSE)
+    OR (NEW.rules ? 'format')
+    OR EXISTS (
+         SELECT 1 FROM public.leagues l
+         WHERE l.scoring_system_id = NEW.id
+           -- F716 / 212 (R1725): an ARCHIVED league still uses it (was `AND l.deleted_at IS NULL`)
+       );
+
+  -- Outside the profile: the D33 research world. Legacy column-name docs are
+  -- valid under their OWN rules and the league validator has no jurisdiction.
+  -- This is also the arm that leaves a mock-only reference
+  -- (`drafts.config->>'scoring_system_id'`, D175(6)) writable — deliberately.
+  IF NOT v_new_in_profile THEN
+    RETURN NEW;
+  END IF;
+
+  -- Already in the profile, carrying the IDENTICAL document: it passed this
+  -- wall on the write that put it there, and D175(4) says existing rows are
+  -- never retroactively invalidated. Anything else — an INSERT, a changed
+  -- `rules`, or a row ENTERING the profile (e.g. an `is_template` flip that
+  -- never touches `rules`) — is validated.
+  IF TG_OP = 'UPDATE'
+     AND NEW.rules IS NOT DISTINCT FROM OLD.rules
+     -- ── R615: THE SKIP MUST NOT APPLY TO A ROW *ENTERING* AN ARM ──────────
+     -- Without these two conjuncts the short-circuit is a two-step escape,
+     -- and it was measured over PostgREST: put a private invalid row into the
+     -- profile via arm (c) (a `leagues` write, which fires nothing here), then
+     -- `PATCH {is_template: true, owner_id: null}` — `rules` untouched, OLD
+     -- already in profile, so the guard skipped it and returned 200. The row
+     -- is then a world-readable template (058's "Templates viewable by
+     -- everyone") that an ORDINARY commissioner attaches through
+     -- `create_league` / `update_league_settings`. §E6 pinned only the
+     -- ONE-step flip, which the guard did refuse. One conjunct per arm whose
+     -- membership can change without `rules` changing: `is_template` is arm
+     -- (a); `id` is the SUBJECT the other two arms are read against, so a
+     -- fresh-id write re-enters the predicate under a different identity.
+     -- (R630 corrects an earlier sentence here that called `id` "arm (c)'s
+     -- subject": arm (c) can never be the subject of a PK change — all five
+     -- inbound FKs are `condeferrable = f, confupdtype = 'a'`, so a referenced
+     -- row's id cannot move. The conjunct earns its place on arm (a): forge an
+     -- invalid template and a fresh-id change is refused P0001 with it and
+     -- succeeds without it — measured by three reviewers.)
+     AND NEW.is_template IS NOT DISTINCT FROM OLD.is_template
+     AND NEW.id IS NOT DISTINCT FROM OLD.id
+  THEN
+    -- ── R629: THE OLD-SIDE PROFILE DISJUNCTION USED TO BE RE-EVALUATED HERE,
+    -- AND IT WAS A TAUTOLOGY. Deleted rather than pinned, because a clause
+    -- that cannot change an outcome cannot be given a killing cell and would
+    -- have stood forever as three unfalsifiable lines. The proof is two
+    -- sentences: control has already returned unless NEW is in the profile,
+    -- and the three conjuncts above hold `rules`, `is_template` and `id`
+    -- equal — which are exactly the three inputs the profile predicate reads.
+    -- So OLD-in-profile ≡ NEW-in-profile ≡ TRUE here, always. Measured:
+    -- deleting the whole block leaves 052 at 85/85 and that green is CORRECT,
+    -- while deleting any single disjunct from it changed behaviour and red
+    -- nothing — the signature of a clause whose arms are unreachable.
+    RETURN NEW;
+  END IF;
+
+  -- No catch, no wrap, no re-word: P0001 + MESSAGE/DETAIL/HINT propagates
+  -- exactly as 103 raised it, which is the contract SE.5/SE.6 turn into a
+  -- field path.
+  PERFORM public.scoring_rules_validate(NEW.rules);
+
+  RETURN NEW;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION public.scoring_systems_rules_guard()
+  FROM PUBLIC, anon, authenticated, service_role;

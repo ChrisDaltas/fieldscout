@@ -38,6 +38,7 @@ import type { Database, Json } from '@/types/database'
 
 import { SCORING_GUARDRAILS, scoringRulesDocSchema } from '../scoring/validate-rules-doc'
 import type { ServiceResult } from './leagues-service'
+import { archivedLeagueResult } from './inseason-errors'
 
 type Supabase = SupabaseClient<Database>
 
@@ -200,6 +201,8 @@ export function mapScoringRpcError(
   docField: 'rules' | 'template_id',
 ): ServiceResult {
   const code = error.code ?? ''
+  const archived = archivedLeagueResult(error)
+  if (archived) return archived
 
   if (code === '42501') {
     return {

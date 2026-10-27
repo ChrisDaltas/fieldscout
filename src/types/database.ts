@@ -6391,6 +6391,7 @@ export type Database = {
         Returns: boolean
       }
       join_league_by_code: { Args: { p_code_or_slug: string }; Returns: Json }
+      league_archive_trade_reason_internal: { Args: never; Returns: string }
       league_archive_who_internal: { Args: { p_user: string }; Returns: string }
       league_broadcast_payload: {
         Args: { l: Database["public"]["Tables"]["leagues"]["Row"] }
@@ -6408,6 +6409,10 @@ export type Database = {
       league_receipt_diff_internal: {
         Args: { p_depth?: number; p_new: Json; p_old: Json; p_prefix?: string }
         Returns: Json
+      }
+      league_restore_apply_internal: {
+        Args: { p_at: string; p_league_id: string }
+        Returns: number
       }
       league_roster_broadcast_payload: {
         Args: { r: Database["public"]["Tables"]["league_rosters"]["Row"] }
@@ -6634,6 +6639,15 @@ export type Database = {
         Args: { p_actor: string; p_list_id: string }
         Returns: undefined
       }
+      op_archived_league_prelude_internal: {
+        Args: {
+          p_action_id: string
+          p_league_id: string
+          p_reason: string
+          p_verb: string
+        }
+        Returns: Json
+      }
       op_cron_last_runs_internal: { Args: never; Returns: Json }
       op_job_check_internal: {
         Args: { p_job: string; p_kind: string }
@@ -6710,6 +6724,19 @@ export type Database = {
       }
       op_platform_state: { Args: never; Returns: Json }
       op_platform_state_internal: { Args: { p_at: string }; Returns: Json }
+      op_restore_league: {
+        Args: { p_action_id?: string; p_league_id: string; p_reason?: string }
+        Returns: Json
+      }
+      op_restore_league_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_league_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
       op_resume_job: {
         Args: {
           p_action_id?: string

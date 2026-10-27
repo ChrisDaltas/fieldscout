@@ -25,6 +25,7 @@ import {
   type OpLeagueDetail,
   type OpLeagueList,
   type OpLeagueRow,
+  restoreLeagueConfirm,
 } from '@/lib/admin/league-table'
 
 import { LeagueDetailBody, LeagueTableBody, rawSettings } from './admin-league-table'
@@ -174,6 +175,22 @@ describe('League page: Make commissioner (F750, migration 208)', () => {
     expect(out).not.toContain('data-make-commissioner="m1"')
     expect(out).not.toContain('data-make-commissioner="m3"')
     expect(out.match(/>Make commissioner</g)?.length).toBe(2)
+  })
+
+  it('F851 (212): an archived league says so and offers FieldScout\'s Restore — behind the confirm', () => {
+    const archived = { ...withCo, league: { ...row, deleted_at: '2026-09-01T12:00:00Z' } }
+    let opened: unknown = null
+    const out = html(createElement(LeagueDetailBody, { detail: archived, onConfirm: (spec: unknown) => { opened = spec } }))
+    expect(out).toContain('data-archived-notice')
+    expect(out).toContain(`data-restore-league="${row.id}"`)
+    expect(out).not.toContain('data-make-commissioner')
+    expect(html(createElement(LeagueDetailBody, { detail: withCo, onConfirm: noop }))).not.toContain('data-restore-league')
+    expect(html(createElement(LeagueDetailBody, { detail: archived }))).not.toContain('data-restore-league')
+    expect(opened).toBeNull()
+    const spec = restoreLeagueConfirm(row)
+    expect(spec.url).toBe(`/api/admin/leagues/${row.id}/restore`)
+    expect(spec.after).toContain('“FieldScout restored the league.”')
+    expect(spec.confirmLabel).toBe('Restore league')
   })
 
   it('no control without the confirm dialog, and none in a deleted league', () => {

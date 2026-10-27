@@ -36,6 +36,7 @@ import { teamNameSchema } from '../team-name'
 
 import { optionalReason } from './commish-matchup-service'
 import type { ServiceResult } from './leagues-service'
+import { archivedLeagueResult } from './inseason-errors'
 
 type Supabase = SupabaseClient<Database>
 
@@ -46,6 +47,8 @@ function mapMemberRpcError(
   error: { code?: string; message: string },
   forbiddenMessage: string,
 ): ServiceResult {
+  const archived = archivedLeagueResult(error)
+  if (archived) return archived
   if (error.code === '42501') {
     return { status: 403, body: { error: forbiddenMessage } }
   }

@@ -53,8 +53,10 @@ export function archiveConfirmLines(opts: { inSeason: boolean; draftScheduled: b
     'Nothing is deleted. Restore it any time from Leagues › Archived leagues, and it comes back exactly as it was.',
   ]
   if (opts.inSeason) {
+    // R1728 (Chris 2026-10-27: "the trade goes away and has to be redone later").
+    lines.push(ARCHIVE_TRADES_LINE)
     lines.push(
-      'When you restore it, anything that came due meanwhile happens under the league’s usual rules: waivers run, offers past the trade deadline expire, and weeks played meanwhile score with the lineups the teams had.',
+      'When you restore it, anything that came due meanwhile happens under the league’s usual rules: waivers run, and weeks played meanwhile score with the lineups the teams had.',
     )
   }
   if (opts.draftScheduled) {
@@ -62,6 +64,10 @@ export function archiveConfirmLines(opts: { inSeason: boolean; draftScheduled: b
   }
   return lines
 }
+
+/** R1727 / R1728: what archiving does to trades — said in the confirm. */
+export const ARCHIVE_TRADES_LINE =
+  'Every trade that isn’t finished — offered, in review or a vote, or accepted and waiting to go through — is cancelled now. Both managers are told, and they can propose it again after the league is restored.'
 
 export const ARCHIVE_CONFIRM_BUTTON = 'Archive league'
 export const ARCHIVE_DONE_TOAST = 'League archived'
@@ -73,7 +79,7 @@ export const ARCHIVED_LOAD_FAILED = 'Couldn’t load your archived leagues.'
 export const RESTORE_BUTTON = 'Restore'
 export const RESTORE_ONLY_COMMISH = 'Only the commissioner can restore it.'
 export const RESTORE_CONFIRM_BODY =
-  'It comes back exactly as it was, in every member’s league list. Anything that came due while it was archived happens now under the league’s usual rules — waivers run, offers past the trade deadline expire, and finished weeks are scored and closed.'
+  'It comes back exactly as it was, in every member’s league list. Anything that came due while it was archived happens now under the league’s usual rules — waivers run, and finished weeks are scored and closed. Trades cancelled by the archive stay cancelled; managers propose them again.'
 export const RESTORE_CONFIRM_BUTTON = 'Restore league'
 export const RESTORE_DONE_TOAST = 'League restored'
 

@@ -20,6 +20,7 @@ import {
   pageWords,
   recordWords,
   roleWords,
+  restoreLeagueConfirm,
   setCommissionerUrl,
   type LeagueSort,
   type OpLeagueDetail,
@@ -348,6 +349,20 @@ export function LeagueDetailBody({
         }
         data-admin-section="league-members"
       >
+        {/* F851 (212): an archived league can be restored by FieldScout — its
+            commissioner may be the one who is gone. */}
+        {l.deleted_at && (
+          <div className="flex flex-wrap items-center gap-2.5 rounded-message bg-surface-sunken px-3 py-2" data-archived-notice>
+            <span className="mr-auto text-[11px] font-semibold text-ink">
+              Archived {day(l.deleted_at)} — hidden from its members, and nothing in it changes.
+            </span>
+            {onConfirm && (
+              <Button size="sm" variant="stroke" onClick={() => onConfirm(restoreLeagueConfirm(l))} data-restore-league={l.id}>
+                Restore league
+              </Button>
+            )}
+          </div>
+        )}
         {detail.record_error && (
           <p className="text-[11px] font-semibold text-caution-strong" data-record-error>
             Records not shown: {recordErrorWords(detail.record_error)}

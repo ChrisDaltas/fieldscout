@@ -41,6 +41,7 @@ import { z } from 'zod'
 import type { Database, Json, LeagueList, List } from '@/types/database'
 
 import type { ServiceResult } from './leagues-service'
+import { archivedLeagueResult } from './inseason-errors'
 
 type Supabase = SupabaseClient<Database>
 
@@ -80,6 +81,8 @@ export const PRIMARY_RACE_MESSAGE =
 export const NOT_YOUR_LIST_MESSAGE = 'You can only attach a list you own.'
 
 function mapWriteError(error: { code?: string; message: string }): ServiceResult {
+  const archived = archivedLeagueResult(error)
+  if (archived) return archived
   if (error.code === '23505') {
     if (error.message.includes('uniq_primary_board_per_member')) {
       return { status: 409, body: { error: PRIMARY_RACE_MESSAGE } }
