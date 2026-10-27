@@ -15,6 +15,12 @@ import { createBrowserClient } from '@/lib/supabase/client'
 export const followKeys = {
   all: ['follows'] as const,
   followingSet: (userId: string) => ['follows', 'following-set', userId] as const,
+  // A person's phone profile and their Followers / Following carry the
+  // counts and rows a follow changes, so they live under `all` and the
+  // toggle's settle refreshes them with everything else.
+  person: (username: string) => ['follows', 'person', username] as const,
+  personFollows: (username: string, kind: 'followers' | 'following') =>
+    ['follows', 'person-follows', kind, username] as const,
 }
 
 /**

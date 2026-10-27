@@ -146,15 +146,15 @@ describe('a query outside a league', () => {
     expect(out).not.toContain('Jalen Hurts') // the 6th player
     expect(out).toContain('D/ST · PHI')
     expect(out).toContain('WR · LAR')
-    expect(count(out, 'href="/u/')).toBe(4)
-    expect(out).not.toContain('href="/u/bellball"')
+    expect(count(out, 'href="/app/u/')).toBe(4)
+    expect(out).not.toContain('href="/app/u/bellball"')
     expect(count(out, '>List</span>')).toBe(4)
     for (const label of ['Your team', 'Free agent', 'Waivers', 'Pre-draft', 'your league']) expect(out).not.toContain(label)
   })
-  it('a person opens their profile, with the follow count under the handle', () => {
+  it('a person opens their profile’s phone screen, inside the app (audit profile-1), with the follow count under the handle', () => {
     nav.pathname = '/app'
     const out = html(seeded('a'), { initialQuery: 'a' })
-    expect(out).toMatch(/href="\/u\/shahranks"[^>]*>[\s\S]*?@shahranks<\/span>[\s\S]*?12\.4k follows/)
+    expect(out).toMatch(/href="\/app\/u\/shahranks"[^>]*>[\s\S]*?@shahranks<\/span>[\s\S]*?12\.4k follows/)
   })
   it('a list opens the List view while Community is off, Community’s list page when it’s on', () => {
     nav.pathname = '/app'
@@ -173,7 +173,7 @@ describe('a query outside a league', () => {
     expect(players).not.toContain('>People</h2>')
     expect(players).not.toContain('>Posts</h2>')
     const people = html(seeded('a'), { initialQuery: 'a', initialScope: 'people' })
-    expect(count(people, 'href="/u/')).toBe(6)
+    expect(count(people, 'href="/app/u/')).toBe(6)
     expect(people).not.toContain('>Players</h2>')
     const posts = html(seeded('a'), { initialQuery: 'a', initialScope: 'posts' })
     expect(count(posts, '>List</span>')).toBe(5)
@@ -181,7 +181,7 @@ describe('a query outside a league', () => {
   it('a handle typed with its @ finds the person', () => {
     nav.pathname = '/app'
     const out = html(seeded('@shah', { players: [], users: [U('u-a', 'shahranks', 12400)], lists: [] }), { initialQuery: '@shah' })
-    expect(out).toContain('href="/u/shahranks"')
+    expect(out).toContain('href="/app/u/shahranks"')
   })
 })
 
@@ -289,8 +289,8 @@ describe('inside a league', () => {
     expect(out).toContain(`href="/app/leagues/${L}/team/t3"`)
     expect(out).not.toContain('@dalton')
     // marcus is a manager here, so his community row is not repeated.
-    expect(out).not.toContain('href="/u/marcus"')
-    expect(out.indexOf('/team/t3')).toBeLessThan(out.indexOf('href="/u/shahranks"'))
+    expect(out).not.toContain('href="/app/u/marcus"')
+    expect(out.indexOf('/team/t3')).toBeLessThan(out.indexOf('href="/app/u/shahranks"'))
   })
 
   it('a team’s name finds its manager', () => {

@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+import { publicPersonPath } from '@/components/shared/username-link-ops'
 import {
   classifyRateLimitedRequest,
   parseRateLimitTake,
@@ -144,6 +145,17 @@ export async function middleware(request: NextRequest) {
   if (rateLimitTarget) {
     const refusal = await rateLimitRefusal(supabase, rateLimitTarget, supabaseResponse)
     if (refusal) return refusal
+  }
+
+  // A person's phone screen (`/app/u/…`) is the public profile in the app's
+  // phone layout, and its address gets shared from a phone. Signed out, it
+  // opens the public page itself instead of asking you to sign in.
+  const publicPerson = user ? null : publicPersonPath(pathname)
+  if (publicPerson) {
+    const publicUrl = request.nextUrl.clone()
+    publicUrl.pathname = publicPerson
+    publicUrl.search = ''
+    return redirectPreservingAuthCookies(publicUrl, supabaseResponse)
   }
 
   // Redirect unauthenticated users away from protected routes

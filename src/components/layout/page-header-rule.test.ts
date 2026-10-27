@@ -52,7 +52,7 @@ const EXCEPTIONS: Record<string, string> = {
   'src/components/mobile/community/community-detail.tsx':
     "FieldScout Mobile list detail — its title over the cover is the screen's h1 (mobile handoff; the shell's AppHeader is desktop-only).",
   'src/components/mobile/ui/mobile-header.tsx':
-    "FieldScout Mobile pages' 52px page bar (`MPageBar`, wrapped by the league pages' `LeaguePageBar`) — its title (“Draft results”, “League history”, “League settings”, “Playoffs”, “Members”, “Schedule”, “Commissioner tools”, “Settings”, “Scoring”, “Trash”, “NFL teams”, “Leagues”, “Mock drafts”, “Mock draft report”, “Ranking history”, “Ask a question”, “Start or sit”) is the screen's h1 (mobile handoff G pages; AppHeader is desktop-only). It replaces the fallback-header h1 these pages had on the phone.",
+    "FieldScout Mobile pages' 52px page bar (`MPageBar`, wrapped by the league pages' `LeaguePageBar`) — its title (“Draft results”, “League history”, “League settings”, “Playoffs”, “Members”, “Schedule”, “Commissioner tools”, “Settings”, “Scoring”, “Trash”, “NFL teams”, “Leagues”, “Mock drafts”, “Mock draft report”, “Ranking history”, “Ask a question”, “Start or sit”, a person's @handle over their Followers / Following) is the screen's h1 (mobile handoff G pages; AppHeader is desktop-only). It replaces the fallback-header h1 these pages had on the phone.",
   'src/components/mobile/nfl/mobile-nfl.tsx':
     "FieldScout Mobile NFL team — the team's name in its team-colour header row is the screen's h1 (extends the player profile's header; AppHeader is desktop-only). The NFL teams list's h1 is `MPageBar`'s.",
   'src/components/mobile/league/team/team-view.tsx':
@@ -65,6 +65,8 @@ const EXCEPTIONS: Record<string, string> = {
     "FieldScout Mobile Messages — its large “Messages” title is the screen's h1 (mobile handoff; AppHeader is desktop-only).",
   'src/components/mobile/messages/thread-screen.tsx':
     "FieldScout Mobile conversation — the thread's name in its header row is the h1 (mobile handoff; AppHeader is desktop-only).",
+  'src/components/mobile/profile/person-profile.tsx':
+    "FieldScout Mobile person profile (`/app/u/[username]`) — the person's @handle beside their avatar is the screen's h1, as the team view's team name is (the public /u page's SEO h1 is ProfileHeader's; AppHeader is desktop-only).",
   'src/components/mobile/players/research-players-screen.tsx':
     "FieldScout Mobile Players — its large “Players” title is the screen's h1 (mobile handoff; AppHeader is desktop-only).",
   'src/components/mobile/shell/fallback-header.tsx':

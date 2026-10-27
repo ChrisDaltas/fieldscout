@@ -31,8 +31,9 @@ export type LayoutMode = 'desktop' | 'mobile'
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 /** The mode the head script would pick, for a client-side entry into the app
- *  before `<html data-layout>` exists. */
-function detectMode(): LayoutMode {
+ *  before `<html data-layout>` exists — and, outside the app, the layout this
+ *  device gets once it is inside (the public profile's phone handoff). */
+export function detectMode(): LayoutMode {
   if (useUIStore.getState().forceMobileLayout) return 'mobile'
   return window.matchMedia(DESKTOP_POINTER).matches ? 'desktop' : 'mobile'
 }
