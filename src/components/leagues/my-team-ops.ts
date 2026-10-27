@@ -237,6 +237,23 @@ export function projectedTotal(
   return { total: Math.round(total * 100) / 100, missing }
 }
 
+/**
+ * A lineup's projected total when it can be stated truthfully — the ONE rule
+ * every surface that shows one follows (phone: the Match card, the Team tab
+ * card, the Team view header, the Lineup check, the Home card; desktop: the
+ * team page's projected total row, matchup strip and "Proj vs opponent",
+ * and the matchup page): a number only when the lineup has filled starters
+ * and EVERY one has a stored projection. A partial sum would understate the
+ * side, an empty lineup has nothing to project, and while the projections
+ * read is loading — or after it failed — no starter has one. Null = the
+ * dash, never "0.00". `filled` counts every filled seat, a kept
+ * (dropped-after-he-played) starter included.
+ */
+export function wholeProjectedTotal(total: ProjectedTotal | null, filled: number): number | null {
+  if (!total || filled === 0 || total.missing > 0) return null
+  return total.total
+}
+
 /** A stored lineup's starters — every seat of the slot map except the IR
  *  ones (`roster_settings.ir_slots`): the opponent side of "Proj vs
  *  opponent" on the desktop team page and the phone's Lineup check. */

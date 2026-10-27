@@ -11,7 +11,7 @@ import {
   placementFromStored,
   weekEditability,
 } from '@/components/leagues/lineup-editor-ops'
-import { lineupChecks, statusTag, type WeekGame } from '@/components/leagues/my-team-ops'
+import { lineupChecks, statusTag, wholeProjectedTotal, type ProjectedTotal, type WeekGame } from '@/components/leagues/my-team-ops'
 import { pendingCount, type MTradeOffer } from '@/components/mobile/messages/messages-ops'
 import type { ScheduleMatchup, ScheduleWeek } from '@/hooks/use-schedule'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
@@ -158,10 +158,10 @@ export function teamWithRecord(name: string, record: string | null): string {
 }
 
 /** "Proj 83.44" — only when every starter has a stored projection (the
- *  matchup page's rule: a partial sum is never shown). */
-export function projText(total: { total: number; missing: number } | null, filled: number): string | null {
-  if (!total || filled === 0 || total.missing > 0) return null
-  return `Proj ${total.total.toFixed(2)}`
+ *  matchup page's rule, `wholeProjectedTotal`: a partial sum is never shown). */
+export function projText(total: ProjectedTotal | null, filled: number): string | null {
+  const whole = wholeProjectedTotal(total, filled)
+  return whole === null ? null : `Proj ${whole.toFixed(2)}`
 }
 
 /** A signed one-decimal delta with a real minus (U+2212), e.g. "+12.3" / "−4.0". */
