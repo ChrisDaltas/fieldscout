@@ -35,10 +35,13 @@
 --       passed while archived does not start the draft; a later one does.
 --   §X  ACCOUNT DELETION is never blocked by an archived league (FK actions
 --       run at trigger depth > 1).
--- Break probes (§4.3) — shown red in the PR, reverted: (1) the gate widened
--- to role IN ('commissioner','co_commissioner') ⇒ K5 / K6 red; (2) the
--- trade_tick claim predicate removed ⇒ J14 red; (3) the guard's EXISTS
--- inverted to `deleted_at IS NULL`... see the PR.
+-- Break probes (§4.3) — each injected after `begin;` (inside this file's own
+-- rolled-back transaction), shown red in the PR, reverted: (1) the gate
+-- widened to co-commissioners ⇒ K5 + 7 downstream red; (2) trade_tick's claim
+-- predicate removed ⇒ J11 red (J10 holds — the freeze refuses the sweep's
+-- writes); (3) the freeze dropped on league_chat ⇒ A3 + R9 red; (4) the
+-- missed-draft-time rule removed ⇒ J14 red; (5) restore's re-queue removed ⇒
+-- R25 + R29 red; (6) the leagues row guard opened ⇒ R20 / R21 / R30 + 5 red.
 -- World: u1 commissioner (of every league), u2 co-commissioner (LA), u3 / u5
 -- managers, u4 outsider, u6 a manager of LX only.
 -- ============================================================================
