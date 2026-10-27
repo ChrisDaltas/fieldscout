@@ -37,6 +37,7 @@ import {
 import { useOpenPlayer } from '@/hooks/use-open-player'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { PROJ_TEXT } from '@/components/players/projected-points'
+import { shownStatsSeason, type StatsSeason } from '@/lib/players/stats-season'
 import { cn } from '@/lib/utils'
 
 interface PlayerRow {
@@ -199,9 +200,10 @@ const SCORING_OPTIONS: Array<{ id: ScoringKey; label: string }> = [
   { id: 'standard', label: 'Standard' },
 ]
 
-/** Which season's totals feed the stat cells. `last` matches the pre-Week-1
- *  default the spreadsheet has always shown. */
-type SeasonKey = 'current' | 'last'
+/** Which season's totals feed the stat cells. The table opens on — and Reset
+ *  returns to — the read's `season.default` (stats-season.ts: the current
+ *  season once it has games, last season before). */
+type SeasonKey = StatsSeason
 
 const TEAM_OPTIONS = Object.keys(NFL_TEAM_COLORS).sort()
 const RECENT_KEY = 'fieldscout.player-search.recent'
@@ -237,7 +239,10 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
   const [position, setPosition] = useState<PositionFilter>(initialPosition)
   const [team, setTeam] = useState<string>('')
   const [scoring, setScoring] = useState<ScoringKey>('ppr')
-  const [season, setSeason] = useState<SeasonKey>('last')
+  // The viewer's season pick; null = follow the read's default.
+  const [seasonPick, setSeasonPick] = useState<SeasonKey | null>(null)
+  const [defaultSeason, setDefaultSeason] = useState<SeasonKey | null>(null)
+  const season = shownStatsSeason(seasonPick, defaultSeason)
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [visibleCols, setVisibleCols] = useState<Set<ColumnKey>>(
@@ -283,12 +288,15 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
         if (!res.ok) throw new Error(`Players failed (${res.status})`)
         return res.json() as Promise<{
           players: PlayerRow[]
-          season?: { current: number; last: number }
+          season?: { current: number; last: number; default?: SeasonKey }
         }>
       })
       .then((data) => {
         setRows(data.players ?? [])
-        if (data.season) setSeasons(data.season)
+        if (data.season) {
+          setSeasons({ current: data.season.current, last: data.season.last })
+          if (data.season.default) setDefaultSeason(data.season.default)
+        }
         setIsLoading(false)
       })
       .catch((err) => {
@@ -406,7 +414,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
     setPosition('All')
     setTeam('')
     setScoring('ppr')
-    setSeason('last')
+    setSeasonPick(null)
   }
 
   const handleSort = (col: ColumnDef) => {
@@ -537,7 +545,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
             <div className="mb-1 text-meta font-semibold text-n-6">Season</div>
             <Select
               value={season}
-              onValueChange={(v) => setSeason(v as SeasonKey)}
+              onValueChange={(v) => setSeasonPick(v as SeasonKey)}
             >
               <SelectTrigger>
                 <SelectValue />
