@@ -29,7 +29,9 @@ const PERSON_COLUMNS = 'id, username, avatar_url, bio, cred_score'
  * pages' read (follows ⨝ profiles, newest follow first), drained past
  * PostgREST's 1000-row cap with an exact count so a long list is never
  * silently cut short. `null` = nobody has that username; a failed read
- * throws. Keyed under `followKeys.all`, so a follow from a row refreshes it.
+ * throws. Keyed under `followKeys.all`; a follow or unfollow marks it stale
+ * without re-reading it, so the rows on screen stay until the list is left
+ * (an unfollowed row stays, showing Follow) and the next visit reads it fresh.
  */
 export function usePersonFollows(username: string, kind: PersonFollowsKind) {
   return useQuery({
