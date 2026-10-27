@@ -41,6 +41,7 @@ import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-overr
 
 import { commishConsoleHref } from './commish-console-ops'
 import { STAT_FIX_RULE_COPY } from './corrections-view-ops'
+import { LeagueDangerZone } from './league-archive'
 import { Crest, LeaguePageTitle } from './league-cells'
 import { DraftOrderEditor } from './draft-order-editor'
 import { InvitePanel } from './invite-panel'
@@ -653,6 +654,9 @@ function SettingsIndex({
       ))}
       </div>
       {isCommish && <CommishConsoleRow leagueId={leagueId} />}
+      {/* F716 (212): Archive league — every member sees why it is or isn't
+          theirs to do; only the commissioner gets the button. */}
+      <LeagueDangerZone leagueId={leagueId} detail={detail} />
     </div>
   )
 }

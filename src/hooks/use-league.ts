@@ -227,29 +227,49 @@ export function useSetLeagueStatus(leagueId: string) {
 }
 
 /**
- * Soft-delete a league (DELETE /api/leagues/[id] — commish only; the route
- * calls the `soft_delete_league` RPC per Q8/v2.8.2). Retry-safe: the RPC is
- * an idempotent no-op on an already-deleted league.
+ * Archive / restore a league (POST /api/leagues/[id]/archive | restore —
+ * F716, migration 212: leagues are archived, never deleted). The league's
+ * commissioner only; the server refuses anyone else (403) and an archive
+ * while a draft is in progress (409). Repeat-safe on the server (an archived
+ * league archives as a no-op). Success drops the league's cached detail and
+ * refreshes both lists (my leagues + archived leagues — one key prefix).
  */
-export function useDeleteLeague() {
+function useArchiveVerb(verb: 'archive' | 'restore') {
   const queryClient = useQueryClient()
-
   return useMutation({
     mutationFn: async (leagueId: string) => {
-      const response = await fetch(`/api/leagues/${leagueId}`, { method: 'DELETE' })
-      const body = (await response.json().catch(() => null)) as { error?: unknown } | null
+      const response = await fetch(`/api/leagues/${leagueId}/${verb}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const body = (await response.json().catch(() => null)) as { error?: unknown; changed?: unknown } | null
       if (!response.ok) {
         throw new Error(
-          typeof body?.error === 'string' ? body.error : 'Failed to delete league',
+          userFacingMessage(
+            typeof body?.error === 'string'
+              ? body.error
+              : verb === 'archive'
+                ? 'The league could not be archived — try again.'
+                : 'The league could not be restored — try again.',
+          ),
         )
       }
-      return { leagueId }
+      return { leagueId, changed: body?.changed === true }
     },
     onSuccess: ({ leagueId }) => {
       queryClient.removeQueries({ queryKey: leaguesKeys.detail(leagueId) })
       void queryClient.invalidateQueries({ queryKey: leaguesKeys.all })
     },
   })
+}
+
+export function useArchiveLeague() {
+  return useArchiveVerb('archive')
+}
+
+export function useRestoreLeague() {
+  return useArchiveVerb('restore')
 }
 
 /**

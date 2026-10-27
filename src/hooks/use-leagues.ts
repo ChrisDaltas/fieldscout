@@ -8,6 +8,9 @@ import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 export const leaguesKeys = {
   all: ['leagues'] as const,
   detail: (leagueId: string) => ['leagues', leagueId] as const,
+  /** The caller's ARCHIVED leagues (212 / F716). Under `all`, so every
+   *  invalidation of my leagues refreshes this list too. */
+  archived: ['leagues', 'archived'] as const,
 }
 
 /** One row of GET /api/leagues (my leagues via league_members — §15.1). */
@@ -21,6 +24,22 @@ export interface MyLeagueRow {
   created_at: string | null
   my_role: string
   my_team_id: string | null
+}
+
+/** One row of GET /api/leagues?archived=1 — a league the caller is in that
+ *  its commissioner archived (F716 / migration 212). Read-only: the league's
+ *  pages are closed while it is archived; only its commissioner can restore
+ *  it. */
+export interface ArchivedLeagueRow {
+  id: string
+  name: string
+  avatar_url: string | null
+  season: number
+  status: string
+  team_count: number
+  /** When it was archived (ISO). */
+  archived_at: string
+  my_role: string
 }
 
 /** Caller-facing create input; `action_id` is stamped by `createLeague` below. */
@@ -69,6 +88,25 @@ export function useLeagues(options?: { enabled?: boolean }) {
     queryFn: async (): Promise<MyLeagueRow[]> => {
       const response = await fetch('/api/leagues')
       const body = await parseJsonOrThrow<{ leagues: MyLeagueRow[] }>(response)
+      return body.leagues
+    },
+    enabled: options?.enabled ?? true,
+  })
+}
+
+/**
+ * My ARCHIVED leagues (GET /api/leagues?archived=1 — F716 / migration 212):
+ * the Leagues page's read-only "Archived leagues" section, where the
+ * commissioner finds Restore. On a database without 212 the list is simply
+ * whatever was soft-deleted before (none in practice) — the read needs no
+ * new column.
+ */
+export function useArchivedLeagues(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: leaguesKeys.archived,
+    queryFn: async (): Promise<ArchivedLeagueRow[]> => {
+      const response = await fetch('/api/leagues?archived=1')
+      const body = await parseJsonOrThrow<{ leagues: ArchivedLeagueRow[] }>(response)
       return body.leagues
     },
     enabled: options?.enabled ?? true,

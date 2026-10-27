@@ -341,9 +341,11 @@ select throws_ok(
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims',
   '{"sub": "88000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+-- RE-CUT BY 212 (F716): soft_delete_league is retired; the commissioner
+-- ARCHIVES the league, which sets the same deleted_at the cell below reads.
 select lives_ok(
-  $$ select public.soft_delete_league((select (r->>'league_id')::uuid from _cl)) $$,
-  'the commissioner soft-deletes the league');
+  $$ select public.archive_league((select (r->>'league_id')::uuid from _cl)) $$,
+  'the commissioner archives the league (212 — was the soft delete)');
 select throws_ok(
   $$ select public.update_league_settings(
        (select (r->>'league_id')::uuid from _cl), 12,

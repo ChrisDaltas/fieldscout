@@ -81,7 +81,9 @@ select is(
   'trg_trade_invalidate_on_roster_delete:A trg_trade_invalidate_on_roster_move:A',
   'A8 E37: two triggers on league_rosters (DELETE; UPDATE OF team_id), both ENABLE ALWAYS (R616 — a replica-mode session cannot skip them)');
 select is(
-  (select string_agg(t.tgname, ' ' order by t.tgname) from pg_trigger t where t.tgrelid = 'public.trades'::regclass and not t.tgisinternal),
+  (select string_agg(t.tgname, ' ' order by t.tgname) from pg_trigger t where t.tgrelid = 'public.trades'::regclass and not t.tgisinternal
+     -- RE-PINNED BY 212 (F716, additive, R992): the archive freeze trigger `tr_aa_league_archived_guard` is pinned by pgTAP 162 A3–A6.
+     and t.tgname <> 'tr_aa_league_archived_guard'),
   'tr_broadcast_trades_insert tr_broadcast_trades_status',
   'A9 trades is broadcast on INSERT and on a status change (D38), and carries no other trigger');
 

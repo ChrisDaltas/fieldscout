@@ -33,7 +33,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(99);
+select plan(100);   -- 99 until 212 (F716) split E14 into the refusal and its no-write check
 
 -- pg_temp.un201 — migration 201's pairs reversed (derive_201.py; pgTAP 151
 -- pins it). RE-PINNED BY D591 ("Allow illegal lineups" retired:
@@ -1210,7 +1210,9 @@ select is(
   || 'update_league_settings:t:search_path="":f:t',
   'A2 the fifteen replaced bodies keep one overload each, their DEFINER / plain posture, search_path empty, anon closed, and authenticated on the fourteen doors only');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un169(pg_temp.un173(pg_temp.un176(pg_temp.un196(pg_temp.un199(pg_temp.un201(p.prosrc))))))), ' ' order by p.proname)
+  -- RE-PINNED BY 212 (F716): soft_delete_league is RETIRED — replaced whole by a refusal for every caller (pgTAP 162 A2 / K7 / K8), so it is pinned here as 212's FILE body (8782805e…), not through 169.
+  (select string_agg(p.proname || '=' || case when p.proname = 'soft_delete_league' then 'retired:' || md5(p.prosrc)
+                     else md5(pg_temp.un169(pg_temp.un173(pg_temp.un176(pg_temp.un196(pg_temp.un199(pg_temp.un201(p.prosrc))))))) end, ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in (
      'add_placeholder_seat', 'set_member_role', 'assign_manager', 'remove_manager',
@@ -1223,11 +1225,13 @@ select is(
   || 'scoring_fork_template=1626ee041457cc40617ace01a43bc380 scoring_update_rules=0ebe670e11eceb1386e6f1e11f23623b '
   || 'set_league_invite_slug=fa7789b109a0e4e5aaf6da233ced2815 set_league_status=d2943892e3f96868678216a2280191cf '
   || 'set_lineup_internal=ca3307414057469da7ed5c0af0b29fe6 set_member_role=a97a6e5edf6ff08ae440447d76e513fa '
-  || 'soft_delete_league=cb7b208f1856cea83f3ecf8a83722a83 update_league_profile=a00e4578603e579b1018c3382d4b1978 '
+  || 'soft_delete_league=retired:8782805e54c5c0f053567fe8b2d6a7a9 update_league_profile=a00e4578603e579b1018c3382d4b1978 '
   || 'update_league_settings=fa301876833c5cba5fe27ae4455e7a2e',
   'A3 D137: each live body with 169 reversed is its NEWEST definer FILE TEXT (063 / 150 / 062 / 118 / 064 / 059 / 060 / 105 / 157 — stored md5 literals measured on the 168 chain)');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un173(pg_temp.un176(pg_temp.un196(pg_temp.un199(pg_temp.un201(p.prosrc)))))), ' ' order by p.proname)
+  -- RE-PINNED BY 212 (F716): soft_delete_league is RETIRED — replaced whole by a refusal for every caller (pgTAP 162 A2 / K7 / K8), so it is pinned here as 212's FILE body (8782805e…), not through 169.
+  (select string_agg(p.proname || '=' || case when p.proname = 'soft_delete_league' then 'retired:' || md5(p.prosrc)
+                     else md5(pg_temp.un173(pg_temp.un176(pg_temp.un196(pg_temp.un199(pg_temp.un201(p.prosrc)))))) end, ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in (
      'add_placeholder_seat', 'set_member_role', 'assign_manager', 'remove_manager',
@@ -1240,7 +1244,7 @@ select is(
   || 'scoring_fork_template=76fbb4d2aa54a77b0f867d4f7c7f5efe scoring_update_rules=2a737dd7a75692e7bcae370618e6083f '
   || 'set_league_invite_slug=406d50399ee5a5b93c363dc3a10d265a set_league_status=b94ac2112a7b1aeeba50c8e7b4852f33 '
   || 'set_lineup_internal=36a62aed801182faf52dcd3f58f1a723 set_member_role=516483c5b214da865a808d26afceff50 '
-  || 'soft_delete_league=cdcd56355f0cfc7404436753056729c0 update_league_profile=034aff016a77968b1b4eb4e17bf73098 '
+  || 'soft_delete_league=retired:8782805e54c5c0f053567fe8b2d6a7a9 update_league_profile=034aff016a77968b1b4eb4e17bf73098 '
   || 'update_league_settings=0afb6fffbfc688dc96a0fcc5bb4ad9d1',
   'A4 the fifteen live prosrc md5s — 169 as written (stored literals; remove_manager through pg_temp.un173(pg_temp.un176(…)) since 176, add_placeholder_seat through pg_temp.un196(…) since 196, additive)');
 select is(
@@ -1265,7 +1269,8 @@ select is(
   'add_placeholder_seat:1 assign_manager:1 create_league_invite:2 leave_league:0 remove_manager:1 '
   || 'revoke_league_invite:1 rotate_invite_code:1 scoring_fork_template:1 scoring_update_rules:1 '
   || 'set_league_invite_slug:2 set_league_status:1 set_lineup:0 set_lineup_internal:1 set_member_role:2 '
-  || 'soft_delete_league:1 update_league_profile:1 update_league_settings:1',
+  -- RE-PINNED BY 212 (F716): the retired soft_delete_league has no change path left, so no seam call (0).
+  || 'soft_delete_league:0 update_league_profile:1 update_league_settings:1',
   'A6 every change path reaches the one seam (two arms each for the role, the invite and the slug), and neither the leave nor the set_lineup door does');
 select is(
   public.league_receipt_diff_internal(
@@ -1674,13 +1679,18 @@ select is(
   '[[{"status": "scheduled"}, {"status": "setup"}], [{"status": "setup"}, {"status": "scheduled"}]]'::jsonb,
   'E13 setup to scheduled, the same again, back to setup: TWO lifecycle_change receipts — the repeat is the no-op');
 
-select public.soft_delete_league('b1170000-0000-4000-8000-000000000003');
-select public.soft_delete_league('b1170000-0000-4000-8000-000000000003');
+-- RE-CUT BY 212 (F716 — Chris 2026-10-27: leagues are archived, never
+-- deleted, and only the commissioner archives). The co-commissioner who
+-- used to delete LD here is now refused, and the only receipt LD holds is
+-- the transfer. (The archive's own receipt is pinned in pgTAP 162 §R.)
+select throws_ok($$ select public.archive_league('b1170000-0000-4000-8000-000000000003') $$, '42501',
+  'archive_league: only the league''s commissioner can archive it — a co-commissioner or a manager cannot',
+  'E14 the co-commissioner can no longer remove LD — archive is the commissioner''s alone (F716); soft_delete_league is retired');
 select is(
   (select jsonb_agg(jsonb_build_array(action_type, before, after) order by action_type)
    from commissioner_actions where league_id = 'b1170000-0000-4000-8000-000000000003'),
-  '[["delete_league", {"deleted": false}, {"deleted": true}], ["transfer_commissioner", {"role": "manager", "commissioner_user_id": "97117000-0000-4000-8000-000000000001"}, {"role": "commissioner", "commissioner_user_id": "97117000-0000-4000-8000-000000000002"}]]'::jsonb,
-  'E14 the co-commissioner deletes LD: ONE delete_league receipt; the second delete is the no-op');
+  '[["transfer_commissioner", {"role": "manager", "commissioner_user_id": "97117000-0000-4000-8000-000000000001"}, {"role": "commissioner", "commissioner_user_id": "97117000-0000-4000-8000-000000000002"}]]'::jsonb,
+  'E14b …and it wrote nothing: LD holds only the transfer receipt (212)');
 
 select set_config('request.jwt.claims', '{"sub": "97117000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 select throws_ok($$ select pg_temp.save('b1170000-0000-4000-8000-000000000001', '{"faab_budget": 1}') $$, '42501', NULL,
@@ -1693,8 +1703,8 @@ select throws_ok($$ select public.update_league_profile('b1170000-0000-4000-8000
   'E18 a manager cannot rename the league');
 select throws_ok($$ select public.set_league_status('b1170000-0000-4000-8000-000000000001', 'scheduled') $$, '42501', NULL,
   'E19 a manager cannot move the lifecycle');
-select throws_ok($$ select public.soft_delete_league('b1170000-0000-4000-8000-000000000001') $$, '42501', NULL,
-  'E20 a manager cannot delete the league');
+select throws_ok($$ select public.archive_league('b1170000-0000-4000-8000-000000000001') $$, '42501', NULL,
+  'E20 a manager cannot archive the league (212 — was the delete)');
 select is((select count(*)::int from commissioner_actions where league_id = 'b1170000-0000-4000-8000-000000000001'), 23,
   'E21 the refused manager calls wrote nothing (23 receipts in LM)');
 

@@ -15,6 +15,7 @@ import {
   type SettingSaveResult,
 } from '@/components/leagues/settings-panel-ops'
 import { CenteredNote, LeaguePageBar } from '@/components/mobile/league/league/league-bits'
+import { MobileDangerZone } from '@/components/mobile/leagues/mobile-league-archive'
 import { SettingsSkeleton } from '@/components/mobile/settings/settings-parts'
 import { leagueAvClass } from '@/components/mobile/shell/use-league-card'
 import { MIcon } from '@/components/mobile/ui/m-icon'
@@ -342,6 +343,8 @@ function GeneralPage({
           </Link>
         </section>
       )}
+      {/* F716 (212): Archive league — the reason for everyone it isn't for. */}
+      <MobileDangerZone leagueId={leagueId} detail={detail} />
       {isCommish && (
         <LeagueProfileSheet
           open={profileOpen}

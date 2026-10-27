@@ -104,7 +104,7 @@ from (values
   ('b1330000-0000-4000-8000-000000000002', 'pgtap-x133-LK', null),     -- exactly 1000 bulk
   ('b1330000-0000-4000-8000-000000000003', 'pgtap-x133-LB', null),     -- 1000 bulk + u2 = 1001
   ('b1330000-0000-4000-8000-000000000004', 'pgtap-x133-L0', null),     -- nobody
-  ('b1330000-0000-4000-8000-000000000005', 'pgtap-x133-LD', '2026-10-01 00:00:00+00')  -- deleted: u6
+  ('b1330000-0000-4000-8000-000000000005', 'pgtap-x133-LD', null)  -- deleted: u6 (stamped below, after its member row — 212)
 ) v(id, nm, del);
 insert into league_members (league_id, user_id, role, is_placeholder) values
  ('b1330000-0000-4000-8000-000000000001', '99133000-0000-4000-8000-000000000001', 'commissioner', false),
@@ -117,6 +117,11 @@ insert into league_members (league_id, user_id, role, is_placeholder)
 select l, ('99133000-0000-4000-8001-' || lpad(i::text, 12, '0'))::uuid, 'manager', false
 from generate_series(1, 1000) i,
      unnest(array['b1330000-0000-4000-8000-000000000002', 'b1330000-0000-4000-8000-000000000003']::uuid[]) l;
+-- RE-CUT BY 212 (F716): a soft-deleted league is now an ARCHIVED one, and an
+-- archived league's rows refuse every write (league_archived_guard_internal),
+-- so the fixture builds the league's rows FIRST and stamps deleted_at LAST —
+-- the same end state the cells below read.
+update leagues set deleted_at = '2026-10-01 00:00:00+00' where id = 'b1330000-0000-4000-8000-000000000005';
 
 create temp table r133 (tag text primary key, r jsonb);
 grant all on r133 to anon, authenticated, service_role;

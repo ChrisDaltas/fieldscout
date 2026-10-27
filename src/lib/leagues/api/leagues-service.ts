@@ -638,18 +638,7 @@ export async function getLeagueDetail(
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /api/leagues/[id] — soft delete (commish; Q8: via RPC only)
+// DELETE /api/leagues/[id] — RETIRED by 212 (F716, Chris 2026-10-27: leagues
+// are archived, never deleted). The route answers 405 itself; archive and
+// restore live in `league-archive-service.ts`.
 // ---------------------------------------------------------------------------
-
-export async function deleteLeague(supabase: Supabase, leagueId: string): Promise<ServiceResult> {
-  const { error } = await supabase.rpc('soft_delete_league', { p_league_id: leagueId })
-  if (error) {
-    if (error.code === '42501') {
-      // Non-commish AND nonexistent league both land here (no existence
-      // leak at the RPC) — surface as 403.
-      return { status: 403, body: { error: 'Only the commissioner can delete a league.' } }
-    }
-    return { status: 500, body: { error: error.message } }
-  }
-  return { status: 200, body: { ok: true } }
-}

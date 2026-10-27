@@ -2308,6 +2308,7 @@ export type Database = {
       }
       leagues: {
         Row: {
+          archived_by: string | null
           avatar_url: string | null
           champion_team_id: string | null
           commissioner_note: string | null
@@ -2344,6 +2345,7 @@ export type Database = {
           waiver_type: string
         }
         Insert: {
+          archived_by?: string | null
           avatar_url?: string | null
           champion_team_id?: string | null
           commissioner_note?: string | null
@@ -2380,6 +2382,7 @@ export type Database = {
           waiver_type?: string
         }
         Update: {
+          archived_by?: string | null
           avatar_url?: string | null
           champion_team_id?: string | null
           commissioner_note?: string | null
@@ -2416,6 +2419,13 @@ export type Database = {
           waiver_type?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "leagues_archived_by_fkey"
+            columns: ["archived_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "leagues_champion_team_id_fkey"
             columns: ["champion_team_id"]
@@ -5531,6 +5541,14 @@ export type Database = {
           version: string
         }[]
       }
+      archive_league: {
+        Args: { p_league_id: string; p_reason?: string }
+        Returns: Json
+      }
+      archive_league_internal: {
+        Args: { p_at: string; p_league_id: string; p_reason: string }
+        Returns: Json
+      }
       assign_manager: {
         Args: { p_league_id: string; p_team_id: string; p_user_id: string }
         Returns: Json
@@ -6373,6 +6391,7 @@ export type Database = {
         Returns: boolean
       }
       join_league_by_code: { Args: { p_code_or_slug: string }; Returns: Json }
+      league_archive_who_internal: { Args: { p_user: string }; Returns: string }
       league_broadcast_payload: {
         Args: { l: Database["public"]["Tables"]["leagues"]["Row"] }
         Returns: Json
@@ -6921,6 +6940,14 @@ export type Database = {
       reorder_list_players: {
         Args: { p_list_id: string; p_positions: Json }
         Returns: undefined
+      }
+      restore_league: {
+        Args: { p_league_id: string; p_reason?: string }
+        Returns: Json
+      }
+      restore_league_internal: {
+        Args: { p_at: string; p_league_id: string; p_reason: string }
+        Returns: Json
       }
       revoke_league_invite: {
         Args: { p_invite_id: string; p_league_id: string }

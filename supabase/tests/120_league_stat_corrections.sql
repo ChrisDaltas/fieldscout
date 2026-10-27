@@ -270,7 +270,9 @@ select is(
    from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
   3, 'A8 still THREE overridden-row exclusions (158''s — 106 A9): the records ride the rows 158 already judged writable, never a new predicate');
 select is(
-  (select count(*)::int from pg_trigger where tgrelid = 'public.league_stat_corrections'::regclass and not tgisinternal)
+  (select count(*)::int from pg_trigger where tgrelid = 'public.league_stat_corrections'::regclass and not tgisinternal
+     -- RE-PINNED BY 212 (F716, additive, R992): the archive freeze trigger `tr_aa_league_archived_guard` is pinned by pgTAP 162 A3–A6.
+     and tgname <> 'tr_aa_league_archived_guard')
   || ':' || (not has_table_privilege('anon', 'public.league_stat_corrections', 'TRUNCATE')
              and not has_table_privilege('authenticated', 'public.league_stat_corrections', 'TRUNCATE'))::text,
   '0:true', 'A9 no trigger on the table; no TRUNCATE for anon or authenticated (133''s default ACL)');

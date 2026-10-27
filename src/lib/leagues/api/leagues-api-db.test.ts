@@ -6,7 +6,7 @@
  * WHAT'S UNDER TEST (D68): the SERVICE layer (`leagues-service.ts`) driven
  * with real signed-in clients — the same composition the Route Handlers
  * wrap (Zod parse → validateLeagueSettings → splitSettings → create_league
- * RPC; RLS-scoped reads; soft_delete_league RPC). The Next routes add only
+ * RPC; RLS-scoped reads; the archive / restore RPCs — 212, F716, which retired soft_delete_league). The Next routes add only
  * cookie/auth plumbing on top (CLAUDE.md: routes carry minimal logic). The
  * RPC layer is additionally driven DIRECTLY for the idempotency pin (the
  * task's "pin the double-submit at both layers").
@@ -39,10 +39,10 @@ import {
 } from '../settings/league-settings'
 import {
   createLeague,
-  deleteLeague,
   getLeagueDetail,
   listMyLeagues,
 } from './leagues-service'
+import { ARCHIVE_FORBIDDEN_MESSAGE, archiveLeague, listMyArchivedLeagues, restoreLeague } from './league-archive-service'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_ANON_KEY =
@@ -105,6 +105,10 @@ async function cleanup(): Promise<void> {
     .like('name', `${LEAGUE_NAME_PREFIX}%`)
   const ids = (stale ?? []).map((row) => row.id)
   if (ids.length > 0) {
+    // 212 (F716): an ARCHIVED league's rows refuse every write — so the
+    // fixtures this suite archived are brought back first (the restore-shaped
+    // update is the one write an archived league's row accepts).
+    await service.from('leagues').update({ deleted_at: null, archived_by: null }).in('id', ids)
     // teams.league_id has no ON DELETE action — clear franchises first.
     await service.from('teams').delete().in('league_id', ids)
     await service.from('leagues').delete().in('id', ids)
@@ -460,7 +464,7 @@ describe('league CRUD end-to-end (060 — local stack, PostgREST wire path)', ()
     expect(result.status).toBe(404)
   })
 
-  it('DELETE (service): outsider 403; commissioner soft-deletes; detail 404s; list shrinks; retry idempotent', async () => {
+  it('ARCHIVE (service, 212 / F716): outsider 403; the commissioner archives; detail 404s; my list shrinks and the archived list shows it; a retry is the no-op; restore brings it back', async () => {
     const { data: league } = await service
       .from('leagues')
       .select('id')
@@ -468,19 +472,22 @@ describe('league CRUD end-to-end (060 — local stack, PostgREST wire path)', ()
       .single()
     if (!league) throw new Error('sweep-8 league missing')
 
-    const denied = await deleteLeague(outsiderClient, league.id)
+    const denied = await archiveLeague(outsiderClient, league.id, {})
     expect(denied.status).toBe(403)
+    expect(denied.body).toEqual({ error: ARCHIVE_FORBIDDEN_MESSAGE })
 
-    const deleted = await deleteLeague(creatorClient, league.id)
-    expect(deleted.status).toBe(200)
+    const archived = await archiveLeague(creatorClient, league.id, {})
+    expect(archived.status).toBe(200)
+    expect(archived.body).toMatchObject({ league_id: league.id, changed: true, archived: true })
 
-    // Soft, not hard (CLAUDE.md rule 8): the row survives with deleted_at.
+    // Kept, not deleted (CLAUDE.md rule 8): the row survives with the stamp.
     const { data: row } = await service
       .from('leagues')
-      .select('deleted_at')
+      .select('deleted_at, archived_by')
       .eq('id', league.id)
       .single()
     expect(row?.deleted_at).not.toBeNull()
+    expect(row?.archived_by).toBe(creatorId)
 
     const detail = await getLeagueDetail(creatorClient, creatorId, league.id)
     expect(detail.status).toBe(404)
@@ -489,8 +496,23 @@ describe('league CRUD end-to-end (060 — local stack, PostgREST wire path)', ()
     const { leagues } = list.body as { leagues: Array<{ id: string }> }
     expect(leagues.some((l) => l.id === league.id)).toBe(false)
 
-    // Retry is an idempotent no-op success (D63 doctrine).
-    const retried = await deleteLeague(creatorClient, league.id)
+    const archivedList = await listMyArchivedLeagues(creatorClient, creatorId)
+    const shown = (archivedList.body as { leagues: Array<{ id: string; my_role: string; archived_at: string }> }).leagues
+    expect(shown.find((l) => l.id === league.id)).toMatchObject({ my_role: 'commissioner', archived_at: row?.deleted_at })
+
+    // Retry is the repeat-safe no-op (D63 doctrine), said so.
+    const retried = await archiveLeague(creatorClient, league.id, {})
     expect(retried.status).toBe(200)
+    expect(retried.body).toMatchObject({ changed: false, archived: true })
+
+    // The retired door refuses, and the route never deletes.
+    const { error: retired } = await creatorClient.rpc('soft_delete_league', { p_league_id: league.id })
+    expect(retired?.code).toBe('0A000')
+
+    const restored = await restoreLeague(creatorClient, league.id, {})
+    expect(restored.status).toBe(200)
+    expect(restored.body).toMatchObject({ changed: true, archived: false })
+    const back = await getLeagueDetail(creatorClient, creatorId, league.id)
+    expect(back.status).toBe(200)
   })
 })

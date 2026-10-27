@@ -20,7 +20,8 @@ import type { Database } from '@/types/database'
 
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
 import { createInvite, claimInvite } from './invites-service'
-import { deleteLeague, listMyLeagues, patchLeague } from './leagues-service'
+import { archiveLeague } from './league-archive-service'
+import { listMyLeagues, patchLeague } from './leagues-service'
 import {
   addPlaceholderSeat,
   assignManager,
@@ -114,6 +115,10 @@ async function cleanup(): Promise<void> {
     // team (123:304, no ON DELETE) and the log is immutable except through
     // the league's ON DELETE CASCADE — so the F406 order: detach the teams,
     // delete the league (taking its receipts), THEN delete the teams.
+    // 212 (F716): an ARCHIVED league's rows refuse every write — so the
+    // fixtures this suite archived are brought back first (the restore-shaped
+    // update is the one write an archived league's row accepts).
+    await service.from('leagues').update({ deleted_at: null, archived_by: null }).in('id', ids)
     const { data: teams } = await service.from('teams').select('id').in('league_id', ids)
     const teamIds = (teams ?? []).map((row) => row.id)
     await service.from('teams').update({ league_id: null }).in('id', teamIds)
@@ -248,7 +253,8 @@ describe('POST /api/leagues/[id]/members — placeholder seats', () => {
   })
 
   it('a soft-deleted league is 404 — and the body carries NO fieldErrors (R87 mis-shape)', async () => {
-    const deleted = await deleteLeague(commishClient, league3Id)
+    // 212 (F716): leagues are archived, not deleted — the same deleted_at stamp.
+    const deleted = await archiveLeague(commishClient, league3Id, {})
     expect(deleted.status).toBe(200)
 
     const result = await addPlaceholderSeat(commishClient, league3Id, {})

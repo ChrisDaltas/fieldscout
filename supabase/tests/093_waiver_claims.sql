@@ -52,7 +52,9 @@ select ok(
   and has_table_privilege('service_role', 'public.waiver_claims', 'TRUNCATE'),
   'A4 both tables are born WITHOUT TRUNCATE for anon + authenticated (081 section A / 133); service_role keeps it');
 select is(
-  (select count(*)::int from pg_trigger where tgrelid = 'public.waiver_claims'::regclass and not tgisinternal),
+  (select count(*)::int from pg_trigger where tgrelid = 'public.waiver_claims'::regclass and not tgisinternal
+     -- RE-PINNED BY 212 (F716, additive, R992): the archive freeze trigger `tr_aa_league_archived_guard` is pinned by pgTAP 162 A3–A6.
+     and tgname <> 'tr_aa_league_archived_guard'),
   0,
   'A5 waiver_claims carries NO trigger — never broadcast (12.14 / TD3: owners refetch)');
 select is(
