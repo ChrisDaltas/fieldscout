@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { BUILDER_STATS_SELECT, BUILDER_TOTAL_COLUMNS, builderSeasonPoints, PRESET_BY_BUILDER_KEY } from '@/lib/players/preset-scoring'
+import { currentSeasonHasGames, defaultStatsSeason } from '@/lib/players/stats-season'
 import type { StatLineRow } from '@/lib/leagues/scoring/score-week-worker'
 import { fetchWeeklyStatsForPlayers } from '@/lib/stats/fetch-weekly-stats'
 import { pageAll } from '@/lib/supabase/page-all'
@@ -144,13 +145,19 @@ export async function GET(request: Request) {
   const playerIds = players.map((p) => p.id as string)
 
   let stats: Record<string, unknown>[]
+  // Which season the tables open on (stats-season.ts) — asked of the whole
+  // table, so it is the same answer whatever filters this read carries.
+  let currentHasGames: boolean
   try {
-    stats = await fetchWeeklyStatsForPlayers<Record<string, unknown>>({
-      supabase,
-      playerIds,
-      seasons: [CURRENT_SEASON, LAST_SEASON],
-      select: BUILDER_STATS_SELECT,
-    })
+    ;[stats, currentHasGames] = await Promise.all([
+      fetchWeeklyStatsForPlayers<Record<string, unknown>>({
+        supabase,
+        playerIds,
+        seasons: [CURRENT_SEASON, LAST_SEASON],
+        select: BUILDER_STATS_SELECT,
+      }),
+      currentSeasonHasGames(supabase, CURRENT_SEASON),
+    ])
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to load stats' },
@@ -262,8 +269,8 @@ export async function GET(request: Request) {
       last_pts: Math.round(lastPts * 10) / 10,
       last_games: lastGames,
       projected_pts: projectedPts,
-      // Raw season totals (last season — most useful for the players spreadsheet
-      // pre-Week-1; switches to current once games are played).
+      // Raw season totals for both seasons — the tables show the one
+      // `season.default` names (current once it has games) or the viewer's pick.
       stats_last: stripMeta(lastAcc),
       stats_current: stripMeta(currentAcc),
     }
@@ -279,7 +286,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     players: enriched,
-    season: { current: CURRENT_SEASON, last: LAST_SEASON },
+    season: { current: CURRENT_SEASON, last: LAST_SEASON, default: defaultStatsSeason(currentHasGames) },
     scoring,
   })
 }

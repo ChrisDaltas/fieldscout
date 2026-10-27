@@ -1,6 +1,6 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/hooks/use-auth'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -15,6 +15,30 @@ import { createBrowserClient } from '@/lib/supabase/client'
 export const followKeys = {
   all: ['follows'] as const,
   followingSet: (userId: string) => ['follows', 'following-set', userId] as const,
+  // A person's phone profile carries the counts a follow changes, so it
+  // lives under `all` and the toggle's settle refreshes it with everything
+  // else. Their Followers / Following lists live under `all` too, but the
+  // settle only marks them stale (see refreshAfterFollowToggle).
+  person: (username: string) => ['follows', 'person', username] as const,
+  personFollowsAll: ['follows', 'person-follows'] as const,
+  personFollows: (username: string, kind: 'followers' | 'following') =>
+    ['follows', 'person-follows', kind, username] as const,
+}
+
+/**
+ * What a follow or unfollow refreshes once it settles. The follow set and
+ * every count that reads it (a person's profile, the feed) re-read now. A
+ * Followers / Following list already on screen keeps the rows it loaded:
+ * unfollowing someone from your own Following leaves their row in place,
+ * now showing Follow, so a mis-tap can be undone (as on Twitter / Instagram,
+ * and the desktop /u page until a reload). The lists are only marked stale,
+ * so the next visit to one reads it fresh.
+ */
+export function refreshAfterFollowToggle(qc: QueryClient) {
+  const listRoot = followKeys.personFollowsAll[1]
+  qc.invalidateQueries({ queryKey: followKeys.all, predicate: (q) => q.queryKey[1] !== listRoot })
+  qc.invalidateQueries({ queryKey: followKeys.personFollowsAll, refetchType: 'none' })
+  qc.invalidateQueries({ queryKey: ['explore-feed'] })
 }
 
 /**
@@ -96,10 +120,6 @@ export function useToggleFollow() {
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(key, ctx.prev)
     },
-    onSettled: () => {
-      // Refresh the follow set and any follower/following counts that read it.
-      qc.invalidateQueries({ queryKey: followKeys.all })
-      qc.invalidateQueries({ queryKey: ['explore-feed'] })
-    },
+    onSettled: () => refreshAfterFollowToggle(qc),
   })
 }
