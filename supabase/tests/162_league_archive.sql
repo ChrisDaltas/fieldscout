@@ -56,7 +56,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(103);
+select plan(108);
 
 -- ---------------------------------------------------------------------------
 -- A. Form
@@ -76,8 +76,9 @@ select is(
    where n.nspname = 'public' and p.proname in ('archive_league', 'restore_league', 'archive_league_internal',
      'restore_league_internal', 'league_archive_who_internal', 'league_archived_guard_internal',
      'league_row_archived_guard_internal', 'soft_delete_league', 'league_archive_trade_reason_internal',
-     'league_restore_apply_internal', 'op_archived_league_prelude_internal', 'op_restore_league', 'op_restore_league_internal')),
-  'archive_league=t:search_path="":f:t archive_league_internal=f:search_path="":f:f league_archive_trade_reason_internal=f:search_path="":f:f league_archive_who_internal=f:search_path="":f:f league_archived_guard_internal=t:search_path="":f:f league_restore_apply_internal=f:search_path="":f:f league_row_archived_guard_internal=t:search_path="":f:f op_archived_league_prelude_internal=f:search_path="":f:f op_restore_league=t:search_path="":f:t op_restore_league_internal=f:search_path="":f:f restore_league=t:search_path="":f:t restore_league_internal=f:search_path="":f:f soft_delete_league=t:search_path="":f:t',
+     'league_restore_apply_internal', 'op_archived_league_prelude_internal', 'op_restore_league', 'op_restore_league_internal',
+     'league_week_scores_pending_internal')),
+  'archive_league=t:search_path="":f:t archive_league_internal=f:search_path="":f:f league_archive_trade_reason_internal=f:search_path="":f:f league_archive_who_internal=f:search_path="":f:f league_archived_guard_internal=t:search_path="":f:f league_restore_apply_internal=f:search_path="":f:f league_row_archived_guard_internal=t:search_path="":f:f league_week_scores_pending_internal=f:search_path="":f:f op_archived_league_prelude_internal=f:search_path="":f:f op_restore_league=t:search_path="":f:t op_restore_league_internal=f:search_path="":f:f restore_league=t:search_path="":f:t restore_league_internal=f:search_path="":f:f soft_delete_league=t:search_path="":f:t',
   'A2 doors DEFINER + search_path '''' + authenticated only; internals plain + closed; trigger functions DEFINER + closed (the operator''s door F851 included)');
 
 -- THE CENSUS. Every public table with a league_id column carries the freeze
@@ -221,6 +222,8 @@ from (values
   ('b1620000-0000-4000-8000-000000000074', 'DL', 'scheduled', null),                       -- restored BEFORE its draft time
   ('b1620000-0000-4000-8000-000000000081', 'LX', 'in_season', null),                       -- account deletion
   ('b1620000-0000-4000-8000-000000000033', 'FQ', 'in_season', null),                       -- finalize over a queued score (R1730)
+  ('b1620000-0000-4000-8000-000000000034', 'FS', 'in_season', null),                       -- shares a player with PU (R1750)
+  ('b1620000-0000-4000-8000-000000000035', 'PU', 'in_season', null),                       -- sits at `upcoming` and HOLDS the row (R1750)
   ('b1620000-0000-4000-8000-000000000091', 'LR', 'setup', null),                           -- its own scoring system (R1725)
   ('b1620000-0000-4000-8000-000000000092', 'LO', 'in_season', null)                        -- the operator's restore (F851)
 ) v(id, nm, st, nx);
@@ -336,6 +339,25 @@ insert into league_weeks (league_id, season, week, status) values (pg_temp.lg('F
 insert into players (id, full_name, position, team, status) values ('x162-q2', 'X162 Q Two', 'QB', 'MIA', 'Active');
 insert into league_rosters (league_id, team_id, player_id) values (pg_temp.lg('FQ'), pg_temp.team('FQ', 1), 'x162-q2');
 insert into score_fanout (season, week, player_id, enqueued_at) values (2026, 7, 'x162-q2', '2026-10-26 20:00:00+00');
+-- R1750: FS (week 7 in its window) and PU (week 7 still `upcoming` — e.g. a
+-- week paused at upcoming) roster the same player. A drain already PROCESSED
+-- his row — scored FS, then deferred the row because PU's week is not open —
+-- so the row stays queued with deferred_until set. That row must not hold FS.
+insert into players (id, full_name, position, team, status) values
+ ('x162-q4', 'X162 Q Four', 'QB', 'MIA', 'Active'),
+ ('x162-q3', 'X162 Q Three', 'QB', 'MIA', 'Active');
+insert into league_weeks (league_id, season, week, status) values
+ (pg_temp.lg('FS'), 2026, 7, 'correction_window'), (pg_temp.lg('PU'), 2026, 7, 'upcoming');
+insert into league_rosters (league_id, team_id, player_id) values
+ (pg_temp.lg('FS'), pg_temp.team('FS', 1), 'x162-q4'), (pg_temp.lg('PU'), pg_temp.team('PU', 1), 'x162-q4');
+insert into score_fanout (season, week, player_id, enqueued_at, deferred_until)
+values (2026, 7, 'x162-q4', '2026-10-26 20:00:00+00', '2026-10-29 11:04:30+00');
+-- FW (archived in §J, restored at J16) rosters x162-q3, who has a week-7 line
+-- and an existing queue row a drain was holding — LEASED when the restore
+-- lands. The restore must re-arm it for FW and take the lease back.
+insert into league_rosters (league_id, team_id, player_id) values (pg_temp.lg('FW'), pg_temp.team('FW', 1), 'x162-q3');
+insert into player_stats (player_id, season, week, stat_type, updated_at, pass_yards)
+values ('x162-q3', 2026, 7, 'weekly', '2026-10-26 20:00:00+00', 180);
 -- LR: plays by its OWN scoring system, owned by u1 (R1725).
 insert into scoring_systems (id, name, owner_id, is_template, rules)
 values ('51620000-0000-4000-8000-000000000001', 'pgtap-x162-LR scoring', '99162000-0000-4000-8000-000000000001', false,
@@ -374,7 +396,7 @@ $$;
 grant execute on function pg_temp.lines(uuid) to authenticated;
 -- The league's data as one md5: every table with a league_id AND the eight
 -- that reach it through a draft / team / trade (R1732), the leagues row but
--- for the three columns the round trip moves. commissioner_actions and
+-- for the four columns the round trip moves. commissioner_actions and
 -- league_chat are left out — the archive's and the restore's own record
 -- lands there, and R3–R5 / R27–R28 count it exactly.
 create or replace function pg_temp.fingerprint(p_league uuid) returns text language plpgsql as $$
@@ -405,7 +427,7 @@ begin
       into v_part using p_league;
     v_out := v_out || r.tbl || '=' || v_part || ';';
   end loop;
-  select md5((to_jsonb(l) - array['deleted_at', 'archived_by', 'updated_at'])::text) into v_part from leagues l where l.id = p_league;
+  select md5((to_jsonb(l) - array['deleted_at', 'archived_by', 'updated_at', 'restored_at'])::text) into v_part from leagues l where l.id = p_league;
   return md5(v_out || 'leagues=' || v_part);
 end;
 $$;
@@ -560,7 +582,7 @@ insert into r162 select 'R25', restore_league('b1620000-0000-4000-8000-000000000
 reset role;
 select is((select format('%s|%s|%s', r ->> 'changed', r ->> 'archived', r ->> 'scores_requeued') from r162 where tag = 'R25'),
   'true|false|2', 'R25 the commissioner restores; the QB''s two not-final weeks re-queued (D782)');
-select is((select format('%s|%s', deleted_at is null, archived_by is null) from leagues where id = pg_temp.lg('LA')), 't|t', 'R26 the stamp is cleared');
+select is((select format('%s|%s|%s', deleted_at is null, archived_by is null, restored_at = now()) from leagues where id = pg_temp.lg('LA')), 't|t|t', 'R26 the stamp is cleared; restored_at records the restore (R1750)');
 select is(pg_temp.receipts(pg_temp.lg('LA')), 'archive_league:false>true,restore_league:true>false', 'R27 ONE restore receipt, true → false');
 select is((select string_agg(message, ' || ' order by created_at, message) from league_chat where league_id = pg_temp.lg('LA') and is_system and message like 'x162_user1 %'),
   'x162_user1 archived the league — reason: season on hold. || x162_user1 restored the league.', 'R28 ONE restore line');
@@ -654,6 +676,13 @@ select is(
 delete from score_fanout where season = 2026 and week = 7 and player_id = 'x162-q2';
 insert into r162 select 'Q2', finalize_matchups('2026-10-29 11:06:00+00', pg_temp.lg('FQ'));
 select is((select status from league_weeks where league_id = pg_temp.lg('FQ')), 'final', 'Q2 …once it is written (the row gone) the week finalizes');
+select is(
+  (select format('%s|%s', (select status from league_weeks where league_id = pg_temp.lg('FS')),
+     (select count(*) from jsonb_array_elements(r -> 'skipped') x where x ->> 'league_id' = pg_temp.lg('FS')::text))
+   from r162 where tag = 'J6'),
+  'final|0', 'Q3 R1750: a row another league HOLDS (PU at upcoming — a drain already processed it and scored FS) never holds FS: the every-league run finalized it');
+select is((select count(*)::int from score_fanout where season = 2026 and week = 7 and player_id = 'x162-q4'), 1,
+  'Q4 …and the row is still queued for PU (the hold''s premise is real)');
 -- Lineup lock.
 insert into r162 select 'J8', lineup_lock_tick('2026-11-04 06:00:00+00', null);
 select is(
@@ -696,8 +725,16 @@ select is(
 
 -- Restore, and each job catches up through its normal rule.
 select pg_temp.as_user(1);
+insert into score_fanout (season, week, player_id, enqueued_at, deferred_until, claimed_at, claim_token)
+values (2026, 7, 'x162-q3', '2026-10-26 20:00:00+00', null, '2026-11-04 06:59:50+00', gen_random_uuid());   -- a drain holds the lease as FW comes back
 insert into r162 select 'J16' || x, restore_league_internal(pg_temp.lg(x), null, '2026-11-04 07:00:00+00')
 from unnest(array['JW', 'VW', 'FW']) x;
+select is(
+  (select format('%s|%s|%s', deferred_until = '2026-11-04 07:00:00+00'::timestamptz, claimed_at is null, claim_token is null)
+   from score_fanout where season = 2026 and week = 7 and player_id = 'x162-q3'),
+  't|t|t', 'J16b R1750: the restore RE-ARMS an existing row for FW (deferred_until = its restore instant) and takes the lease back — a drain that skipped FW cannot ack it away');
+select is((select restored_at from leagues where id = pg_temp.lg('FW')), '2026-11-04 07:00:00+00'::timestamptz,
+  'J16c …and leagues.restored_at records the instant (the mark the hold reads)');
 select set_config('request.jwt.claims', '', true);
 insert into r162 select 'J17', waiver_tick('2026-11-04 07:01:00+00', pg_temp.lg('JW'));
 select is(pg_temp.wstate(pg_temp.lg('JW')), '1[x162-x:won|$70|x162-x] 2[x162-x:lost:outbid,x162-y:won|$95|x162-y]',
@@ -705,7 +742,14 @@ select is(pg_temp.wstate(pg_temp.lg('JW')), '1[x162-x:won|$70|x162-x] 2[x162-x:l
 insert into r162 select 'J18', league_week_advance('2026-11-04 07:05:00+00', pg_temp.lg('VW'));
 select is((select status from league_weeks where league_id = pg_temp.lg('VW')), 'live', 'J18 restored: the week opens at the next advance');
 insert into r162 select 'J19', finalize_matchups('2026-11-04 07:05:00+00', pg_temp.lg('FW'));
-select is((select status from league_weeks where league_id = pg_temp.lg('FW')), 'final', 'J19 restored: the finished week is finalized by the normal rule');
+select is(
+  (select format('%s|%s', (select status from league_weeks where league_id = pg_temp.lg('FW')),
+     (select x ->> 'reason' || ':' || (x ->> 'queued') from jsonb_array_elements(r -> 'skipped') x where x ->> 'league_id' = pg_temp.lg('FW')::text))
+   from r162 where tag = 'J19'),
+  'correction_window|scores_queued:1', 'J19 restored: the finished week WAITS while its own re-armed score is pending (R1730 / R1750)');
+delete from score_fanout where season = 2026 and week = 7 and player_id = 'x162-q3';   -- the drain scores FW and consumes the row
+insert into r162 select 'J19b', finalize_matchups('2026-11-04 07:06:00+00', pg_temp.lg('FW'));
+select is((select status from league_weeks where league_id = pg_temp.lg('FW')), 'final', 'J19b …and once it is written the week is finalized by the normal rule');
 
 -- ---------------------------------------------------------------------------
 -- S. R1725 — an archived league still owns its scoring system

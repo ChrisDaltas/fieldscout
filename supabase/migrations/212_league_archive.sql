@@ -84,10 +84,15 @@
 --      commissioner_actions row (D671). op_set_commissioner can then seat a
 --      commissioner. 184's own prelude now names an archived league as
 --      archived ("restore it first") instead of "does not exist" (R1733).
---   1c. R1730 — `finalize_matchups` never finalizes a league-week while a
---      score for one of the league's rostered players is still in
---      `score_fanout` (skipped by name, `scores_queued`) — the general rule,
---      for every league; it is what makes the restore's catch-up safe.
+--   1c. R1730 / R1750 — `finalize_matchups` never finalizes a league-week
+--      while a score is still pending FOR THAT LEAGUE (skipped by name,
+--      `scores_queued`): a `score_fanout` row for one of its rostered players
+--      that is leased, has never yet been processed by a drain
+--      (`deferred_until IS NULL`), or was re-armed by this league's own
+--      restore (`deferred_until = leagues.restored_at`). A row a drain has
+--      already processed and deferred — another league holding it, e.g. one
+--      paused at `upcoming` — never holds this league: that drain scored
+--      every open league it maps to. The general rule, for every league.
 --   1d. R1725 — an ARCHIVED league still counts as a user of its scoring
 --      system: `scoring_system_league_use_internal` (170) and 104's rules
 --      guard drop `deleted_at IS NULL`, so an archived league's custom
@@ -177,7 +182,8 @@
 --     production already has; nothing else changes until the push.
 --   * Rollback: DROP the two doors + internals + trigger functions (CASCADE
 --     drops the triggers), restore the three bodies from their files and
---     soft_delete_league from 169, ALTER TABLE leagues DROP COLUMN archived_by.
+--     soft_delete_league from 169, ALTER TABLE leagues DROP COLUMN archived_by,
+--     DROP COLUMN restored_at (R1750).
 -- pgTAP 162_league_archive.sql; stack vitest league-archive-scoring-db.test.ts.
 -- ============================================================================
 
@@ -189,11 +195,17 @@ ALTER TABLE leagues
 ALTER TABLE leagues
   ADD CONSTRAINT leagues_archived_by_only_while_archived
   CHECK (archived_by IS NULL OR deleted_at IS NOT NULL);
+-- R1750: the instant of the league's latest restore — the mark on the queue
+-- rows that restore re-armed FOR THIS league (finalize's hold reads it).
+ALTER TABLE leagues
+  ADD COLUMN restored_at TIMESTAMPTZ;
 
 COMMENT ON COLUMN leagues.deleted_at IS
   'Migration 212 (F716, Chris 2026-10-27 — leagues are archived, never deleted): ARCHIVED AT. Set by archive_league (the commissioner), cleared by restore_league. While set the league is frozen: hidden from members'' league lists, skipped by every scheduled job, and every write to its rows is refused by league_archived_guard_internal. The name predates the ruling (renaming it would break the code deployed before the push).';
 COMMENT ON COLUMN leagues.archived_by IS
   'Migration 212 (F716): the commissioner who archived the league; NULL while it is not archived (CHECK), or if that profile is gone.';
+COMMENT ON COLUMN leagues.restored_at IS
+  'Migration 212 (F716 / R1750): when the league was last restored (by its commissioner or by FieldScout); NULL if never. Written only by league_restore_apply_internal. The score_fanout rows that restore re-armed carry deferred_until = this instant, which is how finalize_matchups tells a score still pending FOR THIS league from a row another league is holding.';
 
 -- ---------------------------------------------------------------------------
 -- 2. The freeze — the trigger functions
@@ -272,8 +284,8 @@ BEGIN
   -- Archived: the one update allowed is the restore — deleted_at cleared,
   -- with nothing but archived_by / updated_at moving alongside it.
   IF NEW.deleted_at IS NULL
-     AND (to_jsonb(NEW) - ARRAY['deleted_at', 'archived_by', 'updated_at'])
-       = (to_jsonb(OLD) - ARRAY['deleted_at', 'archived_by', 'updated_at']) THEN
+     AND (to_jsonb(NEW) - ARRAY['deleted_at', 'archived_by', 'updated_at', 'restored_at'])
+       = (to_jsonb(OLD) - ARRAY['deleted_at', 'archived_by', 'updated_at', 'restored_at']) THEN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'This league is archived, so nothing in it can change. Its commissioner can restore it from Leagues › Archived leagues.'
@@ -578,7 +590,7 @@ BEGIN
 
   -- (1) THE UNSTAMP FIRST — the freeze lifts, then the caller's record is written.
   UPDATE public.leagues
-  SET deleted_at = NULL, archived_by = NULL, updated_at = p_at
+  SET deleted_at = NULL, archived_by = NULL, updated_at = p_at, restored_at = p_at
   WHERE id = p_league_id;
   GET DIAGNOSTICS v_cnt = ROW_COUNT;
   IF v_cnt <> 1 THEN
@@ -589,11 +601,18 @@ BEGIN
   -- (2) D782 — SCORING CATCHES UP. Every rostered player with a stat line in
   --     one of the league's not-final weeks is queued exactly as ingestion
   --     queues him (the stamp = his line's own updated_at, so the worker
-  --     reads him as landed); an existing row is left alone. An upcoming
-  --     week's rows are held by the worker until the week opens. R1731:
-  --     `deferred_until = p_at` marks the row as fresh at the restore, so
-  --     the stall check (124) does not read an old stat stamp as a stalled
-  --     drain; the row is claimable at once.
+  --     reads him as landed). An upcoming week's rows are held by the worker
+  --     until the week opens. R1731: `deferred_until = p_at` marks the row
+  --     as fresh at the restore, so the stall check (124) does not read an
+  --     old stat stamp as a stalled drain; the row is claimable at once.
+  --     R1750: it is also THIS league's mark — `deferred_until =
+  --     leagues.restored_at` is how finalize's hold knows the row is still
+  --     pending for this league. A row that already exists (another league
+  --     may be holding it, and every drain skipped this league while it was
+  --     archived) is RE-ARMED the same way — and its lease is taken back, so
+  --     a drain that claimed it before this restore committed cannot ack it
+  --     away without scoring this league (its ack finds the token gone and
+  --     leaves the row, 121's `lease_lost`).
   INSERT INTO public.score_fanout (season, week, player_id, enqueued_at, deferred_until)
   SELECT ps.season, ps.week, ps.player_id, min(ps.updated_at), p_at
   FROM public.league_weeks lw
@@ -604,7 +623,8 @@ BEGIN
     AND lw.status IN ('upcoming', 'live', 'correction_window')
     AND ps.updated_at IS NOT NULL
   GROUP BY ps.season, ps.week, ps.player_id
-  ON CONFLICT (season, week, player_id) DO NOTHING;
+  ON CONFLICT (season, week, player_id) DO UPDATE
+    SET deferred_until = EXCLUDED.deferred_until, claimed_at = NULL, claim_token = NULL;
   GET DIAGNOSTICS v_requeued = ROW_COUNT;
   RETURN v_requeued;
 END;
@@ -2113,6 +2133,33 @@ END;
 $$;
 REVOKE EXECUTE ON FUNCTION draft_tick() FROM PUBLIC, anon, authenticated;
 
+-- R1730 / R1750 / R1752: the ONE reading of "a score still pending for this
+-- league-week" — finalize's hold calls it, and the season-runner's finalize
+-- oracle asks it (D289: the gate reports the job's reason, never a mirror).
+-- A score_fanout row of the week for a player on this league's rosters that
+-- is LEASED (a drain is on it), has NEVER been processed by a drain since it
+-- was queued (`deferred_until IS NULL` — ingestion clears it on every fresh
+-- delta), or was RE-ARMED by this league's own restore (`deferred_until =
+-- leagues.restored_at`). A row a drain already processed and deferred —
+-- another league holding it, e.g. one at `upcoming` — is not this league's:
+-- that drain scored every open league the player maps to.
+CREATE OR REPLACE FUNCTION league_week_scores_pending_internal(p_league_id UUID, p_season INTEGER, p_week INTEGER)
+RETURNS INTEGER
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+  SELECT count(*)::int
+  FROM public.score_fanout f
+  JOIN public.leagues l ON l.id = p_league_id
+  WHERE f.season = p_season AND f.week = p_week
+    AND EXISTS (SELECT 1 FROM public.league_rosters r WHERE r.league_id = p_league_id AND r.player_id = f.player_id)
+    AND (f.claimed_at IS NOT NULL OR f.deferred_until IS NULL OR f.deferred_until = l.restored_at);
+$$;
+REVOKE ALL ON FUNCTION league_week_scores_pending_internal(UUID, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
+COMMENT ON FUNCTION league_week_scores_pending_internal(UUID, INTEGER, INTEGER) IS
+  'Migration 212 (R1730 / R1750): how many scores are still pending FOR THIS league-week in score_fanout — leased, never yet processed by a drain, or re-armed by this league''s restore. finalize_matchups holds the week while it is > 0; the season-runner oracle reads it too.';
+
 -- finalize_matchups — 183_job_knobs.sql:876-1149 FILE TEXT (D137), 1 hunk (+6 / -0).
 CREATE OR REPLACE FUNCTION finalize_matchups(
   p_now       TIMESTAMPTZ DEFAULT now(),
@@ -2237,10 +2284,10 @@ BEGIN
               v_lg.id, v_lw.week, v_g.final_games, v_g.total_games - v_g.postponed_games, v_g.postponed_games, v_g.open_games;
             CONTINUE;
           END IF;
-          SELECT count(*)::int INTO v_cnt FROM public.score_fanout f WHERE f.season = v_league.season AND f.week = v_lw.week AND EXISTS (SELECT 1 FROM public.league_rosters r WHERE r.league_id = v_lg.id AND r.player_id = f.player_id);   -- 212 / F716 (R1730)
-          IF v_cnt > 0 THEN   -- 212 / F716 (R1730): a score still queued for this league's players — the week waits for it
-            v_skipped := v_skipped || jsonb_build_object('league_id', v_lg.id, 'week', v_lw.week, 'reason', 'scores_queued', 'queued', v_cnt);   -- 212 / F716 (R1730)
-            RAISE NOTICE 'finalize_matchups: league % week % not finalized — % queued score(s) for its rostered players are not written yet; never finalized over a pending score (R1730)', v_lg.id, v_lw.week, v_cnt;   -- 212 / F716 (R1730)
+          v_cnt := public.league_week_scores_pending_internal(v_lg.id, v_league.season, v_lw.week);   -- 212 / F716 (R1730 / R1750): scores still pending FOR THIS league — never a row another league holds
+          IF v_cnt > 0 THEN   -- 212 / F716 (R1730): a score still pending for this league's players — the week waits for it
+            v_skipped := v_skipped || jsonb_build_object('league_id', v_lg.id, 'week', v_lw.week, 'reason', 'scores_queued', 'queued', v_cnt, 'holding', 'this league — a score not yet written for its own players');   -- 212 / F716 (R1730 / R1750)
+            RAISE NOTICE 'finalize_matchups: league % week % not finalized — % score(s) for its rostered players are still pending for this league; never finalized over a pending score (R1730 / R1750)', v_lg.id, v_lw.week, v_cnt;   -- 212 / F716 (R1730)
             CONTINUE;   -- 212 / F716 (R1730)
           END IF;   -- 212 / F716 (R1730)
 

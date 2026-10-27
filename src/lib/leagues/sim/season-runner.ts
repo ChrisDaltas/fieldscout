@@ -2346,19 +2346,25 @@ async function readClubLocks(
 
 /**
  * WHY A WEEK IS NOT FINAL, ASKED OF THE FINALIZE JOB'S OWN ORACLES (F302 /
- * §3 Q47). `finalize_matchups` holds a week on exactly two guards, and both
- * `CONTINUE` out of the loop leaving the row untouched at `correction_window`
+ * §3 Q47). `finalize_matchups` holds a week on exactly three guards (212 added
+ * guard 1b, R1752), and each `CONTINUE`s out of the loop leaving the row
+ * untouched at `correction_window`
  * (118:2073 says so verbatim: "The week is SKIPPED BY NAME and stays
  * `correction_window`"):
  *   guard 1, 118:2054 — `week_games_state_internal(season, week).all_final`
  *                       false => `games_not_final` (§23.2, partial data);
+ *   guard 1b, 212     — `league_week_scores_pending_internal(league, season,
+ *                       week)` > 0 => `scores_queued` (R1730 / R1750: a score
+ *                       still pending FOR THIS league in score_fanout — leased,
+ *                       never yet drained, or re-armed by its restore; a row
+ *                       another league holds never counts);
  *   guard 2, 118:2074 — `week_results_pending_internal(league, season, week)`
  *                       non-NULL => `pending_scores` / `pending_results`
  *                       (E61 — absence is not a score, never coerced to 0.00).
  * The write door tests FINALITY instead (119:566 refuses `final`, 119:570
- * admits `live` or `correction_window`), so a week held on either guard past
+ * admits `live` or `correction_window`), so a week held on any guard past
  * its own `correction_window_ends_at` is still open at the door. This reads
- * the SAME two oracles rather than mirroring their logic in TS (D289/D33), so
+ * the SAME three oracles rather than mirroring their logic in TS (D289/D33), so
  * the gate reports the job's reason, not the harness's opinion of it.
  */
 async function readFinalizeHold(
@@ -2385,6 +2391,15 @@ async function readFinalizeHold(
         `games_not_final (guard 1, 118:2054; ${g?.final_games ?? '?'}/${g?.total_games ?? '?'} final, ` +
         `${g?.postponed_games ?? '?'} postponed, ${g?.open_games ?? '?'} open)`,
     }
+  }
+  const { data: queued, error: queuedError } = await service.rpc('league_week_scores_pending_internal', {
+    p_league_id: leagueId,
+    p_season: SYNTHETIC_SEASON,
+    p_week: week,
+  })
+  throwIfError(queuedError, `league_week_scores_pending_internal(${leagueId}, ${week})`)
+  if (typeof queued === 'number' && queued > 0) {
+    return { reason: 'scores_queued', detail: `scores_queued (guard 1b, 212 R1730 / R1750; ${queued} score(s) still pending for this league in score_fanout)` }
   }
   const { data: pending, error: pendingError } = await service.rpc('week_results_pending_internal', {
     p_league_id: leagueId,

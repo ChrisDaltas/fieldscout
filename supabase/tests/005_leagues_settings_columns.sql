@@ -50,7 +50,7 @@ select columns_are('public', 'leagues',
         'scoring_rules_snapshot', 'deleted_at', 'invite_slug',
         'creation_action_id', 'avatar_url', 'champion_team_id', 'waiver_next_run_at',
         'commissioner_note', 'commissioner_note_updated_at', 'commissioner_note_updated_by',
-        'archived_by'],
+        'archived_by', 'restored_at'],
   -- updated by 055/L.A1.4: +invite_slug (§7.2 custom share slug)
   -- updated by 060/L.A1.12: +creation_action_id (create_league idempotency key, D68)
   -- updated by 064: +avatar_url (league profile — commissioner crest upload)
@@ -58,7 +58,8 @@ select columns_are('public', 'leagues',
   -- updated by 149: +waiver_next_run_at (the next unsettled waiver run — Q70, L.D2.7)
   -- updated by 192: +commissioner_note / _updated_at / _updated_by (the commissioner note — gap list #13; pgTAP 139)
   -- updated by 212: +archived_by (leagues are archived, never deleted — F716; pgTAP 162; deleted_at now means "archived at")
-  'leagues = the 12 001 columns + the 14 §12.1 columns + 055''s invite_slug + 060''s creation_action_id + 064''s avatar_url + 118''s champion_team_id + 149''s waiver_next_run_at + 192''s three commissioner_note columns + 212''s archived_by, exactly');
+  -- updated by 212 (R1750): +restored_at (the latest restore — the mark finalize's queued-score hold reads; pgTAP 162 J16c / R26)
+  'leagues = the 12 001 columns + the 14 §12.1 columns + 055''s invite_slug + 060''s creation_action_id + 064''s avatar_url + 118''s champion_team_id + 149''s waiver_next_run_at + 192''s three commissioner_note columns + 212''s archived_by and restored_at, exactly');
 
 select col_default_is('public', 'leagues', 'status', 'setup', 'status defaults to setup');
 select col_default_is('public', 'leagues', 'format', 'redraft', 'format defaults to redraft');

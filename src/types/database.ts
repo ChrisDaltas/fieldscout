@@ -2331,6 +2331,7 @@ export type Database = {
           playoff_start_week: number
           playoff_teams: number
           regular_season_weeks: number
+          restored_at: string | null
           roster_settings: Json
           scoring_rules_snapshot: Json | null
           scoring_system_id: string | null
@@ -2368,6 +2369,7 @@ export type Database = {
           playoff_start_week?: number
           playoff_teams?: number
           regular_season_weeks?: number
+          restored_at?: string | null
           roster_settings?: Json
           scoring_rules_snapshot?: Json | null
           scoring_system_id?: string | null
@@ -2405,6 +2407,7 @@ export type Database = {
           playoff_start_week?: number
           playoff_teams?: number
           regular_season_weeks?: number
+          restored_at?: string | null
           roster_settings?: Json
           scoring_rules_snapshot?: Json | null
           scoring_system_id?: string | null
@@ -6442,6 +6445,10 @@ export type Database = {
       league_week_list_words_internal: {
         Args: { p_weeks: Json }
         Returns: string
+      }
+      league_week_scores_pending_internal: {
+        Args: { p_league_id: string; p_season: number; p_week: number }
+        Returns: number
       }
       league_weeks_rules_backfill_internal: {
         Args: { p_apply?: boolean }
