@@ -1,6 +1,6 @@
 -- ============================================================================
 -- 210 — the remaining L.F2.7 hardening (M7 L.F2.8; spec §19.3; PROGRESS
---       D730–D739; ledger F714, F715, F719, F720, F723, F724, F777, F793;
+--       D730–D740; ledger F714, F715, F719, F720, F723, F724, F777, F793;
 --       FULL rigour — permissions)
 -- ============================================================================
 --
@@ -87,10 +87,12 @@
 --   applies to the new row: is_claimed AND claimed_by = auth.uid()).
 --
 -- PART 8 — F793 (`scoring_systems`). A client change of a league scoring
---   row's `name` or `description` is refused unless the caller is the
---   SITTING commissioner (role 'commissioner') of every live league that
---   plays by it. A replaced commissioner — now a co-commissioner or a
---   manager — keeps owning the row but can no longer relabel it. New
+--   row's `name` or `description` is refused unless the caller is a
+--   commissioner or co-commissioner of every live league that plays by it
+--   (`is_league_commish` — the same test `scoring_update_rules` uses; §17
+--   gives co-commissioners the commissioner's powers). An owner who is no
+--   longer either — demoted to manager, or gone from the league — keeps
+--   owning the row but can no longer relabel it (review R1705). New
 --   INVOKER trigger (sorts after 104's validator) + a DEFINER helper that
 --   answers only about the caller's own row (170's
 --   scoring_system_league_use_internal shape). The rules guard (170) is
@@ -651,7 +653,7 @@ REVOKE EXECUTE ON FUNCTION public.expert_profiles_server_owned_guard_internal()
   FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
--- PART 8 — a league scoring row's label follows the sitting commissioner
+-- PART 8 — a league scoring row's label follows the league's commissioners
 --          (F793)
 -- ----------------------------------------------------------------------------
 CREATE FUNCTION public.scoring_system_label_lock_internal(p_scoring_system_id UUID)
@@ -661,19 +663,16 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-  -- The name of a live league that plays by this scoring system and whose
-  -- sitting commissioner is NOT the caller — asked ONLY about the caller's
-  -- own row (the in-body gate: owner_id = auth.uid()); for anyone else's row
-  -- the answer is NULL, so nothing about another user's system is told.
+  -- The name of a live league that plays by this scoring system and of
+  -- which the caller is NOT a commissioner or co-commissioner
+  -- (is_league_commish) — asked ONLY about the caller's own row (the in-body
+  -- gate: owner_id = auth.uid()); for anyone else's row the answer is NULL,
+  -- so nothing about another user's system is told.
   SELECT l.name
   FROM public.scoring_systems s
   JOIN public.leagues l ON l.scoring_system_id = s.id AND l.deleted_at IS NULL
   WHERE s.id = p_scoring_system_id AND s.owner_id = (SELECT auth.uid())
-    AND NOT EXISTS (
-      SELECT 1 FROM public.league_members m
-      WHERE m.league_id = l.id
-        AND m.user_id = (SELECT auth.uid())
-        AND m.role = 'commissioner')
+    AND NOT public.is_league_commish(l.id)
   ORDER BY l.created_at, l.id
   LIMIT 1
 $$;
@@ -696,7 +695,7 @@ BEGIN
   END IF;
   v_league := public.scoring_system_label_lock_internal(OLD.id);
   IF v_league IS NOT NULL THEN
-    RAISE EXCEPTION 'This scoring system belongs to the league "%". Only its commissioner can change its name or description.', v_league
+    RAISE EXCEPTION 'This scoring system belongs to the league "%". Only its commissioner or a co-commissioner can change its name or description.', v_league
       USING ERRCODE = '42501';
   END IF;
   RETURN NEW;

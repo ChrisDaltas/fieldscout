@@ -1,6 +1,6 @@
 -- ============================================================================
 -- pgTAP 160 — migration 210, the remaining L.F2.7 hardening (M7 L.F2.8;
--- PROGRESS D730–D739; ledger F714, F715, F718, F719, F720, F723, F724, F777,
+-- PROGRESS D730–D740; ledger F714, F715, F718, F719, F720, F723, F724, F777,
 -- F793). FULL rigour: per-role cells, RETURNING counts on every write, golden
 -- literals.
 --
@@ -13,7 +13,7 @@
 --   §F  F723 — the webhook helper is not EXECUTE-able by the API roles
 --   §G  F724 — active_game_window runs as its caller; the matview's filter
 --   §H  F777 — expert_profiles' disclaimer and claim date
---   §I  F793 — a league scoring row's label follows the sitting commissioner
+--   §I  F793 — a league scoring row's label follows the league's commissioners
 --   §J  F718 — THE HOUSE SWEEP: RLS on every public table, search_path = ''
 --        on every public SECURITY DEFINER, the anon-EXECUTE allowlist, and
 --        security_invoker on every public view
@@ -24,7 +24,7 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 reset role;
 
-select plan(82);
+select plan(83);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (postgres)
@@ -355,8 +355,8 @@ with u as (update scoring_systems set name = 'x160 league scoring v2'
 select is(count(*)::int, 1, 'I1 the sitting commissioner who owns the row may rename it') from u;
 reset role;
 
--- He hands the league on: the old commissioner becomes a co-commissioner and
--- keeps owning the row (the F793 shape).
+-- He hands the league on: the old commissioner becomes a co-commissioner
+-- (the normal transfer's end state, F790) and keeps owning the row.
 update league_members set role = 'co_commissioner'
  where league_id = '91605000-0000-4000-8000-000000000001' and user_id = '91600000-0000-4000-8000-000000000005';
 update league_members set role = 'commissioner'
@@ -364,28 +364,41 @@ update league_members set role = 'commissioner'
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "91600000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
+-- Review R1705: a co-commissioner has the commissioner's powers (§17) — the
+-- lock uses is_league_commish, as scoring_update_rules does.
+with u as (update scoring_systems set name = 'x160 league scoring v3'
+           where id = '91604000-0000-4000-8000-000000000001' returning 1)
+select is(count(*)::int, 1, 'I2 as a co-commissioner the owner may still rename it (is_league_commish, R1705)') from u;
+reset role;
+
+-- Then the new commissioner demotes him to manager: now he is neither.
+update league_members set role = 'manager'
+ where league_id = '91605000-0000-4000-8000-000000000001' and user_id = '91600000-0000-4000-8000-000000000005';
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "91600000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
 select throws_ok(
   $$ update scoring_systems set name = 'x160 hijacked' where id = '91604000-0000-4000-8000-000000000001' $$,
-  '42501', 'This scoring system belongs to the league "x160 League". Only its commissioner can change its name or description.',
-  'I2 the replaced commissioner can no longer rename the league''s scoring');
+  '42501', 'This scoring system belongs to the league "x160 League". Only its commissioner or a co-commissioner can change its name or description.',
+  'I3 an owner demoted to manager can no longer rename the league''s scoring');
 select throws_ok(
   $$ update scoring_systems set description = 'x160 hijacked' where id = '91604000-0000-4000-8000-000000000001' $$,
-  '42501', 'This scoring system belongs to the league "x160 League". Only its commissioner can change its name or description.',
-  'I3 …or rewrite its description');
+  '42501', 'This scoring system belongs to the league "x160 League". Only its commissioner or a co-commissioner can change its name or description.',
+  'I3b …or rewrite its description');
 with u as (update scoring_systems set updated_at = now() where id = '91604000-0000-4000-8000-000000000001' returning 1)
 select is(count(*)::int, 1, 'I4 a write that leaves the label alone is not this guard''s business (RETURNING 1)') from u;
 with u as (update scoring_systems set name = 'x160 personal v2' where id = '91604000-0000-4000-8000-000000000002' returning 1)
 select is(count(*)::int, 1, 'I5 his own personal scoring (no league) renames as before') from u;
 select is(public.scoring_system_label_lock_internal('91604000-0000-4000-8000-000000000001'), 'x160 League',
-  'I6 the helper names the league that holds the label');
+  'I6 the helper names the league that holds the label (he is a manager there now)');
 select set_config('request.jwt.claims', '{"sub": "91600000-0000-4000-8000-000000000006", "role": "authenticated"}', true);
 with u as (update scoring_systems set name = 'x160 new commish' where id = '91604000-0000-4000-8000-000000000001' returning 1)
 select is(count(*)::int, 0, 'I7 the new commissioner does not own the row — the owner policy matches 0 rows') from u;
 select is(public.scoring_system_label_lock_internal('91604000-0000-4000-8000-000000000001'), null,
   'I8 the helper answers nothing about a row the caller does not own');
 reset role;
-select is((select name from scoring_systems where id = '91604000-0000-4000-8000-000000000001'), 'x160 league scoring v2',
-  'I9 the label is still the one the sitting commissioner set');
+select is((select name from scoring_systems where id = '91604000-0000-4000-8000-000000000001'), 'x160 league scoring v3',
+  'I9 the label is still the one he set while a co-commissioner');
 set local role service_role;
 with u as (update scoring_systems set name = 'x160 server rename' where id = '91604000-0000-4000-8000-000000000001' returning 1)
 select is(count(*)::int, 1, 'I10 the server may rename it') from u;

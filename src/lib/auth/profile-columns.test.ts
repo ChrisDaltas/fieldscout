@@ -36,6 +36,36 @@ describe('PROFILE_READABLE_COLUMNS', () => {
   })
 })
 
+/** Every profiles EMBED in a select string — `profiles(…)`, `profiles!fk(…)`,
+ *  `alias:profiles!fk(…)` — whose column list asks for `*` or for one of the
+ *  two restricted columns (review R1706). An embed is checked against the
+ *  same column privileges as a direct read, so `profiles(*)` is refused too. */
+function badProfileEmbeds(src: string): string[] {
+  const found: string[] = []
+  const re = /\bprofiles(?:![a-z0-9_]+)?\s*\(([^()]*)\)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src))) {
+    const cols = m[1]!
+    if (/\*/.test(cols)) found.push(`${m[0]} (asks for every column)`)
+    if (/\b(is_admin|stripe_customer_id)\b/.test(cols)) found.push(`${m[0]} (a restricted column)`)
+  }
+  return found
+}
+
+describe('the embed check itself (R1706)', () => {
+  it.each([
+    ["owner:profiles!lists_owner_id_fkey(*)", 1],
+    ["profiles(*)", 1],
+    ["author:profiles!list_comments_author_id_fkey(id, is_admin)", 1],
+    ["profiles(username, stripe_customer_id)", 1],
+    ["profiles ( * )", 1],
+    ["owner:profiles!lists_owner_id_fkey(id, username, avatar_url, cred_score, is_pro)", 0],
+    ["profiles(username)", 0],
+  ] as const)('%s → %i finding(s)', (embed, n) => {
+    expect(badProfileEmbeds(`.select('id, ${embed}')`)).toHaveLength(n)
+  })
+})
+
 describe('no app read of profiles asks for every column', () => {
   const files = walk(path.join(ROOT, 'src'))
 
@@ -58,6 +88,16 @@ describe('no app read of profiles asks for every column', () => {
         const where = `${path.relative(ROOT, file)}:${line}`
         if (/\.select\(\s*\)/.test(chain) || /\.select\(\s*['"`]\s*\*/.test(chain)) offenders.push(`${where} select *`)
         if (/\.select\([^)]*\b(is_admin|stripe_customer_id)\b/.test(chain)) offenders.push(`${where} restricted column`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('no profiles embed in any select asks for * or a restricted column (R1706)', () => {
+    const offenders: string[] = []
+    for (const file of files) {
+      for (const hit of badProfileEmbeds(readFileSync(file, 'utf8'))) {
+        offenders.push(`${path.relative(ROOT, file)}: ${hit}`)
       }
     }
     expect(offenders).toEqual([])
