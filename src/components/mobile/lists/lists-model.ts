@@ -763,11 +763,18 @@ export function landedPlan(attempted: SavePlan, remaining: SavePlan): SavePlan {
 }
 
 /** The editor's note after a failed Update: the error, then what saved and
- *  what didn't — never a partial save passed off as a whole one. */
-export function saveFailureNote(error: string, attempted: SavePlan | null, remaining: SavePlan | null): string {
-  if (!attempted) return `${error} Nothing was saved.`
+ *  what didn't — never a partial save passed off as a whole one.
+ *  `alsoSaved` is what saved before this write (a new list's Save makes the
+ *  list itself first: "the list"). */
+export function saveFailureNote(
+  error: string,
+  attempted: SavePlan | null,
+  remaining: SavePlan | null,
+  alsoSaved: readonly string[] = [],
+): string {
+  if (!attempted) return `${error} ${alsoSaved.length > 0 ? `Saved: ${alsoSaved.join(', ')}.` : 'Nothing was saved.'}`
   if (!remaining) return `${error} What saved couldn’t be checked — your changes are still here.`
-  const saved = planParts(landedPlan(attempted, remaining))
+  const saved = [...alsoSaved, ...planParts(landedPlan(attempted, remaining))]
   const unsaved = planParts(remaining)
   const savedText = saved.length > 0 ? `Saved: ${saved.join(', ')}.` : 'Nothing was saved.'
   const unsavedText = unsaved.length > 0 ? ` Not saved: ${unsaved.join(', ')}.` : ''

@@ -27,6 +27,9 @@ export interface PlayerListContext {
    *  saves and Back discards): "Remove from list" takes the player out of
    *  that draft instead of writing at once. */
   removeFromDraft?: (playerId: string) => void
+  /** That editor's save button — Update, or Save on New list's step 2 — so
+   *  the removal's toast names the right one. */
+  draftSaveLabel?: 'Update' | 'Save'
 }
 
 interface PlayerDetailActionsProps {

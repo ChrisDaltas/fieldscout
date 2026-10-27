@@ -14,17 +14,14 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
-import { useQueryClient } from '@tanstack/react-query'
 import * as React from 'react'
 
-import { refreshCommunity } from '@/components/mobile/community/community-store'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MPosChip, posLabel } from '@/components/mobile/ui/m-pos-chip'
-import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { useAiListBuild } from '@/hooks/use-ai-list-build'
 import { useList, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
-import { useMobileListsCommit } from '@/hooks/use-mobile-lists-commit'
+import { useMobileListsCommit, type CommitOutcome } from '@/hooks/use-mobile-lists-commit'
 import { rankPoolPositions, useMobileListsPosRanks, type PoolPlayer } from '@/hooks/use-mobile-lists-pool'
 import { useMobileListsLatestWeek, useMobileListsTimeframeStats } from '@/hooks/use-mobile-lists-timeframe-stats'
 import { toast } from '@/hooks/use-toast'
@@ -60,9 +57,10 @@ import {
   type EdItem,
   type ListDraft,
 } from './lists-model'
-import { savedToast, updateAction, useListsNav, type ReturnTo } from './lists-nav'
+import { useListsNav } from './lists-nav'
 import {
   CenterNote,
+  DiscardSheet,
   GripIcon,
   InlineError,
   LIcon,
@@ -132,18 +130,18 @@ import { resolveMobileStats, seasonLine } from './lists-stats'
  *   the list is skipped, and an option that would bring in nobody can't be
  *   tapped. The design's Scout AI and Experts sources come later; while
  *   rankings are switched off it reads "Import a list".
- * - **A list started from Community goes back there** (gap list §3 #8):
- *   the handoff's composer posts and stays on Community, so Update on that
- *   list's step 2 of 2 returns to Community — refreshed, on For you — with
- *   "List created", not to the List view. Like the composer's Save (a name
- *   is enough, zero players allowed), that Update is live even with nothing
- *   changed: it then writes nothing and just goes back (`updateAction`).
+ *
+ * ## New list's step 2 of 2 (`NewListEditor`)
+ *
+ * The same editor opens for a list New list hasn't made yet (lr-lists §4,
+ * `new-list-save.ts`): its Back returns to New list's step 1 with the draft
+ * kept — nothing is lost, so it doesn't ask — and its **Save** (a name is
+ * enough; zero players is allowed, as in the design and the composer) is
+ * what makes the list.
  */
 export function ListEditor({
   listId,
   autoAdd,
-  created = false,
-  returnTo,
   currentWeek = 0,
   promptSeq = 0,
   onDirtyChange,
@@ -151,12 +149,6 @@ export function ListEditor({
 }: {
   listId: string
   autoAdd: boolean
-  /** A list New list has just made (its Next): the header counts this as
-   *  step "2 of 2" after New list's "1 of 2" (gap list §3 #7). */
-  created?: boolean
-  /** Where Update returns it, when not the List view: Community, for a list
-   *  started there (gap list §3 #8). */
-  returnTo?: ReturnTo
   /** The NFL week (0 = offseason), for the import sheet's ranking names. */
   currentWeek?: number
   /** Bumped when the OS back gesture tried to leave with changes. */
@@ -167,23 +159,18 @@ export function ListEditor({
   onLeave?: () => void
 }) {
   const nav = useListsNav()
-  const qc = useQueryClient()
   const detail = useList(listId)
   const aiBuild = useAiListBuild(listId)
+  const commit = useMobileListsCommit(listId)
   const list = detail.data
-  const step = created ? '2 of 2' : null
   const close = () => {
     onLeave?.()
     nav.closeEdit(listId)
   }
-  /** Update wrote the draft: say so, then the List view — or, for a list
-   *  Community started, Community, refreshed (gap list §3 #8). */
+  /** Update wrote the draft: say so, then the List view. */
   const saved = () => {
-    toast({ title: savedToast(returnTo) })
-    if (returnTo !== 'community') return close()
-    onLeave?.()
-    refreshCommunity(qc)
-    nav.returnToCommunity()
+    toast({ title: 'List updated' })
+    close()
   }
 
   return (
@@ -192,7 +179,7 @@ export function ListEditor({
           only a list that never loaded is an error screen. */}
       {!list && detail.isError ? (
         <>
-          <EditorHeader title={null} step={step} onBack={close} />
+          <EditorHeader title={null} onBack={close} />
           <CenterNote
             title="This list could not be loaded."
             body={detail.error.message}
@@ -201,7 +188,7 @@ export function ListEditor({
         </>
       ) : !list ? (
         <>
-          <EditorHeader title={null} step={step} onBack={close} />
+          <EditorHeader title={null} onBack={close} />
           <div className="flex flex-col gap-2.5 px-4 pt-2" aria-busy="true" aria-label="Loading list">
             <div className="flex gap-2">
               <div className="h-10 flex-1 animate-pulse rounded-xl bg-m-b1" />
@@ -214,7 +201,7 @@ export function ListEditor({
         </>
       ) : !list.is_owner || aiBuild.building ? (
         <>
-          <EditorHeader title={list.title} step={step} onBack={close} />
+          <EditorHeader title={list.title} onBack={close} />
           <CenterNote
             title={aiBuild.building ? 'The AI is still building this list.' : 'Only the owner can edit this list.'}
             action={<PillButton onClick={close}>Back to the list</PillButton>}
@@ -223,14 +210,14 @@ export function ListEditor({
       ) : (
         <EditorBody
           list={list}
+          commit={commit}
           autoAdd={autoAdd}
-          step={step}
+          step={null}
           currentWeek={currentWeek}
           promptSeq={promptSeq}
           onDirtyChange={onDirtyChange}
           onClose={close}
           onSaved={saved}
-          returnTo={returnTo}
         />
       )}
     </div>
@@ -238,12 +225,91 @@ export function ListEditor({
 }
 
 /**
+ * New list's step 2 of 2 (lr-lists §2.3/§4): the editor for a list that
+ * doesn't exist yet. `NewListScreen` holds the draft — Back hands it back to
+ * step 1 kept, and opening this again picks it up — and `commit` is its Save,
+ * which makes the list (`saveNewList`). `draftKey` stands in for the list's
+ * id until then (the session's stat columns, time frame and scoring).
+ *
+ * Once a Save has made the list but failed to write all of it (`exists`),
+ * this is that list's editor: Back asks before dropping the changes, and
+ * leaves for its List view.
+ */
+export function NewListEditor({
+  draftKey,
+  title,
+  positionFilter,
+  draft,
+  exists,
+  commit,
+  currentWeek = 0,
+  onDraftChange,
+  onBack,
+  onSaved,
+}: {
+  draftKey: string
+  /** The name as step 1 had it (the draft carries its own). */
+  title: string
+  /** Step 1's position group (`null` for All, or a team). */
+  positionFilter: string | null
+  draft: ListDraft
+  exists: boolean
+  commit: EditorCommit
+  currentWeek?: number
+  onDraftChange: (draft: ListDraft) => void
+  /** Back: step 1 with the draft kept — or, once the list exists, its List view. */
+  onBack: () => void
+  onSaved: () => void
+}) {
+  // Stable for this step's life: a new object would read as a refetched
+  // list. (The draft starts edited, so it never follows this anyway.)
+  const [list] = React.useState<EditorList>(() => ({
+    id: draftKey,
+    title,
+    ranking_mode: 'ranked',
+    players: [],
+    position_filter: positionFilter,
+    is_big_board: false,
+  }))
+  return (
+    <div className="fixed inset-0 z-[45] flex flex-col bg-m-b0 pt-[env(safe-area-inset-top)] leading-[normal] text-m-t1 tabular-nums" data-mobile-screen>
+      <EditorBody
+        list={list}
+        commit={commit}
+        initialDraft={draft}
+        onDraftChange={onDraftChange}
+        isNew={!exists}
+        saveLabel="Save"
+        autoAdd
+        step="2 of 2"
+        currentWeek={currentWeek}
+        promptSeq={0}
+        onClose={onBack}
+        onSaved={onSaved}
+      />
+    </div>
+  )
+}
+
+/** What the editor reads of a list — all a list New list hasn't made yet has. */
+type EditorList = Pick<ListWithDetails, 'id' | 'title' | 'ranking_mode' | 'players' | 'position_filter' | 'is_big_board'>
+
+/** The editor's one write: Update (or a new list's Save). */
+export interface EditorCommit {
+  mutate: (
+    draft: ListDraft,
+    callbacks: { onSuccess: (outcome: CommitOutcome) => void; onError: (error: Error) => void },
+  ) => void
+  isPending: boolean
+}
+
+/**
  * The header: Back, the title, and Update — blue when the draft has changes,
  * greyed (the design's disabled pill, as the ranking editor's) when it has
- * none (a list Community started keeps it blue, `updateAction`), "Saving…"
- * while it writes. A list New list has just made also counts
- * its step — "2 of 2", New list's 12/600 t3 label, beside Update (the design
- * shows "1 of 2" and never "2 of 2", lr-lists gap 24).
+ * none, "Saving…" while it writes. New list's step 2 reads **Save** (the
+ * design's label: it is what makes the list), live from the start, and
+ * counts its step — "2 of 2", New list's 12/600 t3 label, beside Save (the
+ * design shows "1 of 2" and never "2 of 2", lr-lists gap 24).
  */
 function EditorHeader({
   title,
@@ -253,6 +319,7 @@ function EditorHeader({
   titleInput,
   canUpdate = false,
   saving = false,
+  label = 'Update',
 }: {
   title: string | null
   step?: string | null
@@ -261,6 +328,7 @@ function EditorHeader({
   titleInput?: React.ReactNode
   canUpdate?: boolean
   saving?: boolean
+  label?: 'Update' | 'Save'
 }) {
   const live = canUpdate || saving
   return (
@@ -289,7 +357,7 @@ function EditorHeader({
           saving && 'opacity-60',
         )}
       >
-        {saving ? 'Saving…' : 'Update'}
+        {saving ? 'Saving…' : label}
       </button>
     </div>
   )
@@ -297,6 +365,11 @@ function EditorHeader({
 
 function EditorBody({
   list,
+  commit,
+  initialDraft,
+  onDraftChange,
+  isNew = false,
+  saveLabel = 'Update',
   autoAdd,
   step,
   currentWeek,
@@ -304,23 +377,27 @@ function EditorBody({
   onDirtyChange,
   onClose,
   onSaved,
-  returnTo,
 }: {
-  list: ListWithDetails
+  list: EditorList
+  commit: EditorCommit
+  /** Start from this draft rather than the list (New list's kept draft). */
+  initialDraft?: ListDraft
+  /** Every change to the draft, for a parent that keeps it. */
+  onDraftChange?: (draft: ListDraft) => void
+  /** A list not made yet: Save is live with nothing changed (it makes the
+   *  list), and Back hands the draft back kept, so it doesn't ask. */
+  isNew?: boolean
+  saveLabel?: 'Update' | 'Save'
   autoAdd: boolean
   step: string | null
   currentWeek: number
   promptSeq: number
   onDirtyChange?: (dirty: boolean) => void
-  /** Leave for the List view (Back, Discard). */
+  /** Leave: the List view (Back, Discard), or New list's step 1. */
   onClose: () => void
-  /** Update wrote the whole draft (or, `updateAction`, had nothing to
-   *  write): confirm it and leave. */
+  /** The whole draft was written: confirm it and leave. */
   onSaved: () => void
-  /** Where Update returns it, when not the List view (gap list §3 #8). */
-  returnTo?: ReturnTo
 }) {
-  const commit = useMobileListsCommit(list.id)
   const display = useListDisplay(list.id)
   const toggleCol = useListDisplayStore((state) => state.toggleCol)
   const [tf, setTf] = useListTimeFrame(list.id)
@@ -329,13 +406,16 @@ function EditorBody({
   // The draft starts as the list loaded and follows it only until the first
   // edit (a refetch of the cached copy the editor opened on). From then on it
   // keeps its base: Update applies the user's changes; Back drops them.
-  const [draft, setDraft] = React.useState<ListDraft>(() => draftOf(list))
-  const [edited, setEdited] = React.useState(false)
+  const [draft, setDraft] = React.useState<ListDraft>(() => initialDraft ?? draftOf(list))
+  const [edited, setEdited] = React.useState(Boolean(initialDraft))
   const [seen, setSeen] = React.useState(list)
   if (list !== seen) {
     setSeen(list)
     if (!edited) setDraft(draftOf(list))
   }
+  React.useEffect(() => {
+    onDraftChange?.(draft)
+  }, [draft, onDraftChange])
   const [addOpen, setAddOpen] = React.useState(false)
   const [statsOpen, setStatsOpen] = React.useState(false)
   const [importOpen, setImportOpen] = React.useState(false)
@@ -347,7 +427,10 @@ function EditorBody({
   // elsewhere is not the user's, and a save that landed without its
   // confirmation still leaves "Update again" able to confirm it.
   const dirty = React.useMemo(() => draftChanged(draft), [draft])
-  const updateKind = updateAction(dirty, returnTo)
+  // A new list's Save makes it, so it's live with nothing changed (a name
+  // is enough); otherwise Update is off until something changes.
+  const canUpdate = isNew || dirty
+  const savedWord = saveLabel === 'Save' ? 'saved' : 'updated'
 
   // The design opens Add players on its own after "Next: add players" (and
   // the List view's empty-state "Add players" lands here the same way).
@@ -479,15 +562,13 @@ function EditorBody({
       listId: list.id,
       listTitle: draft.title || list.title,
       removeFromDraft: (id) => edit((current) => removeFromDraft(current, id)),
+      draftSaveLabel: saveLabel,
     })
 
   // ------------------------------------------------------------- the exits --
 
   const update = () => {
-    if (!updateKind || saving) return
-    // A list Community started, unchanged: nothing to write, just back to
-    // Community (gap list §3 #8).
-    if (updateKind === 'leave') return onSaved()
+    if (!canUpdate || saving) return
     setSaveError(null)
     commit.mutate(draft, {
       onSuccess: (outcome) => {
@@ -495,21 +576,22 @@ function EditorBody({
           onSaved()
           return
         }
-        const note = saveFailureNote(outcome.error, outcome.attempted, outcome.remaining)
+        const note = saveFailureNote(outcome.error, outcome.attempted, outcome.remaining, outcome.alsoSaved)
         setSaveError(note)
-        toast({ title: 'The list wasn’t fully updated', description: note, variant: 'destructive' })
+        toast({ title: `The list wasn’t fully ${savedWord}`, description: note, variant: 'destructive' })
       },
       onError: (error) => {
         const note = saveFailureNote(error.message, null, null)
         setSaveError(note)
-        toast({ title: 'The list wasn’t updated', description: note, variant: 'destructive' })
+        toast({ title: `The list wasn’t ${savedWord}`, description: note, variant: 'destructive' })
       },
     })
   }
 
   const back = () => {
     if (saving) return
-    if (dirty) setConfirmLeave(true)
+    // New list's step 2 hands the draft back to step 1 kept: nothing to ask.
+    if (dirty && !isNew) setConfirmLeave(true)
     else onClose()
   }
 
@@ -556,8 +638,9 @@ function EditorBody({
         step={step}
         onBack={back}
         onUpdate={update}
-        canUpdate={updateKind !== null}
+        canUpdate={canUpdate}
         saving={saving}
+        label={saveLabel}
         titleInput={
           <input
             value={draft.title}
@@ -652,7 +735,7 @@ function EditorBody({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-[max(24px,env(safe-area-inset-bottom))] pt-1 scrollbar-none">
         {saveError && !saving && (
-          <InlineError className="mx-1 mb-1 mt-1.5" tone="alert" message={saveError} onRetry={update} retryLabel="Update again" />
+          <InlineError className="mx-1 mb-1 mt-1.5" tone="alert" message={saveError} onRetry={update} retryLabel={`${saveLabel} again`} />
         )}
         {failed.length > 0 && (
           <InlineError
@@ -716,35 +799,14 @@ function EditorBody({
       />
 
       {/* Chris's default for Back with changes (2026-10-15): ask first. */}
-      <MobileSheet
+      <DiscardSheet
         open={confirmLeave}
         onOpenChange={setConfirmLeave}
         title="Discard changes?"
         subtitle="Your changes to this list haven’t been saved."
-        footer={
-          <div className="flex flex-col gap-2 px-4 pb-[max(30px,env(safe-area-inset-bottom))] pt-1">
-            <button
-              type="button"
-              onClick={() => setConfirmLeave(false)}
-              className="flex h-12 items-center justify-center rounded-[14px] bg-accent text-[15px] font-semibold text-white active:bg-accent-strong"
-            >
-              Keep editing
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmLeave(false)
-                onClose()
-              }}
-              className="flex h-12 items-center justify-center rounded-[14px] bg-m-b2 text-[15px] font-semibold text-m-red active:bg-m-b2h"
-            >
-              Discard
-            </button>
-          </div>
-        }
-      >
-        <span className="sr-only">Leaving now drops the changes you haven’t saved with Update.</span>
-      </MobileSheet>
+        detail={`Leaving now drops the changes you haven’t saved with ${saveLabel}.`}
+        onDiscard={onClose}
+      />
     </>
   )
 }
