@@ -17,19 +17,24 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 
 import { PlayerRow } from '@/components/players/player-row'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import { useToggleAutodraft } from '@/hooks/use-draft'
 import { useDraftQueue, useUpdateDraftQueue } from '@/hooks/use-draft-queue'
 import { usePlayersByIds, type PlayerIdentity } from '@/hooks/use-players-by-ids'
+import { toast } from '@/hooks/use-toast'
+import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 import { cn } from '@/lib/utils'
 
 import { ActingAsPicker, type ActingAsControl } from './acting-as-picker'
 import { targetsTitle } from './acting-as-ops'
+import { autoPickCaption, autoPickShown, type AutoPickControl } from './auto-pick-ops'
 import {
   deriveQueueView,
   orderedIdsForSave,
@@ -105,6 +110,10 @@ interface MyQueueProps {
    *  not his own seat — the panel reads and writes THAT team's Targets
    *  (through the commissioner's doors) and says so. */
   actingForName?: string | null
+  /** §8.4 "Auto-draft me" — the viewer's OWN seat switch (the design's
+   *  Auto-pick, in this panel's header). `null` = no switch for this viewer
+   *  (a mock, no seat, or acting for another team — `selfAutoPickControl`). */
+  autoPick?: AutoPickControl | null
   className?: string
 }
 
@@ -125,6 +134,7 @@ export function MyQueue({
   draftedIds,
   actingAs = null,
   actingForName = null,
+  autoPick = null,
   className,
 }: MyQueueProps) {
   const forAnother = actingForName !== null && leagueId !== null
@@ -194,6 +204,7 @@ export function MyQueue({
         <CardTitle>{targetsTitle(forAnother ? actingForName : null)}</CardTitle>
         <span className="fs-num text-[10px] font-semibold text-n-3">{saveIds.length}</span>
       </CardHeader>
+      {autoPick && <AutoPickRow control={autoPick} />}
       {actingAs && (
         <div className="px-card-pad pt-card-pad">
           <ActingAsPicker label="Targets for" control={actingAs} />
@@ -243,6 +254,58 @@ export function MyQueue({
         </DndContext>
       )}
     </Card>
+  )
+}
+
+/**
+ * The Auto-pick row under the Targets title (FieldScout Draft Room.dc.html's
+ * Queue panel: caption left, "Auto-pick" switch right). Server-authoritative
+ * (§15.6): the switch shows the value being sent while the toggle is in
+ * flight and the server's value after — the league detail refetch settles
+ * it, and a refusal toasts and falls back. Nothing here picks a player.
+ */
+function AutoPickRow({ control }: { control: AutoPickControl }) {
+  const toggle = useToggleAutodraft(control.leagueId)
+  const switchId = useId()
+  const captionId = useId()
+  const checked = autoPickShown(control.on, toggle.isPending ? toggle.variables : undefined)
+
+  const onCheckedChange = (next: boolean) => {
+    if (toggle.isPending) return
+    toggle.mutate(next, {
+      onError: (error: unknown) => {
+        toast({
+          title: next ? 'Auto-pick didn’t turn on' : 'Auto-pick didn’t turn off',
+          description:
+            error instanceof LeagueActionError
+              ? error.message
+              : 'Something went wrong. Try again in a moment.',
+          variant: 'destructive',
+        })
+      },
+    })
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 px-card-pad pb-1 pt-3">
+      <p id={captionId} className="min-w-0 text-[11px] font-medium text-n-3">
+        {autoPickCaption(control)}
+      </p>
+      <div className="flex shrink-0 items-center gap-2">
+        <label
+          htmlFor={switchId}
+          className="cursor-pointer whitespace-nowrap text-[12px] font-medium text-n-2"
+        >
+          Auto-pick
+        </label>
+        <Switch
+          id={switchId}
+          checked={checked}
+          aria-describedby={captionId}
+          onCheckedChange={onCheckedChange}
+        />
+      </div>
+    </div>
   )
 }
 

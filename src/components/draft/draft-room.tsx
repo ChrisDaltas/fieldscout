@@ -43,6 +43,7 @@ import { AuctionBlock } from './auction-block'
 import type { UncontestedBeat } from './auction-block-ops'
 import { auctionKnobsOf, readLiveNomination, teamBudget } from './auction-budget'
 import { AuctionPlayerTable } from './auction-player-table'
+import { selfAutoPickControl } from './auto-pick-ops'
 import { AvailablePlayers } from './available-players'
 import { draftedIdSet } from './available-players-ops'
 import { CommishDraftPanel } from './commish-draft-panel'
@@ -1271,6 +1272,23 @@ function DraftRoomLive({
     poolCard
   )
 
+  // §8.4 "Auto-draft me" — the viewer's OWN seat switch in the Targets
+  // header (the design's Auto-pick). Same flag as the commissioner's
+  // any-team switch; the server acts on it at the deadline, never the
+  // client. Who gets it (a real league draft, own seat, not acting for
+  // another team) is `selfAutoPickControl`'s call.
+  const autoPick = selfAutoPickControl({
+    isMock: draft.is_mock,
+    leagueId: scope.leagueId,
+    myTeamId,
+    userId,
+    actingForAnother: forAnotherTeam,
+    members: scope.members,
+    isAuction,
+    pickTimerSeconds: (draft.config as { pick_timer_seconds?: unknown } | null)
+      ?.pick_timer_seconds,
+  })
+
   // The dock renders every tab for every seat (DR.5: it is not
   // commissioner chrome), so the seat-gated panels carry the §16.5.4
   // honest no-seat copy instead of vanishing.
@@ -1282,6 +1300,7 @@ function DraftRoomLive({
       draftedIds={draftedIds}
       actingAs={actingAs}
       actingForName={actingForName}
+      autoPick={autoPick}
     />
   ) : actingAs ? (
     // A commissioner with no seat of his own (a co-commissioner): nothing to
