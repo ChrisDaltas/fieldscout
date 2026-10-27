@@ -74,6 +74,7 @@ import {
   type Supabase,
 } from './chaos-world'
 import { realtimeKillSwitch, type RealtimeKillSwitch } from './faults'
+import { modelWatchdogWantsRefetch, ROOM_WATCHDOG_MS } from './room-watchdog'
 
 const service = serviceClient()
 const TEAMS = 8
@@ -85,10 +86,6 @@ const DRILL_POLL_MS = 500
 /** Mirrors `use-draft.ts`'s read (pinned by `room-model-pin.test.ts`). */
 const PICKS_SELECT = 'id, pick_number, round, team_id, player_id, is_auto, is_undone, price, made_via, created_at'
 
-/** `use-draft-ops.ts`'s watchdog numbers (pinned by room-model-pin.test.ts; not imported —
- *  that module's type imports would pull the draft-room hook tree into the stack lane's closure). */
-const ROOM_WATCHDOG_MS = 5_000
-const ROOM_HEARTBEAT_SILENCE_MS = 45_000
 
 /**
  * 15 RBs and 15 WRs with NO ADP. The bots choose from this pool by name, so
@@ -148,9 +145,7 @@ class Room {
     // broadcast must not park it); a LIVE room asks after 45 s with no beat.
     this.watchdog = setInterval(() => {
       const now = systemTime.now().getTime()
-      const status = this.view.status
-      const wants = status === 'scheduled' || (status === 'live' && this.lastBeatAtMs !== null && now - this.lastBeatAtMs > ROOM_HEARTBEAT_SILENCE_MS)
-      if (!wants) return
+      if (!modelWatchdogWantsRefetch({ status: this.view.status, lastBeatAtMs: this.lastBeatAtMs, nowMs: now })) return
       this.lastBeatAtMs = now
       void this.refetch()
     }, ROOM_WATCHDOG_MS)
@@ -392,7 +387,7 @@ describe('L.F2.3 drill 1 — realtime dies mid-draft', () => {
       expect(broadcastsAt.dark).toEqual(broadcastsAt.killed) // not ONE broadcast reached a dark room
       expect(rooms.every((r, i) => r.restReads > readsBeforeKill[i])).toBe(true)
       expect(kill.refused).toBeGreaterThan(0) // reconnects were really attempted and refused
-      expect(tally.darkBotPicks).toBeGreaterThan(0) // the bots, not just the clock, drafted in the dark
+      expect(tally.darkBotPicks).toBe(8) // R1719: picks 9–16 — every one a bot's, learned from the REST poll
 
       // R4 RESTORE — rooms rejoin; each poll stops at SUBSCRIBED.
       kill.restore()
@@ -413,6 +408,7 @@ describe('L.F2.3 drill 1 — realtime dies mid-draft', () => {
     // R5 COMPLETE — the stored board, every room's view, zero duplicates.
     const stored = await storedPicks()
     expect(stored).toHaveLength(TOTAL)
+    expect(stored.filter((p) => p.is_auto === true)).toEqual([]) // R1719: not one pick left to the clock
     const dup = duplicatePicks(stored)
     expect([dup.duplicatePlayers, dup.duplicatePickNumbers]).toEqual([[], []])
     const board = JSON.stringify(stored.map((p) => [p.pick_number, p.team_id, p.player_id]))
@@ -421,8 +417,8 @@ describe('L.F2.3 drill 1 — realtime dies mid-draft', () => {
       expect(JSON.stringify(r.standing().map((p) => [p.pick_number, p.team_id, p.player_id]))).toBe(board)
     }
     // Each bot's first dark pick was double-tapped: the replay is the same pick, the fresh tap refused.
-    expect(tally.replays).toBe(Math.min(tally.darkBotPicks, TEAMS))
-    expect(tally.refusedDoubleTaps).toBe(Math.min(tally.darkBotPicks, TEAMS))
+    expect(tally.replays).toBe(TEAMS)
+    expect(tally.refusedDoubleTaps).toBe(TEAMS)
     console.log(
       `[L.F2.3 drill 1] picks ${stored.length} (bots ${tally.botPicks}, in the dark ${tally.darkBotPicks}, clock autopicks ${stored.filter((p) => p.is_auto).length}); ` +
         `double-taps: ${tally.replays} replayed, ${tally.refusedDoubleTaps} refused; stale-view refusals ${tally.staleRefusals}; ` +

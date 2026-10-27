@@ -1,6 +1,6 @@
 /**
  * chaos-world — the shared fixture plumbing of M7 L.F2.3's drills
- * (`*-db.test.ts` beside this file; PROGRESS D760–D766).
+ * (`*-db.test.ts` beside this file; PROGRESS D760–D765; the PR #540 fix round D766).
  *
  * NAMESPACE (the shared-local-DB rule). Everything a drill makes is named
  * `chaos-f23…` (leagues, test players, game ids), its users are

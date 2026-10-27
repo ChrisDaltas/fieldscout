@@ -333,6 +333,59 @@ describe('runLivePollInvocation — the minute-invocation loop', () => {
   })
 })
 
+describe('M7 L.F2.3 — what a poll that misbehaves does to the round (F830 / R1716, F832)', () => {
+  it('R1716: a successful poll that collapsed repeated provider rows says so in the invocation problems', async () => {
+    const world = makeWorld([game(1, TNF, 'live')])
+    const reason = 'player_stats: 2 repeated provider row(s) — identical copies of a line already in this answer — written once (§23.2 idempotent; F830)'
+    const report = await run(world, new VirtualClock(new Date('2026-09-10T01:07:00Z')), {
+      budgetMs: 1,
+      mutate: (r) => ({ ...r, stats: { ...r.stats, duplicates: 2 }, reasons: [...r.reasons, reason] }),
+    })
+    expect(report.problems).toEqual([`week 1: ${reason}`])
+    // No repeats ⇒ no line (the reason text alone never promotes itself).
+    const quiet = await run(makeWorld([game(1, TNF, 'live')]), new VirtualClock(new Date('2026-09-10T01:07:00Z')), {
+      budgetMs: 1,
+      mutate: (r) => ({ ...r, reasons: [...r.reasons, reason] }),
+    })
+    expect(quiet.problems).toEqual([])
+  })
+
+  it('F832: a poll that THROWS after the provider answered is a failed poll — counted once, persisted, named — and the round still polls its other week', async () => {
+    const world = makeWorld([game(1, TNF, 'live'), game(2, SNF, 'scheduled')])
+    const clock = new VirtualClock(new Date(new Date(SNF).getTime() + 7 * 60_000))
+    const persisted: Array<{ week: number; ok: boolean; failures: number }> = []
+    const report = await runLivePollInvocation({
+      db: fakeDb(world),
+      provider: fakeProvider(world),
+      time: clock,
+      season: 2026,
+      budgetMs: 1,
+      sleep: async () => {},
+      ingest: async (_p, time, io) => {
+        if (io.week === 1) throw new Error('ingest_write_batch failed (2026 week 1, lines 1–3): a database error')
+        io.degradation.recordPollResult(true)
+        return fakeReport(io.season, io.week, time.now().toISOString(), true, io.degradation.degraded)
+      },
+      loadTracker: async () => new DegradationTracker(world.flag.consecutive_failures),
+      persist: async (_db, tracker, r) => {
+        persisted.push({ week: r.week, ok: r.ok, failures: tracker.consecutiveFailures })
+        world.flag = { ...world.flag, degraded: tracker.degraded, consecutive_failures: tracker.consecutiveFailures }
+        return world.flag
+      },
+    })
+    expect(report.rounds[0].polls.map((p) => [p.week, p.report.ok])).toEqual([
+      [1, false],
+      [2, true],
+    ])
+    expect(persisted).toEqual([
+      { week: 1, ok: false, failures: 1 },
+      { week: 2, ok: true, failures: 0 },
+    ])
+    expect(report.rounds[0].polls[0].report.error).toBe('ingest_write_batch failed (2026 week 1, lines 1–3): a database error')
+    expect(report.problems[0]).toMatch(/^week 1: poll FAILED after the provider answered \(ingest_write_batch failed .*\) — no stat line written, the week not stamped; consecutive failures 1$/)
+  })
+})
+
 describe('withScheduleMemo', () => {
   it('one read per season until reset; the other methods pass through', async () => {
     let reads = 0

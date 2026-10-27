@@ -18,11 +18,13 @@ import {
   movedStatKeys,
   classifyCorrectionsWithSettle,
   collapseIdenticalRows,
+  conflictingPlayers,
   diffGames,
   diffStats,
   finalObservedAt,
   ingestWeek,
   NULL_IS_PENDING_COLUMNS,
+  pollFailureCounted,
   sameBounds,
   SETTLE_GRACE_MS,
   STAT_COLUMN_SURFACE,
@@ -1091,5 +1093,87 @@ describe('L.E2.2 — F511: a finished game’s routine settle is not a correctio
     expect([boundary.corrections.size, boundary.settled.size]).toEqual([1, 0])
     const unknown = at('2026-09-20T20:31:00.000Z', null)
     expect([unknown.corrections.size, unknown.settled.size]).toEqual([1, 0])
+  })
+})
+
+// ── M7 L.F2.3 — repeated, conflicting and half-written polls, through the real ingestWeek ──
+//
+// The stateful World above: what the door is SENT, what the calendar holds
+// after, and what the caller's tracker counted. F830 (identical repeats are
+// one line), F831 (Chris 2026-10-27, "Skip it, retry next update": two
+// DIFFERENT lines for one player skip the whole answer as a failed poll) and
+// F832 (a failure after the provider answered is a failed poll, marked
+// counted, and the week is never stamped all-final without its lines).
+describe('L.F2.3 — F830 / F831 / F832 through ingestWeek', () => {
+  it('U1–U4 — repeats collapse; a conflict skips the answer before any write; a door failure counts and leaves the week unstamped; the next clean poll writes both', async () => {
+    const world = new World(['p-wr', 'p-te'])
+    const { state, provider } = scripted()
+    const clock = new VirtualClock(new Date('2026-09-20T18:00:00Z'))
+    const tracker = new DegradationTracker()
+    const deps = { db: world.client(), degradation: tracker, season: 2026, week: 2 }
+    const poll = async (iso: string) => {
+      clock.advanceTo(new Date(iso))
+      return ingestWeek(provider, clock, deps)
+    }
+    const week2 = () => world.weeks.find((w) => w.week === 2)!
+
+    // U1 (F830 / R1715) — p-wr three times, p-te twice, all identical: ONE door call naming each player once.
+    state.games = [wk2Game(WK2_G1, 'live'), wk2Game(WK2_G3, 'live')]
+    const wr = wk2Line('p-wr', WK2_G1, { receptions: 3, receiving_yards: 40 })
+    const te = wk2Line('p-te', WK2_G3, { receptions: 1, receiving_yards: 9 })
+    state.lines = [wr, wr, te, wr, te]
+    const u1 = await poll('2026-09-20T18:00:00Z')
+    expect([u1.ok, u1.stats.seen, u1.stats.duplicates, u1.stats.inserted]).toEqual([true, 5, 3, 2])
+    expect(world.doorCalls).toHaveLength(1)
+    expect(world.doorCalls[0].p_rows.map((e) => e.stat.player_id)).toEqual(['p-wr', 'p-te'])
+    expect(u1.reasons).toContain('player_stats: 3 repeated provider row(s) — identical copies of a line already in this answer — written once (§23.2 idempotent; F830)')
+    expect(tracker.consecutiveFailures).toBe(0)
+
+    // U2 (F831) — the poll that would first see both games final carries p-wr twice: one copy equal to the stored
+    // line, one not. The whole answer is skipped BEFORE any write: no door call, the games still live, a failed poll.
+    state.games = [wk2Game(WK2_G1, 'final'), wk2Game(WK2_G3, 'final')]
+    state.lines = [wr, wk2Line('p-wr', WK2_G1, { receptions: 3, receiving_yards: 41 }), wk2Line('p-te', WK2_G3, { receptions: 2, receiving_yards: 15 })]
+    const u2 = await poll('2026-09-21T03:00:00Z')
+    expect([u2.ok, u2.write.path, u2.stats.duplicates]).toEqual([false, 'none', 0])
+    expect(u2.error).toBe("the provider's answer carried two different lines for 1 player(s) (p-wr) — the whole answer is skipped, nothing written; retried next poll (F831)")
+    expect(world.doorCalls).toHaveLength(1)
+    expect([...world.games.values()].map((g) => g.status)).toEqual(['live', 'live'])
+    expect([world.stats.get('p-wr')?.receiving_yards, world.stats.get('p-te')?.receiving_yards]).toEqual([40, 9])
+    expect([tracker.consecutiveFailures, u2.degraded]).toEqual([1, false])
+    // …and with BOTH copies different from the stored line: the same — a failed poll, never a hard refusal.
+    state.lines = [wk2Line('p-wr', WK2_G1, { receptions: 3, receiving_yards: 42 }), wk2Line('p-wr', WK2_G1, { receptions: 3, receiving_yards: 41 })]
+    const u2b = await poll('2026-09-21T03:00:30Z')
+    expect([u2b.ok, world.doorCalls.length, tracker.consecutiveFailures]).toEqual([false, 1, 2])
+
+    // U3 (F832) — a clean answer, but the door fails: thrown, COUNTED (and marked so), and week 2 is NOT stamped
+    // all-final although its games now are (games go first — player_stats.game_id references them).
+    state.lines = [wk2Line('p-wr', WK2_G1, { receptions: 3, receiving_yards: 41 }), wk2Line('p-te', WK2_G3, { receptions: 2, receiving_yards: 15 })]
+    world.doorError = { code: '57014', message: 'canceling statement due to statement timeout', details: null, hint: null }
+    const thrown = await poll('2026-09-21T03:01:00Z').then(
+      () => null,
+      (e: unknown) => e,
+    )
+    expect((thrown as Error).message).toMatch(/^ingest_write_batch failed \(2026 week 2, lines 1–2\): canceling statement/)
+    expect(pollFailureCounted(thrown)).toBe(true)
+    expect(pollFailureCounted(new Error('elsewhere'))).toBe(false)
+    expect([tracker.consecutiveFailures, tracker.degraded]).toEqual([3, true])
+    expect(week2().last_game_ends_at).toBeNull()
+    expect(world.stats.get('p-wr')?.receiving_yards).toBe(40)
+
+    // U4 — the next poll writes the lines, THEN stamps the week; the success clears the flag.
+    world.doorError = null
+    const u4 = await poll('2026-09-21T03:01:30Z')
+    expect([u4.ok, u4.degraded, u4.stats.updated, u4.weeks.updated]).toEqual([true, false, 2, 1])
+    expect(world.stats.get('p-wr')?.receiving_yards).toBe(41)
+    expect(week2().last_game_ends_at).not.toBeNull()
+    expect(tracker.consecutiveFailures).toBe(0)
+  })
+
+  it('conflictingPlayers — the players still carrying more than one line after the collapse, sorted', () => {
+    const a = statRow({ player_id: 'p-b' })
+    const b = statRow({ player_id: 'p-a', columns: { ...a.columns, pass_yards: 1 } })
+    const c = statRow({ player_id: 'p-a', columns: { ...a.columns, pass_yards: 2 } })
+    expect(conflictingPlayers([a, b, c])).toEqual(['p-a'])
+    expect(conflictingPlayers(collapseIdenticalRows([a, a]).rows)).toEqual([])
   })
 })

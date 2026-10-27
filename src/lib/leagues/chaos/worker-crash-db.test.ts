@@ -152,10 +152,13 @@ describe('L.F2.3 drill 3 — a worker crashes mid-batch', () => {
     const { client, log } = crashingClient(service, [{ rpc: 'ingest_write_batch', mode: 'before', on: () => true }])
     await expect(poll(world, world.provider, client as unknown as SyncClient, at(T.final, 2))).rejects.toBeInstanceOf(WorkerCrash)
     expect(log.crashes).toEqual(['ingest_write_batch #1 before'])
+    // F832: the crash after the provider answered is a FAILED poll on the caller's tracker.
+    expect(world.degradation.consecutiveFailures).toBe(1)
     expect([await statRowCount(service), (await storedLine(service, 'wr4'))?.receiving_yards]).toEqual(before)
     expect(await queueRows(service)).toEqual([])
     const healed = await poll(world, world.provider, service as unknown as SyncClient, at(T.final, 2.01))
     expect([healed.ok, healed.stats.updated, healed.stats.enqueued]).toEqual([true, 1, 1])
+    expect(world.degradation.consecutiveFailures).toBe(0)
     const r = await drain(world, service, at(T.final, 2.02))
     expect([r.written, r.drained]).toEqual([2, 1])
     for (const l of world.leagues) expect((await cellsOf(service, l)).scores).toEqual(GOLDEN_SCORES)

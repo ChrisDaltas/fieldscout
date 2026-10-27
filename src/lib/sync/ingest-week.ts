@@ -1155,6 +1155,15 @@ function correctionsReason(report: IngestReport, deltas: number, writes: number)
  * contract. Returns a report; throws only on a DB failure (a provider
  * failure is a REPORTED failed poll, never a throw — the tracker is the
  * flag, and the caller's loop keeps polling).
+ *
+ * M7 L.F2.3 (PROGRESS D766): an answer carrying two DIFFERENT lines for one
+ * player is a REPORTED failed poll, before the first write (F831 — Chris
+ * 2026-10-27, "Skip it, retry next update"); a DB failure after the provider
+ * answered is counted on `io.degradation` as a failed poll BEFORE it is
+ * re-thrown, and marked so (`pollFailureCounted`) for the caller (F832); the
+ * tracker records a success only once every write is done; and the week
+ * bounds (`nfl_weeks.last_game_ends_at`) are written AFTER the lines, so a
+ * failed door never leaves a week stamped all-final without them (F832).
  */
 export async function ingestWeek(
   provider: StatsProvider,
@@ -1162,7 +1171,7 @@ export async function ingestWeek(
   io: IngestIo,
 ): Promise<IngestReport> {
   const polledAt = time.now()
-  const { db, season, week } = io
+  const { season, week } = io
 
   // ── Every provider read BEFORE any write (§23.2: never partial data) ──
   let schedule: ProviderGame[]
@@ -1180,8 +1189,72 @@ export async function ingestWeek(
     )
     return report
   }
-  io.degradation.recordPollResult(true)
+  // M7 L.F2.3 (F832): the poll counts as a SUCCESS only once everything it
+  // read is written — a failure after the provider answered (a door refusal,
+  // a database error) counts toward `stats_degraded` exactly like a provider
+  // outage, and the error is marked counted for the caller (live-poll keeps
+  // polling the round's other weeks).
   const report = emptyReport(provider, io, polledAt, io.degradation.degraded)
+  try {
+    const done = await ingestAnswer(provider, polledAt, io, report, schedule, lines)
+    io.degradation.recordPollResult(done.ok) // an answer skipped by F831 is a failed poll
+    done.degraded = io.degradation.degraded
+    return done
+  } catch (err) {
+    io.degradation.recordPollResult(false)
+    const error = err instanceof Error ? err : new Error(String(err))
+    COUNTED_POLL_FAILURES.add(error)
+    throw error
+  }
+}
+
+/** Errors `ingestWeek` threw AFTER counting them as a failed poll (F832). */
+const COUNTED_POLL_FAILURES = new WeakSet<object>()
+
+/**
+ * Did `ingestWeek` already count this thrown error as a failed poll on the
+ * caller's tracker? (F832 — `runLivePollInvocation` counts any other throw
+ * itself, so a failure is counted once, never zero times or twice.)
+ */
+export function pollFailureCounted(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && COUNTED_POLL_FAILURES.has(err)
+}
+
+/**
+ * A failed poll's report, for a caller whose `ingestWeek` THREW (F832): the
+ * same shape a provider failure returns — `ok: false`, nothing written, the
+ * error named — so the round persists it and moves on.
+ */
+export function failedPollReport(providerName: string, season: number, week: number, polledAt: Date, degraded: boolean, error: string): IngestReport {
+  const report = emptyReport({ name: providerName } as StatsProvider, { season, week } as IngestIo, polledAt, degraded)
+  report.ok = false
+  report.error = error
+  report.reasons.push(`poll failed after the provider answered — counted as a failed poll (F832); stats_degraded=${degraded}`)
+  return report
+}
+
+/**
+ * M7 L.F2.3 — Chris's F831 ruling (2026-10-27): two DIFFERENT lines for the
+ * same player in one answer — *"Skip it, retry next update"*. The players
+ * that still carry more than one line once byte-identical copies are
+ * collapsed (F830).
+ */
+export function conflictingPlayers(rows: readonly StatRow[]): string[] {
+  const seen = new Map<string, number>()
+  for (const row of rows) seen.set(row.player_id, (seen.get(row.player_id) ?? 0) + 1)
+  return [...seen].filter(([, n]) => n > 1).map(([id]) => id).sort()
+}
+
+/** Everything after the provider answered: reads, the whole diff, then the writes. */
+async function ingestAnswer(
+  provider: StatsProvider,
+  polledAt: Date,
+  io: IngestIo,
+  report: IngestReport,
+  schedule: ProviderGame[],
+  lines: ProviderPlayerWeekStats[],
+): Promise<IngestReport> {
+  const { db, season, week } = io
   const stamp = isoOf(polledAt)
 
   // ── Reads, then the whole diff, then writes ──
@@ -1274,6 +1347,18 @@ export async function ingestWeek(
   }
   const unique = collapseIdenticalRows(statRows)
   report.stats.duplicates = unique.collapsed
+  // F831 (Chris 2026-10-27, "Skip it, retry next update"): an answer that
+  // carries two DIFFERENT lines for one player is not believed at all — a
+  // failed poll, before the first write: every stored line stays as it was,
+  // nothing is queued or announced, it counts toward `stats_degraded`, and
+  // the next poll tries again.
+  const conflicts = conflictingPlayers(unique.rows)
+  if (conflicts.length > 0) {
+    report.ok = false
+    report.error = `the provider's answer carried two different lines for ${conflicts.length} player(s) (${conflicts.join(', ')}) — the whole answer is skipped, nothing written; retried next poll (F831)`
+    report.reasons.push(`provider answer skipped — two different lines for one player; nothing written (F831, Chris 2026-10-27: "Skip it, retry next update")`)
+    return report
+  }
   const statDiff = diffStats(unique.rows, existingStats)
   // TD2 — against the games as stored BEFORE this poll (`existingGames`),
   // never `merged`: the poll that first sees a game final carries its last
@@ -1287,7 +1372,11 @@ export async function ingestWeek(
   })
   for (const keys of settled.values()) report.corrections.settled += keys.length
 
-  // ── Writes: games → weeks → (stats + events + queue: one door call per batch) ──
+  // ── Writes: games → (stats + events + queue: one door call per batch) → weeks ──
+  // F832 (M7 L.F2.3): the week bounds — `last_game_ends_at`, the stamp
+  // league_week_advance reads — go LAST, so a door that fails never leaves a
+  // week stamped all-final while its lines are missing (the next poll writes
+  // both). Games stay first: `player_stats.game_id` references them.
   const gameWrites = [...gameDiff.inserts, ...gameDiff.updates]
   if (gameWrites.length > 0) {
     await upsertCounted(
@@ -1303,20 +1392,6 @@ export async function ingestWeek(
   report.games.updated = gameDiff.updates.length
   report.games.unchanged = gameDiff.unchanged
 
-  for (const w of weekWrites) {
-    const { data, error } = await db
-      .from('nfl_weeks')
-      .update(w.bounds)
-      .eq('season', w.season)
-      .eq('week', w.week)
-      .select('week')
-    if (error) throw new Error(`nfl_weeks update failed (${w.season} week ${w.week}): ${error.message}`)
-    if ((data ?? []).length !== 1) {
-      throw new Error(`nfl_weeks update matched ${(data ?? []).length} rows for ${w.season} week ${w.week}`)
-    }
-    report.weeks.updated += 1
-  }
-
   const deltas = [...statDiff.inserts, ...statDiff.updates]
   report.stats.deltas = deltas.length
   const statWrites = [...statDiff.inserts, ...statDiff.updates, ...statDiff.metaOnly]
@@ -1331,6 +1406,20 @@ export async function ingestWeek(
   if (statWrites.length > 0) {
     await writeThroughDoor(db, door, season, week, stamp, statWrites, new Set(deltas.map((r) => r.player_id)), corrections, report, teamColumn)
     report.write.path = 'door'
+  }
+
+  for (const w of weekWrites) {
+    const { data, error } = await db
+      .from('nfl_weeks')
+      .update(w.bounds)
+      .eq('season', w.season)
+      .eq('week', w.week)
+      .select('week')
+    if (error) throw new Error(`nfl_weeks update failed (${w.season} week ${w.week}): ${error.message}`)
+    if ((data ?? []).length !== 1) {
+      throw new Error(`nfl_weeks update matched ${(data ?? []).length} rows for ${w.season} week ${w.week}`)
+    }
+    report.weeks.updated += 1
   }
   report.corrections.reason = correctionsReason(report, deltas.length, statWrites.length)
 

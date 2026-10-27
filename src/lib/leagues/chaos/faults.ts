@@ -2,7 +2,7 @@
  * faults — the in-process fault injectors of M7 L.F2.3's chaos drills
  * (tasks-M7 §6 L.F2.3; delivery plan :98 "kill realtime mid-draft;
  * delay/duplicate provider rows; crash a worker mid-batch"; spec §22.6 /
- * §23.2 / §24.3; PROGRESS D760–D766).
+ * §23.2 / §24.3; PROGRESS D760–D765; the PR #540 fix round D766).
  *
  * WHY IN-PROCESS. The local Supabase stack is shared by every builder (the
  * one-local-DB rule), so a drill never stops a container. Every fault is

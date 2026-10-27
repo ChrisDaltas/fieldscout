@@ -78,7 +78,7 @@ import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 import { pageAll } from '@/lib/supabase/page-all'
 
 import { type FlagsClient, loadDegradationTracker, persistPollOutcome, type StatsDegradedFlag } from './ingest-flags'
-import { ingestWeek, type IngestReport } from './ingest-week'
+import { failedPollReport, ingestWeek, pollFailureCounted, type IngestReport } from './ingest-week'
 
 // ── Constants (the route pins them beside `maxDuration`) ───────────────────
 
@@ -403,7 +403,17 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
     let sweepFailureCounted = false
     for (const week of [...plan.weeks, ...carried]) {
       const tracker = await loadTracker(deps.db)
-      const poll = await ingest(provider, deps.time, { db: deps.db, degradation: tracker, season: deps.season, week })
+      let poll: IngestReport
+      try {
+        poll = await ingest(provider, deps.time, { db: deps.db, degradation: tracker, season: deps.season, week })
+      } catch (err) {
+        // F832 (M7 L.F2.3): a poll that fails AFTER the provider answered (a
+        // door refusal, a database error) is a FAILED POLL — counted toward
+        // stats_degraded (once: `ingestWeek` marks what it already counted),
+        // persisted, named — and the round's other weeks are still polled.
+        if (!pollFailureCounted(err)) tracker.recordPollResult(false)
+        poll = failedPollReport(provider.name, deps.season, week, deps.time.now(), tracker.degraded, err instanceof Error ? err.message : String(err))
+      }
       const alreadyCounted = oneInstant && !poll.ok && sweepFailureCounted
       const flag = alreadyCounted && report.flag !== null ? report.flag : await persist(deps.db, tracker, poll)
       if (oneInstant && !poll.ok) sweepFailureCounted = true
@@ -412,14 +422,18 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
       if (alreadyCounted) {
         report.problems.push(`week ${week}: provider poll FAILED again in the same sweep (${poll.error ?? 'unknown'}) — nothing written; counted once per sweep toward stats_degraded (R1314)`)
       } else if (!poll.ok) {
+        // F832: a failure AFTER the provider answered may have written the
+        // week's games already — its lines and the week's stamp were not.
+        const afterAnswer = poll.reasons.some((r) => r.startsWith('poll failed after the provider answered'))
         report.problems.push(
-          `week ${week}: provider poll FAILED (${poll.error ?? 'unknown'}) — nothing written; consecutive failures ${flag.consecutive_failures}${flag.degraded ? ' — stats_degraded RAISED (§23.2/E45)' : ''}`,
+          `week ${week}: ${afterAnswer ? 'poll FAILED after the provider answered' : 'provider poll FAILED'} (${poll.error ?? 'unknown'}) — ${afterAnswer ? 'no stat line written, the week not stamped' : 'nothing written'}; consecutive failures ${flag.consecutive_failures}${flag.degraded ? ' — stats_degraded RAISED (§23.2/E45)' : ''}`,
         )
       } else {
         // A successful poll that could not write the calendar is said out
         // loud (F228: a kickoff-less tier writes no nfl_games — never quiet).
         for (const reason of poll.reasons) {
-          if (reason.startsWith('nfl_games untouched') || reason.startsWith('provider returned zero games')) {
+          // F830 / R1716: a repeated provider row is written once, and said out loud.
+          if (reason.startsWith('nfl_games untouched') || reason.startsWith('provider returned zero games') || poll.stats.duplicates > 0 && reason.startsWith('player_stats: ')) {
             report.problems.push(`week ${week}: ${reason}`)
           }
         }

@@ -27,9 +27,10 @@
  *   P8  a STALE cached row for RB1 (100 → 90 rush yards), then the fresh
  *       one again: every answer is applied as the provider gives it, the
  *       score ends where the stats end — never doubled.
- *   P9  a CONFLICTING duplicate — RB2 twice with different numbers: a
- *       KNOWN DEFECT (PROGRESS F831 / F832), pinned as measured.
- *   P10 the provider answers cleanly again: healed, on the goldens.
+ *   P9  a CONFLICTING duplicate — RB2 twice with different numbers: Chris's
+ *       F831 ruling (2026-10-27, "Skip it, retry next update") — a failed
+ *       poll, nothing written, counted toward stats_degraded.
+ *   P10 the provider answers cleanly again: the flag clears, on the goldens.
  *
  * Every phase is followed by a drain and the stored-literal goldens; the
  * drill ends with no duplicate point row, an empty queue, and reconcile
@@ -105,6 +106,9 @@ describe('L.F2.3 drill 2 — the provider delays and duplicates rows', () => {
     const r = await poll(world, faulty, db, T.live)
     expect(r.ok).toBe(true)
     expect([r.stats.inserted, r.stats.enqueued]).toEqual([4, 4])
+    // R1715: 9 rows for 4 players — 5 repeats collapsed, and said (F830).
+    expect(r.stats.duplicates).toBe(5)
+    expect(r.reasons).toContain('player_stats: 5 repeated provider row(s) — identical copies of a line already in this answer — written once (§23.2 idempotent; F830)')
     expect(await statRowCount(service)).toBe(4)
     await drain(world, service, at(T.live, 0.01))
     // RB1 6.00 + WR1 2.00 = 8.00; RB2 3.00 + WR2 4.00 = 7.00 — once, not three or two times.
@@ -198,48 +202,60 @@ describe('L.F2.3 drill 2 — the provider delays and duplicates rows', () => {
     console.log(`[L.F2.3 drill 2] P8 stale-then-fresh RB1: league posts now ${(await posts()).length} — ${JSON.stringify(await posts())}`)
   })
 
-  // P9 — KNOWN DEFECT, PINNED AS MEASURED (PROGRESS F831 / F832). Two
-  // DIFFERENT rows for one player in one answer have no right answer here;
-  // what happens today depends on which copy matches the stored line. These
-  // two cells pin the measured behaviour, so a fix (Chris's call on F831)
-  // flips them on purpose.
-  it('P9a KNOWN DEFECT F831 — a conflicting duplicate where one copy equals the stored line: the OTHER copy silently wins and is announced as a correction', async () => {
+  // P9 — F831, RULED BY CHRIS 2026-10-27 (relayed by the orchestrator): two
+  // DIFFERENT lines for one player in one update — "Skip it, retry next
+  // update". The whole answer is a FAILED poll: the last good stored lines
+  // stay, nothing is written, queued or announced for the week, it counts
+  // toward stats_degraded, and the next poll tries again.
+  it('P9a F831 — one copy equals the stored line, the other differs: the answer is skipped as a failed poll; RB2 keeps 80, nothing queued, nothing announced', async () => {
     faulty.faults = { conflicting: new Map([[pid('rb2'), { rush_yards: 85 }]]) }
     expect((await storedLine(service, 'rb2'))?.rush_yards).toBe(80)
+    const eventsBefore = await events()
+    const postsBefore = await posts()
+    const failuresBefore = world.degradation.consecutiveFailures
     const r = await poll(world, faulty, db, at(T.final, 11))
-    expect([r.ok, r.stats.duplicates, r.stats.updated]).toEqual([true, 0, 1])
-    // The provider's two answers were 80 and 85; 85 was kept, and nothing says there was a conflict.
-    expect((await storedLine(service, 'rb2'))?.rush_yards).toBe(85)
-    await drain(world, service, at(T.final, 11.01))
-    expect(await scores()).toEqual([[21, 26.5], [7.8, 6.9]]) // scored once — never doubled
-    expect((await events()).filter((e) => e.startsWith('rb2'))).toEqual(['rb2 rush_yards 80→85'])
-  })
-
-  it("P9b KNOWN DEFECT F831 / F832 — a conflicting duplicate where BOTH copies differ from the stored line: the whole answer is refused at the door, every other player's update in it is lost, and stats_degraded never rises", async () => {
-    faulty.faults = { conflicting: new Map([[pid('rb2'), { rush_yards: 82 }]]) }
-    // The same answer also moves WR1 50 → 55: an innocent update in the same poll.
-    world.provider.lines = [...finalLines().filter((l) => !l.playerId.endsWith('wr1')), line('wr1', { receiving_yards: 55, receptions: 5 })]
-    const outcomes: string[] = []
-    for (let i = 0; i < 4; i++) {
-      try {
-        await poll(world, faulty, db, at(T.final, 12 + i * 0.01))
-        outcomes.push('ok')
-      } catch (e) {
-        const message = (e as Error).message
-        outcomes.push(message.includes('appears twice in the batch') ? 'refused: appears twice' : `threw: ${message}`)
-      }
-    }
-    expect(outcomes).toEqual(Array(4).fill('refused: appears twice'))
-    expect(world.degradation.degraded).toBe(false) // four failed polls, and no "Live stats delayed" banner (F832)
-    expect([(await storedLine(service, 'rb2'))?.rush_yards, (await storedLine(service, 'wr1'))?.receiving_yards]).toEqual([85, 50])
+    expect([r.ok, r.stats.duplicates, r.write.path]).toEqual([false, 0, 'none'])
+    expect(r.error).toContain(`two different lines for 1 player(s) (${pid('rb2')})`)
+    expect(r.reasons.join(' ')).toContain('Skip it, retry next update')
+    expect(world.degradation.consecutiveFailures).toBe(failuresBefore + 1)
+    expect((await storedLine(service, 'rb2'))?.rush_yards).toBe(80)
     expect(await queueRows(service)).toEqual([])
+    expect([await events(), await posts()]).toEqual([eventsBefore, postsBefore])
+    expect(await scores()).toEqual(GOLDEN_SCORES)
   })
 
-  it('P10 the provider answers cleanly again: the next poll heals RB2, scored once, back on the goldens', async () => {
+  it("P9b F831 / F832 — both copies differ from the stored line: every poll is a FAILED poll (never a hard refusal), WR1's update in the same answer is not written, and stats_degraded rises on the third in a row", async () => {
+    // RB2 answers 83 AND 82; the same answer also moves WR1 50 → 55.
+    faulty.faults = { conflicting: new Map([[pid('rb2'), { rush_yards: 82 }]]) }
+    world.provider.lines = [
+      ...finalLines().filter((l) => !l.playerId.endsWith('wr1') && !l.playerId.endsWith('rb2')),
+      line('rb2', { rush_yards: 83 }),
+      line('wr1', { receiving_yards: 55, receptions: 5 }),
+    ]
+    const seen: Array<[boolean, boolean]> = []
+    for (let i = 0; i < 4; i++) {
+      const r = await poll(world, faulty, db, at(T.final, 12 + i * 0.01))
+      expect(r.error).toContain('(F831)')
+      seen.push([r.ok, r.degraded])
+    }
+    // P9a was the first failure in a row; these are the 2nd–5th.
+    expect(seen).toEqual([
+      [false, false],
+      [false, true],
+      [false, true],
+      [false, true],
+    ])
+    expect([(await storedLine(service, 'rb2'))?.rush_yards, (await storedLine(service, 'wr1'))?.receiving_yards]).toEqual([80, 50])
+    expect(await queueRows(service)).toEqual([])
+    expect(await scores()).toEqual(GOLDEN_SCORES)
+  })
+
+  it('P10 the provider answers cleanly again: the poll succeeds, the flag clears, nothing moved while it was skipped — still on the goldens', async () => {
     faulty.faults = {}
     world.provider.lines = finalLines()
     const r = await poll(world, faulty, db, at(T.final, 13))
-    expect([r.ok, r.stats.updated]).toEqual([true, 1]) // RB2 85 → 80; WR1's answer is 50 again — unchanged
+    expect([r.ok, r.degraded, r.stats.updated]).toEqual([true, false, 0])
+    expect(world.degradation.degraded).toBe(false)
     await drain(world, service, at(T.final, 13.01))
     expect(await scores()).toEqual(GOLDEN_SCORES)
   })
