@@ -31,8 +31,8 @@
 --   naming the owner as the actor, may notify the list's followers. A
 --   missing, deleted or someone else's list is refused with one message
 --   (42501), so the refusal says nothing about whether a list exists. The
---   app's four callers are the owner's own list routes (owner-checked before
---   the call), so nothing the app does changes.
+--   app calls it from four call sites in three owner-checked routes (each
+--   checks ownership before the call), so nothing the app does changes.
 --
 -- PART 2 — F719 (the member reads). `league_standings`,
 --   `league_standings_projected` and `league_playoff_bracket` (newest
