@@ -287,6 +287,7 @@ This also covers desktop features the design left out, which we bring back in th
     - Trash: #504
     - Rankings history: #515
     - Start-or-sit question pages: #516
+    - People's profiles, with their Followers / Following (audit profile-1, 2026-10-27): every username on a phone, your own @handle and People search included, now opens a phone screen inside the app (`/app/u/<name>`) with the dock, Back and dark mode. The public `/u/<name>` page is unchanged for search engines, signed-out visitors and desktop; a signed-in phone that lands there is handed to the phone screen.
   - ~~**Step 1:** give them the same close-and-title bar.~~ Done.
   - ~~**Step 2:** restyle each page in the phone look.~~ Done (the PRs above).
   - Not on this list: the old Teams pages (`/app/teams`) and admin Posts still show the desktop layout under the back-and-title bar.

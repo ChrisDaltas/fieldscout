@@ -284,6 +284,7 @@ const PATTERNS = [
   /@\{[^}]*(?:username|handle)[^}]*\}/, // JSX text: @{x.username}
   /@\$\{[^}]*(?:username|handle)[^}]*\}/, // a template: `@${x.username}`
   /[`'"]\/u\/\$\{[^}]+\}[`'"]/, // `/u/${x}` — a person's profile, by hand
+  /[`'"]\/app\/u\/\$\{/, // `/app/u/${x}` — a person's phone screen, by hand
 ]
 
 /**
@@ -294,6 +295,7 @@ const PATTERNS = [
 const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string; lines?: number }> = [
   { file: 'src/components/shared/username-link.tsx', contains: '{at ? `@${username}` : username}', why: 'the primitive itself' },
   { file: 'src/components/shared/username-link-ops.ts', contains: 'return `/u/${encodeURIComponent(username)}`', why: 'the one spelling of the URL' },
+  { file: 'src/components/shared/username-link-ops.ts', contains: 'return `/app/u/${encodeURIComponent(username)}`', why: 'the one spelling of the phone screen’s URL' },
   { file: 'src/components/draft/draft-chat.tsx', contains: 'const handle = username ? `@${username}` : null', why: 'ChatAuthor finds the handle in the label to render it as a UsernameLink' },
   { file: 'src/hooks/use-draft-chat-ops.ts', contains: '— @${member.profiles.username}', why: 'the chat author LABEL; ChatAuthor links its handle (proved above)' },
   { file: 'src/components/draft/my-lists-panel-ops.ts', contains: 'ownerLabel: mine ? null : username ? `@${username}`', why: 'the row label; the panel renders ownerUsername as a UsernameLink' },
@@ -306,6 +308,9 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string; line
   { file: 'src/components/shared/command-palette.tsx', contains: '@{u.username}</span>', why: 'inside a command-palette item that itself opens this profile' },
   { file: 'src/app/app/(shell)/settings/page.tsx', contains: 'value={`@${profile.username}`}', why: 'a read-only text input — never a link' },
   { file: 'src/components/profile/profile-header.tsx', contains: '@{username}', why: 'the profile page’s own heading — a link to the page you are on' },
+  { file: 'src/components/mobile/profile/person-profile.tsx', contains: '@{profile.username}</h1>', why: 'the phone profile screen’s own heading — a link to the page you are on' },
+  { file: 'src/components/mobile/profile/person-follows.tsx', contains: 'title={`@${username}`}', why: 'the Followers / Following page bar names whose lists these are — its Back goes to that profile' },
+  { file: 'src/app/app/(shell)/u/[username]/page.tsx', contains: 'title: `@${username} · FieldScout`', why: 'page metadata' },
   { file: 'src/app/u/[username]/page.tsx', contains: 'const handle = `@${profile.username}`', why: 'page metadata (title / description), not rendered text' },
   { file: 'src/app/u/[username]/page.tsx', contains: 'Public lists @{profile.username} publishes', why: 'the profile page’s own empty state' },
   { file: 'src/app/u/[username]/followers/page.tsx', contains: 'Followers of @${username}', why: 'page metadata' },
@@ -321,7 +326,7 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string; line
   { file: 'src/components/mobile/community/community-cards.tsx', contains: '@{item.author.username}', why: 'FieldScout Mobile Community card bylines (ranking row, updated-by row, list card, Latest shelf card): each card is one link that opens the list, so the handle sits inside it; the list detail’s author is a UsernameLink', lines: 4 },
   { file: 'src/components/mobile/community/community-detail.tsx', contains: 'const handle = `@${username}`', why: 'an AI persona’s handle — its page is /personas/… (linked when that flag is on), not a person’s profile' },
   { file: 'src/components/mobile/community/community-ops.ts', contains: '`@${item.author.username}`', why: 'the Community search text — matched against the query, never rendered' },
-  { file: 'src/components/mobile/search/mobile-search.tsx', contains: 'const handle = `@${user.username}`', why: 'phone search People row: the whole row is the link to that person’s profile (userProfileHref), so the handle sits inside it' },
+  { file: 'src/components/mobile/search/mobile-search.tsx', contains: 'const handle = `@${user.username}`', why: 'phone search People row: the whole row is the link to that person’s profile (phoneProfileHref), so the handle sits inside it' },
   { file: 'src/components/mobile/search/mobile-search.tsx', contains: 'const handle = `@${manager.username}`', why: 'phone search People row for a league manager: the row opens their team (gap list §3 #1 — "finds managers (opens their team)"), so the handle sits inside that link' },
   { file: 'src/components/mobile/search/mobile-search.tsx', contains: '`@${list.owner_username}`', why: 'phone search Posts row byline: the row is one link that opens the list (as the Community cards), so the handle sits inside it' },
   { file: 'src/components/mobile/search/search-ops.ts', contains: '`@${m.username} ${managerSub(m.teamName)}`', why: 'the search match text for a league manager — matched against the query, never rendered' },
@@ -337,6 +342,47 @@ function sourceFiles(dir: string): string[] {
     return /\.(tsx?|ts)$/.test(name) && !/\.test\.tsx?$/.test(name) ? [full] : []
   })
 }
+
+/**
+ * Audit profile-1: in the phone layout a person opens on their PHONE screen
+ * inside the app (`/app/u/…` — dock, Back, light/dark), never the desktop
+ * public page. `UsernameLink` picks that by layout (`useProfileHref`); a
+ * phone screen that builds a person link itself must use `phoneProfileHref`.
+ * So no file under src/components/mobile calls `userProfileHref` — except to
+ * build a SHARE address, which must be the public page.
+ */
+const PHONE_PUBLIC_PROFILE_ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = [
+  { file: 'src/components/mobile/community/list-actions.tsx', contains: '${window.location.origin}${userProfileHref(owner)}/lists/', why: 'the Share address of a public list — the public page, which anyone can open' },
+]
+
+describe('phone screens open a person on the phone, never the desktop page (audit profile-1)', () => {
+  const hits = sourceFiles(path.join(ROOT, 'src/components/mobile')).flatMap((file) =>
+    readFileSync(file, 'utf8')
+      .split('\n')
+      .flatMap((line, i) => (/userProfileHref\(/.test(line) ? [{ file: path.relative(ROOT, file), line: i + 1, text: line.trim() }] : [])),
+  )
+  it.each(hits.map((h) => [`${h.file}:${h.line}`, h] as const))('%s builds a public profile address only to share it', (_where, hit) => {
+    const allowed = PHONE_PUBLIC_PROFILE_ALLOWED.some((a) => a.file === hit.file && hit.text.includes(a.contains))
+    expect(allowed, `${hit.file}:${hit.line} sends a phone to the desktop profile page — use UsernameLink or phoneProfileHref: ${hit.text}`).toBe(true)
+  })
+  it.each(PHONE_PUBLIC_PROFILE_ALLOWED.map((a) => [a.file, a] as const))('allowlist entry is live: %s', (_label, entry) => {
+    expect(hits.filter((h) => h.file === entry.file && h.text.includes(entry.contains))).toHaveLength(1)
+  })
+  it('the public person pages hand a signed-in phone to the phone screen (a shared link, a list owner)', () => {
+    const page = (rel: string) => readFileSync(path.join(ROOT, 'src/app/u/[username]', rel), 'utf8')
+    expect(page('page.tsx')).toContain('<PhoneProfileHandoff to={phoneProfileHref(profile.username)} />')
+    expect(page('followers/page.tsx')).toContain("<PhoneProfileHandoff to={phoneFollowsHref(profile.username, 'followers')} />")
+    expect(page('following/page.tsx')).toContain("<PhoneProfileHandoff to={phoneFollowsHref(profile.username, 'following')} />")
+    // …only when signed in, and only on a device that gets the phone layout.
+    const handoff = readFileSync(path.join(ROOT, 'src/components/profile/phone-profile-handoff.tsx'), 'utf8')
+    expect(handoff).toContain("if (signedIn && detectMode() === 'mobile') router.replace(to)")
+  })
+  it('the person link reads the layout (one place decides)', () => {
+    const source = readFileSync(path.join(ROOT, 'src/components/shared/username-link.tsx'), 'utf8')
+    expect(source).toContain('const href = useProfileHref(username)')
+    expect(source).toContain('href={href}')
+  })
+})
 
 describe('the census — no person’s handle is rendered plain without a reason (L.E1.41)', () => {
   const hits = SCAN.flatMap((dir) =>
