@@ -167,6 +167,9 @@ export interface IngestStatsReport {
   empty: number
   /** Advanced keys dropped because they are not registry-canonical (D33). */
   droppedAdvancedKeys: number
+  /** Rows dropped as byte-identical repeats of a line already in this answer
+   *  (M7 L.F2.3, F830 — `collapseIdenticalRows`). */
+  duplicates: number
   inserted: number
   /** Existing rows whose scoring inputs (box columns / advanced) moved. */
   updated: number
@@ -560,6 +563,44 @@ export interface StatDiff {
   /** Only is_live / game_id / source moved — written, NOT enqueued. */
   metaOnly: StatRow[]
   unchanged: number
+}
+
+/** Key-sorted JSON — two rows are the same line iff these strings are equal. */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'undefined'
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`
+}
+
+/**
+ * M7 L.F2.3 (PROGRESS F830 / D762): a provider answer that carries the SAME
+ * line for a player more than once is one line — §23.2's "every upsert is
+ * idempotent". Byte-identical copies (after `toStatRow`) collapse to the
+ * first; the door (167) refuses a batch naming one player twice, so before
+ * this a single repeated row refused the whole week's poll, every poll,
+ * until the provider stopped repeating it. Copies that DIFFER are left
+ * exactly as they arrive — which of two numbers to believe is not decided
+ * here (PROGRESS F831).
+ */
+export function collapseIdenticalRows(rows: readonly StatRow[]): { rows: StatRow[]; collapsed: number } {
+  const keptByPlayer = new Map<string, Set<string>>()
+  const out: StatRow[] = []
+  let collapsed = 0
+  for (const row of rows) {
+    const key = canonicalJson(row)
+    const kept = keptByPlayer.get(row.player_id)
+    if (kept?.has(key)) {
+      collapsed += 1
+      continue
+    }
+    if (kept) kept.add(key)
+    else keptByPlayer.set(row.player_id, new Set([key]))
+    out.push(row)
+  }
+  return { rows: out, collapsed }
 }
 
 /**
@@ -993,6 +1034,7 @@ function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degr
       unknownPlayer: 0,
       empty: 0,
       droppedAdvancedKeys: 0,
+      duplicates: 0,
       inserted: 0,
       updated: 0,
       metaOnly: 0,
@@ -1230,7 +1272,9 @@ export async function ingestWeek(
     if (row === null) report.stats.empty += 1
     else statRows.push(row)
   }
-  const statDiff = diffStats(statRows, existingStats)
+  const unique = collapseIdenticalRows(statRows)
+  report.stats.duplicates = unique.collapsed
+  const statDiff = diffStats(unique.rows, existingStats)
   // TD2 — against the games as stored BEFORE this poll (`existingGames`),
   // never `merged`: the poll that first sees a game final carries its last
   // in-game changes, and those are not corrections.
@@ -1296,6 +1340,11 @@ export async function ingestWeek(
   report.stats.unchanged = statDiff.unchanged
 
   // ── Reasons: an empty section says why ──
+  if (report.stats.duplicates > 0) {
+    report.reasons.push(
+      `player_stats: ${report.stats.duplicates} repeated provider row(s) — identical copies of a line already in this answer — written once (§23.2 idempotent; F830)`,
+    )
+  }
   if (heldRows.length > 0) {
     report.reasons.push(
       `nfl_games: ${heldRows.length} game(s) are marked out of the week / cancelled (operator_hold) — the provider's row was not written: ${heldRows.map((g) => g.id).join(', ')}`,

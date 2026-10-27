@@ -255,6 +255,7 @@ describe('ingestWeek — the golden first poll and diff-awareness (§22.2/§23.2
       unknownPlayer: 0,
       empty: 0,
       droppedAdvancedKeys: 0,
+      duplicates: 0,
       inserted: 6,
       updated: 0,
       metaOnly: 0,

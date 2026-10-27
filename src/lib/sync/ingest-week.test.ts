@@ -17,6 +17,7 @@ import {
   CONTEXT_ADVANCED_KEYS,
   movedStatKeys,
   classifyCorrectionsWithSettle,
+  collapseIdenticalRows,
   diffGames,
   diffStats,
   finalObservedAt,
@@ -407,6 +408,37 @@ function statRow(overrides: Partial<StatRow> = {}): StatRow {
     ...overrides,
   }
 }
+
+describe('collapseIdenticalRows (M7 L.F2.3 / F830: a repeated provider row is one line)', () => {
+  it('byte-identical copies collapse to the first, counted; distinct players untouched', () => {
+    const a = statRow({ player_id: 'p-a' })
+    const b = statRow({ player_id: 'p-b' })
+    const out = collapseIdenticalRows([a, statRow({ player_id: 'p-a' }), b, statRow({ player_id: 'p-a' })])
+    expect(out.collapsed).toBe(2)
+    expect(out.rows.map((r) => r.player_id)).toEqual(['p-a', 'p-b'])
+    expect(out.rows[0]).toBe(a)
+  })
+
+  it('identity ignores key ORDER (the same line serialised differently is still the same line)', () => {
+    const a = statRow({ player_id: 'p-a' })
+    const reordered = { advanced: { ...a.advanced }, columns: Object.fromEntries(Object.entries(a.columns).reverse()), source: a.source, is_live: a.is_live, game_id: a.game_id, player_id: a.player_id }
+    expect(collapseIdenticalRows([a, reordered as StatRow]).collapsed).toBe(1)
+  })
+
+  it('copies that DIFFER are both kept — which to believe is not decided here (F831)', () => {
+    const base = statRow({ player_id: 'p-a' })
+    const other = statRow({ player_id: 'p-a', columns: { ...base.columns, pass_yards: 101 } })
+    const meta = statRow({ player_id: 'p-a', is_live: false })
+    const out = collapseIdenticalRows([base, other, meta])
+    expect(out.collapsed).toBe(0)
+    expect(out.rows).toHaveLength(3)
+  })
+
+  it('nothing to collapse: the same rows, zero collapsed', () => {
+    const rows = [statRow({ player_id: 'p-a' }), statRow({ player_id: 'p-b' })]
+    expect(collapseIdenticalRows(rows)).toEqual({ rows, collapsed: 0 })
+  })
+})
 
 describe('diffStats (§23.2: only real deltas enqueue)', () => {
   it('unchanged rows are unchanged — the zero-delta pin (the DoD break probe turns this red)', () => {
