@@ -7,10 +7,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getUser = vi.fn()
-const single = vi.fn()
+const rpc = vi.fn()
 const client = {
   auth: { getUser },
-  from: () => ({ select: () => ({ eq: () => ({ single }) }) }),
+  // 210 (F720): the gate asks is_platform_operator(); it never reads profiles.
+  rpc: (fn: string) => {
+    expect(fn).toBe('is_platform_operator')
+    return rpc()
+  },
+  from: () => {
+    throw new Error('the admin gate must not read profiles (is_admin is not readable since 210)')
+  },
 }
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: async () => client }))
 
@@ -18,7 +25,7 @@ import { isAdminViewer, requireAdminUser } from './require-admin'
 
 beforeEach(() => {
   getUser.mockReset()
-  single.mockReset()
+  rpc.mockReset()
 })
 
 describe('requireAdminUser', () => {
@@ -34,7 +41,7 @@ describe('requireAdminUser', () => {
 
   it('signed in, not an admin → 404 Not found (not 403)', async () => {
     getUser.mockResolvedValue({ data: { user: { id: 'u' } } })
-    single.mockResolvedValue({ data: { is_admin: false }, error: null })
+    rpc.mockResolvedValue({ data: false, error: null })
     const r = await requireAdminUser()
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.response.status).toBe(404)
@@ -42,7 +49,7 @@ describe('requireAdminUser', () => {
 
   it('a failed profile read is a loud 500, not a quiet 404', async () => {
     getUser.mockResolvedValue({ data: { user: { id: 'u' } } })
-    single.mockResolvedValue({ data: null, error: { message: 'db down' } })
+    rpc.mockResolvedValue({ data: null, error: { message: 'db down' } })
     const r = await requireAdminUser()
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.response.status).toBe(500)
@@ -50,7 +57,7 @@ describe('requireAdminUser', () => {
 
   it('an admin passes with the own session client', async () => {
     getUser.mockResolvedValue({ data: { user: { id: 'op' } } })
-    single.mockResolvedValue({ data: { is_admin: true }, error: null })
+    rpc.mockResolvedValue({ data: true, error: null })
     const r = await requireAdminUser()
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.supabase).toBe(client)
@@ -62,15 +69,15 @@ describe('isAdminViewer (the /app/admin layout)', () => {
     getUser.mockResolvedValue({ data: { user: null } })
     expect(await isAdminViewer()).toBe(false)
     getUser.mockResolvedValue({ data: { user: { id: 'u' } } })
-    single.mockResolvedValue({ data: { is_admin: false }, error: null })
+    rpc.mockResolvedValue({ data: false, error: null })
     expect(await isAdminViewer()).toBe(false)
-    single.mockResolvedValue({ data: { is_admin: true }, error: null })
+    rpc.mockResolvedValue({ data: true, error: null })
     expect(await isAdminViewer()).toBe(true)
   })
 
   it('throws on a failed profile read', async () => {
     getUser.mockResolvedValue({ data: { user: { id: 'u' } } })
-    single.mockResolvedValue({ data: null, error: { message: 'db down' } })
+    rpc.mockResolvedValue({ data: null, error: { message: 'db down' } })
     await expect(isAdminViewer()).rejects.toThrow(/could not read the profile/)
   })
 })

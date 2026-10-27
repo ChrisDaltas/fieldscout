@@ -6,8 +6,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
 
 import { createBrowserClient } from '@/lib/supabase/client'
+import { PROFILE_READABLE_COLUMNS } from '@/lib/auth/profile-columns'
 import { useAuthStore } from '@/stores/auth-store'
-import type { Profile } from '@/types/database'
+import type { ClientProfile } from '@/types/database'
 
 // The session and profile are backed by React Query with fixed keys, so all
 // ~13 useAuth() consumers on a page share ONE session fetch and ONE profile
@@ -48,14 +49,18 @@ export function useAuth() {
     queryKey: authProfileKey(user?.id),
     enabled: Boolean(user?.id),
     staleTime: 60_000,
-    queryFn: async (): Promise<Profile | null> => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user!.id)
-        .maybeSingle()
-      if (error) throw error
-      return (data as Profile | null) ?? null
+    queryFn: async (): Promise<ClientProfile | null> => {
+      // Migration 210 (F720): the readable columns by name — `select('*')`
+      // is refused — and the admin flag from `is_platform_operator()` (the
+      // caller's own status only; `is_admin` is not readable by the client).
+      const [profileRes, operatorRes] = await Promise.all([
+        supabase.from('profiles').select(PROFILE_READABLE_COLUMNS).eq('id', user!.id).maybeSingle(),
+        supabase.rpc('is_platform_operator'),
+      ])
+      if (profileRes.error) throw profileRes.error
+      if (operatorRes.error) throw operatorRes.error
+      if (!profileRes.data) return null
+      return { ...profileRes.data, is_admin: operatorRes.data === true }
     },
   })
 

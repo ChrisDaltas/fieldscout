@@ -1,4 +1,4 @@
-# Hosted ↔ repo migration reconciliation (project `xhqrdzllcsrvbbcygilv`)
+# Hosted ↔ repo migration reconciliation (the production project)
 
 > Audit + reconciliation of the production Supabase project behind fieldscout.gg
 > against `supabase/migrations/`. Performed 2026-08-05. Production is live

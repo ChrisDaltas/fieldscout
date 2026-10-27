@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncWeeklyProjections } from '@/lib/sync/weekly-projections'
+import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
  * THIS WEEK's projected stat lines (M6A L.E1.19; migration 136; PROGRESS
@@ -26,9 +27,7 @@ import { syncWeeklyProjections } from '@/lib/sync/weekly-projections'
 export const maxDuration = 60
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

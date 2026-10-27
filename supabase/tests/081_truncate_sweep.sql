@@ -149,7 +149,11 @@ select is_empty(
                                                      ('list_tags', 'anon', 'UPDATE'),
                                                      ('list_tags', 'authenticated', 'UPDATE'),
                                                      ('expert_follows', 'anon', 'UPDATE'),
-                                                     ('expert_follows', 'authenticated', 'UPDATE'))
+                                                     ('expert_follows', 'authenticated', 'UPDATE'),
+        -- 210 (L.F2.8, F720) — profiles SELECT is column-level for the client
+        -- roles: every column but stripe_customer_id / is_admin. pgTAP 160 D1–D2 pins the set.
+                                                     ('profiles', 'anon', 'SELECT'),
+                                                     ('profiles', 'authenticated', 'SELECT'))
       order by 1, 2, 3 $$,
   'C3 every one of the SEVEN non-TRUNCATE privileges is still held by all three API roles on EVERY public table — the revoke removed nothing else (175 / F555: bar the audit log INSERT for anon / authenticated, named)'
 );

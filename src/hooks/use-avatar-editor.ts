@@ -18,7 +18,9 @@ export const AVATAR_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif'
  */
 export function useAvatarEditor() {
   const { toast } = useToast()
-  const setProfile = useAuthStore((s) => s.setProfile)
+  // The route answers the readable columns only (migration 210), so merge —
+  // a replace would drop the admin flag the profile hook added.
+  const updateProfile = useAuthStore((s) => s.updateProfile)
   const [uploading, setUploading] = useState(false)
   const [removing, setRemoving] = useState(false)
 
@@ -35,7 +37,7 @@ export function useAvatarEditor() {
       if (!res.ok) {
         throw new Error(body.error ?? `Upload failed (${res.status})`)
       }
-      setProfile(body)
+      updateProfile(body)
       toast({ title: 'Profile photo updated' })
     } catch (err) {
       toast({
@@ -57,7 +59,7 @@ export function useAvatarEditor() {
       if (!res.ok) {
         throw new Error(body.error ?? `Remove failed (${res.status})`)
       }
-      setProfile(body)
+      updateProfile(body)
       toast({ title: 'Photo removed — showing initials' })
     } catch (err) {
       toast({

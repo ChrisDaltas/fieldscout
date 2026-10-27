@@ -9,6 +9,7 @@ import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createTypedAdminClient } from '@/lib/supabase/admin'
 import { lastPollCompletedAtReader } from '@/lib/sync/ingest-flags'
 import { planLivePoll, readCalendar } from '@/lib/sync/live-poll'
+import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
  * The `score-league-week` invoker (spec §14 "every 5–10s in game windows" /
@@ -57,9 +58,7 @@ export const maxDuration = 60
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

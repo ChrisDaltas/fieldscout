@@ -5,6 +5,7 @@ import { SleeperStatsProvider } from '@/lib/leagues/stats/sleeper-stats-provider
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createTypedAdminClient } from '@/lib/supabase/admin'
 import { LIVE_POLL_BUDGET_MS, runLivePollInvocation } from '@/lib/sync/live-poll'
+import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
  * In-season live ingestion — the production `sync-live-stats` job (spec §14
@@ -55,9 +56,7 @@ export const maxDuration = 60
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

@@ -37,6 +37,11 @@ on:
       - '.github/scripts/drift_compare.py'
       - '.github/workflows/db-drift.yml'
 
+# The job token reads the repo and nothing else (M7 L.F2.8, F721): no step
+# writes to GitHub, so no write scope is granted.
+permissions:
+  contents: read
+
 jobs:
   drift:
     name: repo vs production
@@ -45,14 +50,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check for the secret
+      - name: Check for the secret and the project URL
         id: secret
         env:
           KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          URL: ${{ vars.SUPABASE_URL }}
         run: |
           if [ -z "$KEY" ]; then
             echo "::warning::Drift check skipped — set the repository secret \
           SUPABASE_SERVICE_ROLE_KEY (Settings → Secrets and variables → Actions)."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$URL" ]; then
+            echo "::warning::Drift check skipped — set the repository variable \
+          SUPABASE_URL to the production project URL (Settings → Secrets and variables → Actions → Variables)."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -61,9 +71,10 @@ jobs:
       - name: Compare
         if: steps.secret.outputs.configured == 'true'
         env:
-          # Not a secret: this URL ships in the browser bundle. Hardcoding it
-          # halves the setup — only the service-role key needs protecting.
-          URL: https://xhqrdzllcsrvbbcygilv.supabase.co
+          # Not a secret (it ships in the browser bundle), but the repo is public,
+          # so the project's address lives in a repository variable rather than
+          # in this file (M7 L.F2.8, F721 / F757).
+          URL: ${{ vars.SUPABASE_URL }}
           KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail

@@ -10,6 +10,7 @@ import { syncSos } from '@/lib/sync/sos-sync'
 import { syncSplits } from '@/lib/sync/splits-sync'
 import type { SyncSummary } from '@/lib/sync/types'
 import { syncUsage } from '@/lib/sync/usage'
+import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
  * Weekly stats pipeline (vercel.json: Tuesday morning, after MNF settles).
@@ -24,9 +25,7 @@ import { syncUsage } from '@/lib/sync/usage'
 export const maxDuration = 300
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

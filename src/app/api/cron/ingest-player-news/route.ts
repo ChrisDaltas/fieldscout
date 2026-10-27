@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { ingestPlayerNews } from '@/lib/news/ingest'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
  * Player news ingest (F575; migration 198; PROGRESS D550). SCHEDULED every
@@ -22,9 +23,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 export const maxDuration = 60
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

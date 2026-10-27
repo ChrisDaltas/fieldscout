@@ -23,7 +23,7 @@ import { AVATAR_ACCEPT, useAvatarEditor } from '@/hooks/use-avatar-editor'
 import { useToast } from '@/hooks/use-toast'
 import { useUpdatePassword } from '@/hooks/use-update-password'
 import { cn } from '@/lib/utils'
-import type { Profile } from '@/types/database'
+import type { ClientProfile } from '@/types/database'
 
 import { SETTINGS_VALUE, SettingsField, SettingsGroup, SettingsSkeleton, settingsButtonClass } from './settings-parts'
 
@@ -102,7 +102,7 @@ export function MobileAccountSettings() {
  * letters on blue (ruling #8) — over the blue-tint photo pill, and Remove
  * beside it when there is a photo to remove.
  */
-function PhotoBlock({ profile }: { profile: Profile }) {
+function PhotoBlock({ profile }: { profile: ClientProfile }) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const { uploading, removing, onFileChange, remove } = useAvatarEditor()
   const hasPhoto = Boolean(profile.avatar_url)
