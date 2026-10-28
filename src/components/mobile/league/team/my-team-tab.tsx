@@ -16,7 +16,7 @@ import {
 import { starterIdsOf } from '@/components/leagues/my-team-ops'
 import { STALE_LEAGUE_COPY } from '@/components/leagues/status-banners'
 import { problemCopy } from '@/components/leagues/team-page'
-import { DEADLINE_PASSED_TITLE, NOT_IN_SEASON_TRADE_COPY } from '@/components/leagues/trades-ops'
+import { tradesClosedReason } from '@/components/leagues/trades-ops'
 import { waiverSeatCopy } from '@/components/leagues/waiver-claims-ops'
 import { movesGate } from '@/components/players/player-card-league-ops'
 import { MobileLeagueHeader } from '@/components/mobile/league/league/league-header'
@@ -193,7 +193,7 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   }
 
   // Trades closed → the tile stays, dimmed, and says why (never a dead tap).
-  const tradeClosedWhy = !inSeason ? NOT_IN_SEASON_TRADE_COPY : tradesClosed ? DEADLINE_PASSED_TITLE : null
+  const tradeClosedWhy = tradesClosedReason({ inSeason, deadlinePassed: tradesClosed })
   const actions: Array<{ key: string; icon: MIconName; label: string; href?: string; onClick?: () => void; closed?: boolean }> = [
     // Your team's schedule (gap list §4 item 107) — the Moves tile's "mine".
     { key: 'schedule', icon: 'sched', label: 'Schedule', href: scheduleHref(leagueId, teamId) },

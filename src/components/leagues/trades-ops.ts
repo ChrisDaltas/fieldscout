@@ -122,6 +122,18 @@ export function tradeDeadlineLine(deadlineWeek: number | null, view: TradeDeadli
 
 export const DEADLINE_PASSED_TITLE = 'Trades are closed for the season.'
 
+/** Why offers can't be made right now, or null while they can. The phone's
+ *  trade doors (the Team tab's Trade tile, the Team view's Propose trade)
+ *  stay on screen while trades are closed, dimmed, and a tap shows this —
+ *  never a dead tap. `deadlinePassed` is the server's word
+ *  (`tradeDeadlinePassed`): loading or unreadable keeps the door open and
+ *  the verb's refusal is the answer. */
+export function tradesClosedReason(args: { inSeason: boolean; deadlinePassed: boolean }): string | null {
+  if (!args.inSeason) return NOT_IN_SEASON_TRADE_COPY
+  if (args.deadlinePassed) return DEADLINE_PASSED_TITLE
+  return null
+}
+
 /** Past the deadline, where the Propose door used to be (§13.3 / Q76: the
  *  commissioner's own roster tools still work, §15.4). */
 export function deadlinePassedCopy(view: TradeDeadlineView, fmt: (iso: string) => string): string {

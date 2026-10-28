@@ -37,6 +37,7 @@ import {
   tradePartners,
   tradeStatusView,
   tradesHref,
+  tradesClosedReason,
   votingOpen,
 } from './trades-ops'
 import { ALPHA, BRAVO, CHARLIE, TEAMS, player, rosterTeam, tally, trade } from './trades.fixtures'
@@ -444,5 +445,21 @@ describe('F480 / R1268 — the ?with=&player= door (tradeDoorStep, replayed the 
 
   it('a player-only link opens toward no fixed team, the player picked', () => {
     expect(replay([null, 'team-a'], { with: null, player: 'p-9' })).toEqual([{ fromTeamId: 'team-a', toTeamId: null, getPlayerIds: ['p-9'] }])
+  })
+})
+
+describe('tradesClosedReason — why the phone’s trade doors are dimmed (item #7, match-team-2)', () => {
+  it('open in season / playoffs before the deadline: no reason, the door works', () => {
+    expect(tradesClosedReason({ inSeason: true, deadlinePassed: false })).toBeNull()
+  })
+
+  it('out of season (not started, or over): the season copy, whatever the deadline says', () => {
+    expect(tradesClosedReason({ inSeason: false, deadlinePassed: false })).toBe(ops.NOT_IN_SEASON_TRADE_COPY)
+    expect(tradesClosedReason({ inSeason: false, deadlinePassed: true })).toBe(ops.NOT_IN_SEASON_TRADE_COPY)
+  })
+
+  it('past the deadline in season: "Trades are closed for the season."', () => {
+    expect(tradesClosedReason({ inSeason: true, deadlinePassed: true })).toBe(ops.DEADLINE_PASSED_TITLE)
+    expect(ops.DEADLINE_PASSED_TITLE).toBe('Trades are closed for the season.')
   })
 })

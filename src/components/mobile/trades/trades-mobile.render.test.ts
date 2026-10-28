@@ -237,6 +237,65 @@ describe('Team view (another team)', () => {
   })
 })
 
+describe('Team view — Propose trade while trades are closed (item #7, match-team-2)', () => {
+  /** The Propose trade button's opening tag, or null when it isn't offered. */
+  const proposeTag = (html: string) => html.match(/<button[^>]*data-propose-trade[^>]*>/)?.[0] ?? null
+  const view = (qc: QueryClient, d: LeagueDetail = detail, teamId = THEM) => render(qc, createElement(TeamView, { leagueId: LEAGUE, teamId, detail: d }))
+  const withStatus = (status: string): LeagueDetail => ({ ...detail, league: { ...detail.league, status } })
+  const pastDeadline = () => {
+    const qc = seeded()
+    qc.setQueryData(tradeDeadlineKeys.all(LEAGUE), {
+      state: 'known',
+      view: { league_id: LEAGUE, deadline_week: 10, deadline_at: '2099-11-10T00:00:00Z', why: 'next_week_starts', label: null, passed: true, ms_remaining: 0, evaluated_at: '2099-11-12T12:00:00Z' },
+    })
+    return qc
+  }
+
+  it('open (in season, before the deadline): a live button — not dimmed, not aria-disabled', () => {
+    const tag = proposeTag(view(seeded()))
+    expect(tag).not.toBeNull()
+    expect(tag).not.toContain('aria-disabled')
+    expect(tag).not.toContain('opacity-40')
+  })
+
+  it('past the deadline: still there, dimmed and aria-disabled (a tap says why) — never gone', () => {
+    const html = view(pastDeadline())
+    const tag = proposeTag(html)
+    expect(tag).not.toBeNull()
+    expect(tag).toContain('aria-disabled="true"')
+    expect(tag).toContain('opacity-40')
+    expect(html).toContain('Propose trade')
+  })
+
+  it('out of season — before it starts and once it is over: dimmed the same way', () => {
+    for (const status of ['setup', 'scheduled', 'drafting', 'complete']) {
+      const tag = proposeTag(view(seeded(), withStatus(status)))
+      expect(tag, status).not.toBeNull()
+      expect(tag, status).toContain('aria-disabled="true"')
+      expect(tag, status).toContain('opacity-40')
+    }
+  })
+
+  it('the playoffs are in season: open', () => {
+    expect(proposeTag(view(seeded(), withStatus('playoffs')))).not.toContain('aria-disabled')
+  })
+
+  it('never offered where it can never apply: a team with no manager, or a viewer with no team', () => {
+    const unmanaged = seeded()
+    unmanaged.setQueryData(leagueRosterKeys.all(LEAGUE), { ...ROSTERS, teams: ROSTERS.teams.map((t) => (t.team_id === THEM ? { ...t, manager_user_id: null } : t)) })
+    expect(proposeTag(view(unmanaged))).toBeNull()
+    const noSeat: LeagueDetail = { ...detail, members: detail.members.filter((m) => m.user_id !== 'user-me') }
+    expect(proposeTag(view(seeded(), noSeat))).toBeNull()
+    // …and not even dimmed when trades are closed too.
+    expect(proposeTag(view(pastDeadline(), noSeat))).toBeNull()
+  })
+
+  it('never offered on your own team', () => {
+    expect(proposeTag(view(seeded(), detail, ME))).toBeNull()
+    expect(proposeTag(view(pastDeadline(), detail, ME))).toBeNull()
+  })
+})
+
 describe("Team view — who's online (gap list §3 #25)", () => {
   it('the manager online: the green dot on the team avatar and "Active now · @marcus · league"', () => {
     presence.online = new Set(['user-them'])
