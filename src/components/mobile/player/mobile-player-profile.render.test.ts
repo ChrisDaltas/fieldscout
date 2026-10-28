@@ -15,6 +15,13 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/app',
   useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, back: () => {} }),
 }))
+// Whether the page under the profile holds unsaved changes is a store read,
+// and zustand v5 answers a static render with `getInitialState()` — so a
+// test sets the answer through this spy over the real hook.
+vi.mock('@/components/mobile/player/profile-ui-store', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/components/mobile/player/profile-ui-store')>()
+  return { ...orig, usePageHoldsDraft: vi.fn(orig.usePageHoldsDraft) }
+})
 vi.mock('@/lib/supabase/client', () => ({
   createBrowserClient: () => ({
     auth: { getSession: async () => ({ data: { session: null } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }) },
@@ -33,7 +40,7 @@ import { draftQueueKeys } from '@/hooks/use-draft-queue'
 import type { CoreStatsPayload } from '@/lib/players/core-stats-ops'
 
 import { ProfileLoaded } from './mobile-player-profile'
-import { useProfileUiStore } from './profile-ui-store'
+import { usePageHoldsDraft, useProfileUiStore } from './profile-ui-store'
 import { HistoryTab, GameLogTab, TeamTab } from './profile-stats-tabs'
 import { LeaguesTab, QueueButton, TransactionsTab } from './profile-leagues'
 
@@ -192,6 +199,20 @@ describe('mobile player profile — leagues gated off', () => {
       expect(fromEditor).toContain('ATL · #7')
       const fromList = html(createElement(ProfileLoaded, { data, target: { ...target, listContext: { listId: 'l1', listTitle: 'Sleepers' } }, onClose: () => {} }), seeded())
       expect(fromList).toContain('data-profile-team="/app/nfl/ATL"')
+    })
+
+    it('no door over the ranking editor while it has changes to publish (its guard can’t catch a link off the page); over a clean editor, or anywhere else, the door is back', () => {
+      const open = () => html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), seeded())
+      // The editor says so while it is dirty (`useHoldPageDraft` in
+      // ranking-editor.tsx).
+      vi.mocked(usePageHoldsDraft).mockReturnValueOnce(true)
+      const overDirty = open()
+      expect(overDirty).not.toContain('data-profile-team')
+      expect(overDirty).not.toContain('href="/app/nfl/')
+      expect(overDirty).toContain('ATL · #7')
+      // Published, nothing changed yet, or the editor gone — the door is back.
+      vi.mocked(usePageHoldsDraft).mockReturnValueOnce(false)
+      expect(open()).toContain('data-profile-team="/app/nfl/ATL"')
     })
   })
 

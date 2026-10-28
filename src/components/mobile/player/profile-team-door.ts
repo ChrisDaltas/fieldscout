@@ -48,16 +48,19 @@ export interface TeamDoor {
 /**
  * The team door for a profile, or null when there is none: a free agent, a
  * team the app's table doesn't know (its page would be a 404), or a profile
- * opened from a list editor holding a draft — leaving that page would throw
- * away the unsaved list changes.
+ * over a page holding unsaved changes — leaving that page would throw them
+ * away without asking. That is a list editor holding a draft (the profile
+ * opened from it carries `removeFromDraft`), or a page that says so itself
+ * (`pageHoldsDraft`: the ranking editor before Publish).
  */
 export function nflTeamDoor(
   team: string | null | undefined,
   pathname: string,
   listContext: PlayerListContext | null,
+  pageHoldsDraft = false,
 ): TeamDoor | null {
   const info = getNflTeam(team)
-  if (!info || listContext?.removeFromDraft) return null
+  if (!info || listContext?.removeFromDraft || pageHoldsDraft) return null
   const href = `/app/nfl/${info.abbr}`
   return { href, name: `${info.city} ${info.name}`, here: pathname.toUpperCase() === href.toUpperCase() }
 }

@@ -799,6 +799,39 @@ export function parseRankingsParams(
 }
 
 /**
+ * The note the Rankings screen leaves on the history entry of an overlay it
+ * writes (the editor, New ranking): how Back from it goes. Arriving on that
+ * entry again — Back from a page a link opened, like the player profile's
+ * NFL team page — the screen reads the note and picks up as it was, rather
+ * than treating the entry as a fresh link and re-rooting it (which wrote a
+ * second Mine entry under the editor and wiped the profile's own mark, so
+ * the profile never reopened). Next's own keys on the entry are kept.
+ */
+export const RANK_ENTRY_KEY = 'fsRankEntry'
+
+export interface RankEntry {
+  /** The screen pushed it over the hub: Back pops it. */
+  pushed: boolean
+  /** It sits on the Mine entry the screen put under a linked editor: the
+   *  editor's Back steps over that too. */
+  linkRooted: boolean
+}
+
+export function rankEntryOf(state: unknown): RankEntry | null {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return null
+  const e = (state as Record<string, unknown>)[RANK_ENTRY_KEY]
+  if (!e || typeof e !== 'object') return null
+  const { pushed, linkRooted } = e as Record<string, unknown>
+  return typeof pushed === 'boolean' && typeof linkRooted === 'boolean' ? { pushed, linkRooted } : null
+}
+
+/** The state to write for an entry: the note for an overlay's entry, none
+ *  for the hub's (Next adds its own keys either way). */
+export function rankEntryState(entry: RankEntry | null): Record<string, unknown> | null {
+  return entry ? { [RANK_ENTRY_KEY]: { pushed: entry.pushed, linkRooted: entry.linkRooted } } : null
+}
+
+/**
  * The position a Rankings screen is using — the one the device remembers
  * (gap list #32): the editor's or New ranking's, else the hub chips' on the
  * tabs that have them. Mine (every position), an AI expert's board (its own

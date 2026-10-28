@@ -64,6 +64,13 @@ describe('nflTeamDoor', () => {
     expect(nflTeamDoor('KC', '/app/lists', { listId: 'l', listTitle: 'L' })?.href).toBe('/app/nfl/KC')
   })
 
+  it('none over a page holding unsaved changes (the ranking editor before Publish); the page clean, the door is back', () => {
+    expect(nflTeamDoor('KC', '/app/big-board', null, true)).toBeNull()
+    expect(nflTeamDoor('KC', '/app/big-board', null, false)?.href).toBe('/app/nfl/KC')
+    // Over its own team page a dirty page still offers nothing — no door at all.
+    expect(nflTeamDoor('KC', '/app/nfl/KC', null, true)).toBeNull()
+  })
+
   it('over that very team page, the door only closes the profile (no second copy of the page)', () => {
     expect(nflTeamDoor('KC', '/app/nfl/KC', null)?.here).toBe(true)
     expect(nflTeamDoor('kc', '/app/nfl/kc', null)?.here).toBe(true)

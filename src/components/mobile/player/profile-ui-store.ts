@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { create } from 'zustand'
 
 import type { PlayerModalTarget } from '@/stores/player-modal-store'
@@ -72,6 +73,12 @@ interface ProfileUiStore {
    *  the profile (which leaving does) keeps it. */
   resume: ProfileResume | null
   setResume: (resume: ProfileResume | null) => void
+  /** The page under the profile holds unsaved changes that leaving it would
+   *  throw away (the phone ranking editor before Publish), so the profile
+   *  offers no way off the page — its team stays plain text. Set by that
+   *  page while it has them. */
+  pageHoldsDraft: boolean
+  setPageHoldsDraft: (holds: boolean) => void
 }
 
 export const useProfileUiStore = create<ProfileUiStore>()((set, get) => ({
@@ -94,7 +101,28 @@ export const useProfileUiStore = create<ProfileUiStore>()((set, get) => ({
   setRestore: (restore) => set({ restore }),
   resume: null,
   setResume: (resume) => set({ resume }),
+  pageHoldsDraft: false,
+  setPageHoldsDraft: (pageHoldsDraft) => set({ pageHoldsDraft }),
 }))
+
+/**
+ * A page says it holds unsaved changes while `holds` is true (the phone
+ * ranking editor before Publish), and lets go when it is false again or the
+ * page goes. A profile opened over it then offers no way off the page.
+ */
+export function useHoldPageDraft(holds: boolean): void {
+  const setPageHoldsDraft = useProfileUiStore((s) => s.setPageHoldsDraft)
+  useEffect(() => {
+    if (!holds) return
+    setPageHoldsDraft(true)
+    return () => setPageHoldsDraft(false)
+  }, [holds, setPageHoldsDraft])
+}
+
+/** Whether the page under the profile holds unsaved changes. */
+export function usePageHoldsDraft(): boolean {
+  return useProfileUiStore((s) => s.pageHoldsDraft)
+}
 
 /** Whether Back on the profile showing returns to another profile: the
  *  newest step opened exactly this player. */

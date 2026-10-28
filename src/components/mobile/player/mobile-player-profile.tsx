@@ -26,7 +26,7 @@ import {
 import { GameLogTab, HistoryTab, TeamTab } from '@/components/mobile/player/profile-stats-tabs'
 import { SummaryTab } from '@/components/mobile/player/profile-summary'
 import { isPlainClick, markProfileResume, nflTeamDoor, useProfileResume, type TeamDoor } from '@/components/mobile/player/profile-team-door'
-import { trailBackTo, useProfileUiStore, type ProfileDraftContext } from '@/components/mobile/player/profile-ui-store'
+import { trailBackTo, usePageHoldsDraft, useProfileUiStore, type ProfileDraftContext } from '@/components/mobile/player/profile-ui-store'
 import { poolOf, useProfileLeague, useProfileScoring } from '@/components/mobile/player/use-profile-context'
 import { TradeBuilderOverlay } from '@/components/mobile/trades/trade-builder-overlay'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
@@ -340,7 +340,7 @@ export function ProfileLoaded({
   // this tab, so Back from the team page opens it again; over that very
   // page, the door just closes the profile.
   const pathname = usePathname()
-  const door = nflTeamDoor(player.team, pathname, target.listContext)
+  const door = nflTeamDoor(player.team, pathname, target.listContext, usePageHoldsDraft())
   const goToTeam = (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (!door) return
     if (door.here) {
