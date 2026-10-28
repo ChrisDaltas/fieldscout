@@ -46,8 +46,8 @@ import { useRowStats } from './use-row-stats'
  * (streak — the one shared count, `streak-ops`), the rosters + this week's
  * stored lineup, projections, the activity feed (moves). Propose trade opens the builder over this view —
  * only toward another team with a manager (your own team and an unmanaged
- * one never get it). While trades are closed — out of season, past the
- * deadline — it stays, dimmed, and a tap says why (`tradesClosedReason`, the
+ * one never get it). While trades are closed — before the season, after it,
+ * past the deadline — it stays, dimmed, and a tap says why (`tradesClosedReason`, the
  * Team tab's Trade tile and the player profile's pill). See all opens the league's Transactions screen
  * filtered to this team. No Message button: direct messages have no backend,
  * so the app can't open a conversation with the manager. A commissioner
@@ -70,7 +70,6 @@ export function TeamView({ leagueId, teamId, detail }: { leagueId: string; teamI
   const enterOverride = useCommishOverrideStore((s) => s.enter)
   const exitOverride = useCommishOverrideStore((s) => s.exit)
   const inOverride = overrideMode && isCommish
-  const inSeason = detail.league.status === 'in_season' || detail.league.status === 'playoffs'
 
   const standings = useStandings(leagueId)
   const schedule = useSchedule(leagueId)
@@ -112,10 +111,10 @@ export function TeamView({ leagueId, teamId, detail }: { leagueId: string; teamI
   const streak = schedule.data ? teamStreak(teamId, schedule.data, detail.league.season) : null
   // Propose trade is offered toward a team you could ever trade with — not
   // your own, not one with no manager to answer. While trades are closed
-  // (out of season, past the deadline) it stays, dimmed, and a tap says why:
+  // (before the season, after it, past the deadline) it stays, dimmed, and a tap says why:
   // the Team tab's Trade tile, never a dead tap.
   const proposeOffered = myTeamId !== null && myTeamId !== teamId && rosterTeam !== null && rosterTeam.status !== 'retired' && rosterTeam.manager_user_id !== null
-  const proposeClosedWhy = tradesClosedReason({ inSeason, deadlinePassed: tradesClosed })
+  const proposeClosedWhy = tradesClosedReason({ leagueStatus: detail.league.status, deadlinePassed: tradesClosed })
   const editability = weekEditability(weeks, week, currentWeek)
   // The handoff's team view shows this week only; a commissioner in override
   // mode can step weeks to fix one (the desktop page's week picker).

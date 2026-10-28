@@ -23,6 +23,7 @@ import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import type { TradeView, TradesDocument } from '@/lib/leagues/api/trades-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
+import { DEADLINE_PASSED_TITLE, NOT_IN_SEASON_TRADE_COPY, TRADES_AFTER_SEASON_COPY, tradesClosedReason } from '@/components/leagues/trades-ops'
 import { TeamView } from '@/components/mobile/league/team/team-view'
 
 import { TradeBuilderOverlay } from './trade-builder-overlay'
@@ -53,6 +54,12 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ back: vi.fn(), push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => '/app/leagues/league-1/team/x',
 }))
+// The words a tap on a dimmed Propose trade toasts: a static render never
+// clicks, so the real helper is wrapped to read what the view asked it.
+vi.mock('@/components/leagues/trades-ops', async (importActual) => {
+  const actual = await importActual<typeof import('@/components/leagues/trades-ops')>()
+  return { ...actual, tradesClosedReason: vi.fn(actual.tradesClosedReason) }
+})
 vi.mock('./m-overlay', async (importActual) => {
   const actual = await importActual<typeof import('./m-overlay')>()
   return {
@@ -258,6 +265,9 @@ describe('Team view — Propose trade while trades are closed (item #7, match-te
     expect(tag).not.toContain('opacity-40')
   })
 
+  /** What a tap on the button would say — the view's last ask of the helper. */
+  const tapSays = () => vi.mocked(tradesClosedReason).mock.results.at(-1)?.value as string | null | undefined
+
   it('past the deadline: still there, dimmed and aria-disabled (a tap says why) — never gone', () => {
     const html = view(pastDeadline())
     const tag = proposeTag(html)
@@ -265,15 +275,28 @@ describe('Team view — Propose trade while trades are closed (item #7, match-te
     expect(tag).toContain('aria-disabled="true"')
     expect(tag).toContain('opacity-40')
     expect(html).toContain('Propose trade')
+    expect(tapSays()).toBe(DEADLINE_PASSED_TITLE)
   })
 
-  it('out of season — before it starts and once it is over: dimmed the same way', () => {
-    for (const status of ['setup', 'scheduled', 'drafting', 'complete']) {
+  it('before the season starts: dimmed, and a tap says when trades open', () => {
+    for (const status of ['setup', 'scheduled', 'drafting']) {
       const tag = proposeTag(view(seeded(), withStatus(status)))
       expect(tag, status).not.toBeNull()
       expect(tag, status).toContain('aria-disabled="true"')
       expect(tag, status).toContain('opacity-40')
+      expect(tapSays(), status).toBe(NOT_IN_SEASON_TRADE_COPY)
     }
+  })
+
+  it('once the season is over: dimmed, and a tap says the season is over — not "Trades open once the season starts"', () => {
+    const tag = proposeTag(view(seeded(), withStatus('complete')))
+    expect(tag).not.toBeNull()
+    expect(tag).toContain('aria-disabled="true"')
+    expect(tag).toContain('opacity-40')
+    expect(tapSays()).toBe(TRADES_AFTER_SEASON_COPY)
+    // …even when the deadline read says passed too.
+    view(pastDeadline(), withStatus('complete'))
+    expect(tapSays()).toBe(TRADES_AFTER_SEASON_COPY)
   })
 
   it('the playoffs are in season: open', () => {

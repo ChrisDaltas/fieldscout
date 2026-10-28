@@ -450,16 +450,26 @@ describe('F480 / R1268 — the ?with=&player= door (tradeDoorStep, replayed the 
 
 describe('tradesClosedReason — why the phone’s trade doors are dimmed (item #7, match-team-2)', () => {
   it('open in season / playoffs before the deadline: no reason, the door works', () => {
-    expect(tradesClosedReason({ inSeason: true, deadlinePassed: false })).toBeNull()
+    expect(tradesClosedReason({ leagueStatus: 'in_season', deadlinePassed: false })).toBeNull()
+    expect(tradesClosedReason({ leagueStatus: 'playoffs', deadlinePassed: false })).toBeNull()
   })
 
-  it('out of season (not started, or over): the season copy, whatever the deadline says', () => {
-    expect(tradesClosedReason({ inSeason: false, deadlinePassed: false })).toBe(ops.NOT_IN_SEASON_TRADE_COPY)
-    expect(tradesClosedReason({ inSeason: false, deadlinePassed: true })).toBe(ops.NOT_IN_SEASON_TRADE_COPY)
+  it('before the season starts: when trades open, whatever the deadline says', () => {
+    for (const leagueStatus of ['setup', 'scheduled', 'drafting']) {
+      expect(tradesClosedReason({ leagueStatus, deadlinePassed: false }), leagueStatus).toBe(ops.NOT_IN_SEASON_TRADE_COPY)
+      expect(tradesClosedReason({ leagueStatus, deadlinePassed: true }), leagueStatus).toBe(ops.NOT_IN_SEASON_TRADE_COPY)
+    }
+  })
+
+  it('a finished season: "The season is over — trades are closed." — never "Trades open once the season starts"', () => {
+    expect(tradesClosedReason({ leagueStatus: 'complete', deadlinePassed: false })).toBe(ops.TRADES_AFTER_SEASON_COPY)
+    expect(tradesClosedReason({ leagueStatus: 'complete', deadlinePassed: true })).toBe(ops.TRADES_AFTER_SEASON_COPY)
+    expect(ops.TRADES_AFTER_SEASON_COPY).toBe('The season is over — trades are closed.')
   })
 
   it('past the deadline in season: "Trades are closed for the season."', () => {
-    expect(tradesClosedReason({ inSeason: true, deadlinePassed: true })).toBe(ops.DEADLINE_PASSED_TITLE)
+    expect(tradesClosedReason({ leagueStatus: 'in_season', deadlinePassed: true })).toBe(ops.DEADLINE_PASSED_TITLE)
+    expect(tradesClosedReason({ leagueStatus: 'playoffs', deadlinePassed: true })).toBe(ops.DEADLINE_PASSED_TITLE)
     expect(ops.DEADLINE_PASSED_TITLE).toBe('Trades are closed for the season.')
   })
 })

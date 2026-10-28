@@ -193,7 +193,7 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   }
 
   // Trades closed → the tile stays, dimmed, and says why (never a dead tap).
-  const tradeClosedWhy = tradesClosedReason({ inSeason, deadlinePassed: tradesClosed })
+  const tradeClosedWhy = tradesClosedReason({ leagueStatus: detail.league.status, deadlinePassed: tradesClosed })
   const actions: Array<{ key: string; icon: MIconName; label: string; href?: string; onClick?: () => void; closed?: boolean }> = [
     // Your team's schedule (gap list §4 item 107) — the Moves tile's "mine".
     { key: 'schedule', icon: 'sched', label: 'Schedule', href: scheduleHref(leagueId, teamId) },
