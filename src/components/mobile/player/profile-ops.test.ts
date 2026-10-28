@@ -22,6 +22,7 @@ import {
   gameLogTable,
   headerColors,
   initialCardIndex,
+  injuryDetail,
   isLightHex,
   keyStatTrends,
   leagueOwnership,
@@ -150,6 +151,22 @@ describe('header', () => {
     expect(statusPill('IR')?.label).toBe('IR')
     expect(statusPill('Active')).toBeNull()
     expect(statusPill(null)).toBeNull()
+  })
+
+  it("injury detail (pprofile-1): what is wrong, in Home's words, only while the pill shows", () => {
+    // Desktop's header and phone Home's injury row say it the same way.
+    expect(
+      injuryDetail(player({ status: 'Questionable', injury_body_part: 'Hamstring', practice_participation: 'Limited' })),
+    ).toBe('Hamstring · limited practice')
+    expect(
+      injuryDetail(player({ status: 'Out', injury_body_part: 'Ankle', injury_notes: 'Sprain', practice_participation: 'Full' })),
+    ).toBe('Ankle · Sprain · full practice')
+    expect(injuryDetail(player({ status: 'IR', injury_body_part: 'Knee - ACL', injury_notes: 'Surgery' }))).toBe('Knee - ACL · Surgery')
+    // A status with nothing on file says nothing (the pill still shows).
+    expect(injuryDetail(player({ status: 'Questionable' }))).toBeNull()
+    // No pill, no detail: healthy, or a feed status that is not an injury.
+    expect(injuryDetail(player({ status: null, injury_body_part: 'Ankle' }))).toBeNull()
+    expect(injuryDetail(player({ status: 'Active', injury_body_part: 'Ankle', practice_participation: 'Full' }))).toBeNull()
   })
 })
 
