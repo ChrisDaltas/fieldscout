@@ -283,7 +283,7 @@ This also covers desktop features the design left out, which we bring back in th
     - account Settings (with Scoring and Pro subscription): #503
     - Leagues list: #507
     - Mock drafts and reports: #514
-    - NFL teams: #505
+    - NFL teams: #505. Its way in (audit frame-2, 2026-10-27): no phone tap reached a team page. Now the team in the player profile's header is a small pill ("KC ›") that opens his NFL team page, as desktop's player header does, and Back from the team page reopens the profile as it was left, on the same tab. Over that very team's page it just closes the profile; from a list editor holding unsaved changes it stays plain text (leaving would lose the changes).
     - Trash: #504. Its way in (audit frame-1, 2026-10-27): nothing linked to Trash before. Now My lists ends with a Trash row on the phone, desktop's Lists header has a Trash button, and every “moved to trash” toast has a View trash button.
     - Rankings history: #515
     - Start-or-sit question pages: #516

@@ -140,8 +140,59 @@ describe('mobile player profile — leagues gated off', () => {
     expect(out).not.toContain('data-profile-action')
     expect(out).toMatch(/data-profile-status[^>]*>Questionable</)
     expect(out).toContain('Bijan Robinson')
-    expect(out).toContain('ATL · #7')
+    expect(out).toMatch(/>ATL<span class="sr-only">[^<]*<\/span><svg[\s\S]*?<\/svg><\/a><span>#7<\/span>/)
     expect(out).toMatch(/Age \d+ · 6'0" · 220 lb · 4th season/)
+  })
+
+  describe('NFL team door (audit frame-2)', () => {
+    const door = (out: string) => out.match(/<a\b[^>]*data-profile-team="[^"]*"[^>]*>[\s\S]*?<\/a>/)?.[0] ?? null
+
+    it('the team in the header opens his NFL team page, like desktop’s header; the number stays text', () => {
+      const out = html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), seeded())
+      const a = door(out)
+      expect(a).not.toBeNull()
+      expect(a).toContain('href="/app/nfl/ATL"')
+      // Says where it goes in words; the visible abbreviation leads the name.
+      expect(a).toMatch(/>ATL<span class="sr-only">, Atlanta Falcons team page<\/span>/)
+      // A control on the team colour: the header's see-through pill, tinting
+      // when pressed, a chevron, and a 36px touch area.
+      expect(a).toContain('rounded-pill')
+      expect(a).toContain('bg-white/[.16] active:bg-white/[.28]')
+      expect(a).toContain('M6 3l5 5-5 5')
+      expect(a).toContain('after:-inset-y-[9px]')
+      // Only the team is the door — the jersey number follows as text (no
+      // "·" after a pill).
+      expect(out).toContain('</a><span>#7</span>')
+      // Exactly one door, in the header.
+      expect(out.match(/data-profile-team=/g)).toHaveLength(1)
+      expect(out.indexOf('data-profile-team=')).toBeLessThan(out.indexOf('data-profile-strip'))
+    })
+
+    it('a light team colour (PIT) darkens the pill instead; a D/ST has no number after it', () => {
+      const pit = { ...player, team: 'PIT', position: 'DEF', jersey_number: null, status: null }
+      const out = html(createElement(ProfileLoaded, { data: { ...data, player: pit }, target, onClose: () => {} }), seeded())
+      const a = door(out)
+      expect(a).toContain('href="/app/nfl/PIT"')
+      expect(a).toContain('bg-black/[.08] active:bg-black/[.16]')
+      expect(a).toContain('Pittsburgh Steelers team page')
+      expect(out).not.toMatch(/<\/a><span>#/)
+    })
+
+    it('no door for a free agent — "FA" stays plain text', () => {
+      const fa = { ...player, team: null, jersey_number: null }
+      const out = html(createElement(ProfileLoaded, { data: { ...data, player: fa }, target, onClose: () => {} }), seeded())
+      expect(out).not.toContain('data-profile-team')
+      expect(out).toMatch(/<\/span>FA<\/span>/)
+    })
+
+    it('no door from a list editor holding a draft (leaving would lose the unsaved changes); a saved list’s profile keeps it', () => {
+      const editing = { listId: 'l1', listTitle: 'Sleepers', removeFromDraft: () => {}, draftSaveLabel: 'Update' as const }
+      const fromEditor = html(createElement(ProfileLoaded, { data, target: { ...target, listContext: editing }, onClose: () => {} }), seeded())
+      expect(fromEditor).not.toContain('data-profile-team')
+      expect(fromEditor).toContain('ATL · #7')
+      const fromList = html(createElement(ProfileLoaded, { data, target: { ...target, listContext: { listId: 'l1', listTitle: 'Sleepers' } }, onClose: () => {} }), seeded())
+      expect(fromList).toContain('data-profile-team="/app/nfl/ATL"')
+    })
   })
 
   it("injury detail (pprofile-1): what is wrong is on screen in Home's words, never only a tooltip", () => {

@@ -123,11 +123,17 @@ export function injuryDetail(
   return statusPill(player.status) ? injuryNote(player) : null
 }
 
+/** "#36" — none for a D/ST or a player without a number on file. */
+export function jerseyText(player: Pick<PlayerStatsPlayer, 'position' | 'jersey_number'>): string | null {
+  if (isDefense(player.position) || player.jersey_number == null) return null
+  return `#${player.jersey_number}`
+}
+
 /** "ATL · #36"; D/ST shows the team only; no team reads "FA". */
 export function teamLine(player: Pick<PlayerStatsPlayer, 'team' | 'position' | 'jersey_number'>): string {
   const team = player.team ?? 'FA'
-  if (isDefense(player.position) || player.jersey_number == null) return team
-  return `${team} · #${player.jersey_number}`
+  const jersey = jerseyText(player)
+  return jersey ? `${team} · ${jersey}` : team
 }
 
 /** "Rookie" in his first season, else "7th season" (`experience_years`

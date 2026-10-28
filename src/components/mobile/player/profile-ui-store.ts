@@ -37,6 +37,20 @@ export interface ProfileTrailStep {
   to: string
 }
 
+/**
+ * A profile left for its NFL team page (`profile-team-door.ts`): the profile
+ * as it was — the player as opened, the tab it was on, its stack and draft
+ * seat — so coming Back to the page under it opens it again just so. `id`
+ * matches the mark left on that page's history entry.
+ */
+export interface ProfileResume {
+  id: string
+  target: PlayerModalTarget
+  tab: string
+  trail: ProfileTrailStep[]
+  draft: ProfileDraftContext | null
+}
+
 interface ProfileUiStore {
   collapsed: Partial<Record<ProfileSection, boolean>>
   toggle: (section: ProfileSection) => void
@@ -54,6 +68,10 @@ interface ProfileUiStore {
   /** The tab a profile reopens on when Back returns to it. */
   restore: { playerId: string; tab: string } | null
   setRestore: (restore: { playerId: string; tab: string } | null) => void
+  /** The profile left for its team page, until Back returns to it. Closing
+   *  the profile (which leaving does) keeps it. */
+  resume: ProfileResume | null
+  setResume: (resume: ProfileResume | null) => void
 }
 
 export const useProfileUiStore = create<ProfileUiStore>()((set, get) => ({
@@ -74,6 +92,8 @@ export const useProfileUiStore = create<ProfileUiStore>()((set, get) => ({
   clearTrail: () => set((s) => (s.trail.length === 0 && s.restore === null ? s : { trail: [], restore: null })),
   restore: null,
   setRestore: (restore) => set({ restore }),
+  resume: null,
+  setResume: (resume) => set({ resume }),
 }))
 
 /** Whether Back on the profile showing returns to another profile: the

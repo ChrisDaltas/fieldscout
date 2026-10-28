@@ -23,6 +23,7 @@ import {
   headerColors,
   initialCardIndex,
   injuryDetail,
+  jerseyText,
   isLightHex,
   keyStatTrends,
   leagueOwnership,
@@ -134,6 +135,13 @@ describe('header', () => {
     expect(teamLine(player())).toBe('ATL · #7')
     expect(teamLine(player({ position: 'DEF', jersey_number: null }))).toBe('ATL')
     expect(teamLine(player({ team: null, jersey_number: null }))).toBe('FA')
+  })
+
+  it('jersey text: the number the team door is followed by; none for D/ST or no number', () => {
+    expect(jerseyText(player())).toBe('#7')
+    expect(jerseyText(player({ position: 'DEF', jersey_number: 0 }))).toBeNull()
+    expect(jerseyText(player({ jersey_number: null }))).toBeNull()
+    expect(jerseyText(player({ jersey_number: 0 }))).toBe('#0')
   })
 
   it('bio line: present parts, Rookie in year one, D/ST wording', () => {
