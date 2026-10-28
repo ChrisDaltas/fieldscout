@@ -607,6 +607,10 @@ export function useActiveDraft(leagueId: string | undefined) {
   }
 }
 
+/** The league's finished real draft: its id, and when it actually ran
+ *  (the phone Menu's Draft results date). */
+export type CompletedRealDraft = Pick<Draft, 'id' | 'started_at' | 'completed_at'>
+
 /**
  * The league's completed REAL draft, newest first (L.B3.5 — the
  * `/draft/recap` route's no-param resolution: §16.1 serves "real & mock",
@@ -620,11 +624,11 @@ export function useCompletedRealDraft(leagueId: string | undefined) {
   return useQuery({
     queryKey: ['completed-real-draft', leagueId ?? 'none'] as const,
     enabled: Boolean(leagueId),
-    queryFn: async (): Promise<{ id: string } | null> => {
+    queryFn: async (): Promise<CompletedRealDraft | null> => {
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('drafts')
-        .select('id')
+        .select('id, started_at, completed_at')
         .eq('league_id', leagueId!)
         .eq('is_mock', false)
         .eq('status', 'complete')
