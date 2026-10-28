@@ -23,6 +23,7 @@ import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import type { TradeView, TradesDocument } from '@/lib/leagues/api/trades-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
+import { DEADLINE_PASSED_TITLE, NOT_IN_SEASON_TRADE_COPY, TRADES_AFTER_SEASON_COPY, tradesClosedReason } from '@/components/leagues/trades-ops'
 import { TeamView } from '@/components/mobile/league/team/team-view'
 
 import { TradeBuilderOverlay } from './trade-builder-overlay'
@@ -53,6 +54,12 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ back: vi.fn(), push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => '/app/leagues/league-1/team/x',
 }))
+// The words a tap on a dimmed Propose trade toasts: a static render never
+// clicks, so the real helper is wrapped to read what the view asked it.
+vi.mock('@/components/leagues/trades-ops', async (importActual) => {
+  const actual = await importActual<typeof import('@/components/leagues/trades-ops')>()
+  return { ...actual, tradesClosedReason: vi.fn(actual.tradesClosedReason) }
+})
 vi.mock('./m-overlay', async (importActual) => {
   const actual = await importActual<typeof import('./m-overlay')>()
   return {
@@ -234,6 +241,81 @@ describe('Team view (another team)', () => {
     expect(html).toContain('Bench')
     expect(html).toContain('Recent moves')
     expect(html).toContain('See all')
+  })
+})
+
+describe('Team view — Propose trade while trades are closed (item #7, match-team-2)', () => {
+  /** The Propose trade button's opening tag, or null when it isn't offered. */
+  const proposeTag = (html: string) => html.match(/<button[^>]*data-propose-trade[^>]*>/)?.[0] ?? null
+  const view = (qc: QueryClient, d: LeagueDetail = detail, teamId = THEM) => render(qc, createElement(TeamView, { leagueId: LEAGUE, teamId, detail: d }))
+  const withStatus = (status: string): LeagueDetail => ({ ...detail, league: { ...detail.league, status } })
+  const pastDeadline = () => {
+    const qc = seeded()
+    qc.setQueryData(tradeDeadlineKeys.all(LEAGUE), {
+      state: 'known',
+      view: { league_id: LEAGUE, deadline_week: 10, deadline_at: '2099-11-10T00:00:00Z', why: 'next_week_starts', label: null, passed: true, ms_remaining: 0, evaluated_at: '2099-11-12T12:00:00Z' },
+    })
+    return qc
+  }
+
+  it('open (in season, before the deadline): a live button — not dimmed, not aria-disabled', () => {
+    const tag = proposeTag(view(seeded()))
+    expect(tag).not.toBeNull()
+    expect(tag).not.toContain('aria-disabled')
+    expect(tag).not.toContain('opacity-40')
+  })
+
+  /** What a tap on the button would say — the view's last ask of the helper. */
+  const tapSays = () => vi.mocked(tradesClosedReason).mock.results.at(-1)?.value as string | null | undefined
+
+  it('past the deadline: still there, dimmed and aria-disabled (a tap says why) — never gone', () => {
+    const html = view(pastDeadline())
+    const tag = proposeTag(html)
+    expect(tag).not.toBeNull()
+    expect(tag).toContain('aria-disabled="true"')
+    expect(tag).toContain('opacity-40')
+    expect(html).toContain('Propose trade')
+    expect(tapSays()).toBe(DEADLINE_PASSED_TITLE)
+  })
+
+  it('before the season starts: dimmed, and a tap says when trades open', () => {
+    for (const status of ['setup', 'scheduled', 'drafting']) {
+      const tag = proposeTag(view(seeded(), withStatus(status)))
+      expect(tag, status).not.toBeNull()
+      expect(tag, status).toContain('aria-disabled="true"')
+      expect(tag, status).toContain('opacity-40')
+      expect(tapSays(), status).toBe(NOT_IN_SEASON_TRADE_COPY)
+    }
+  })
+
+  it('once the season is over: dimmed, and a tap says the season is over — not "Trades open once the season starts"', () => {
+    const tag = proposeTag(view(seeded(), withStatus('complete')))
+    expect(tag).not.toBeNull()
+    expect(tag).toContain('aria-disabled="true"')
+    expect(tag).toContain('opacity-40')
+    expect(tapSays()).toBe(TRADES_AFTER_SEASON_COPY)
+    // …even when the deadline read says passed too.
+    view(pastDeadline(), withStatus('complete'))
+    expect(tapSays()).toBe(TRADES_AFTER_SEASON_COPY)
+  })
+
+  it('the playoffs are in season: open', () => {
+    expect(proposeTag(view(seeded(), withStatus('playoffs')))).not.toContain('aria-disabled')
+  })
+
+  it('never offered where it can never apply: a team with no manager, or a viewer with no team', () => {
+    const unmanaged = seeded()
+    unmanaged.setQueryData(leagueRosterKeys.all(LEAGUE), { ...ROSTERS, teams: ROSTERS.teams.map((t) => (t.team_id === THEM ? { ...t, manager_user_id: null } : t)) })
+    expect(proposeTag(view(unmanaged))).toBeNull()
+    const noSeat: LeagueDetail = { ...detail, members: detail.members.filter((m) => m.user_id !== 'user-me') }
+    expect(proposeTag(view(seeded(), noSeat))).toBeNull()
+    // …and not even dimmed when trades are closed too.
+    expect(proposeTag(view(pastDeadline(), noSeat))).toBeNull()
+  })
+
+  it('never offered on your own team', () => {
+    expect(proposeTag(view(seeded(), detail, ME))).toBeNull()
+    expect(proposeTag(view(pastDeadline(), detail, ME))).toBeNull()
   })
 })
 

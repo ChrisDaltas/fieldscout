@@ -121,6 +121,23 @@ export function tradeDeadlineLine(deadlineWeek: number | null, view: TradeDeadli
 }
 
 export const DEADLINE_PASSED_TITLE = 'Trades are closed for the season.'
+/** A finished league (status `complete`) — the trade twin of the player
+ *  card's "The season is over — rosters are final." */
+export const TRADES_AFTER_SEASON_COPY = 'The season is over — trades are closed.'
+
+/** Why offers can't be made right now, or null while they can. The phone's
+ *  trade doors (the Team tab's Trade tile, the Team view's Propose trade)
+ *  stay on screen while trades are closed, dimmed, and a tap shows this —
+ *  never a dead tap. Open only in season or in the playoffs; a finished
+ *  season says it's over, any earlier status says when trades open.
+ *  `deadlinePassed` is the server's word (`tradeDeadlinePassed`): loading or
+ *  unreadable keeps the door open and the verb's refusal is the answer. */
+export function tradesClosedReason(args: { leagueStatus: string; deadlinePassed: boolean }): string | null {
+  if (args.leagueStatus === 'complete') return TRADES_AFTER_SEASON_COPY
+  if (args.leagueStatus !== 'in_season' && args.leagueStatus !== 'playoffs') return NOT_IN_SEASON_TRADE_COPY
+  if (args.deadlinePassed) return DEADLINE_PASSED_TITLE
+  return null
+}
 
 /** Past the deadline, where the Propose door used to be (§13.3 / Q76: the
  *  commissioner's own roster tools still work, §15.4). */
