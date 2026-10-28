@@ -108,7 +108,12 @@ function LeagueBoardThread({ leagueId }: { leagueId: string }) {
   const [draft, setDraft] = useState('')
 
   const index = Math.max(0, leagues.data?.findIndex((l) => l.id === leagueId) ?? 0)
-  const name = detail.data?.league.name ?? leagues.data?.find((l) => l.id === leagueId)?.name ?? ''
+  const row = leagues.data?.find((l) => l.id === leagueId)
+  const name = detail.data?.league.name ?? row?.name ?? ''
+  // The league's uploaded photo, else its letters (gap list §3 #20, as the
+  // dock, the switcher and Home). Once the league itself is read it decides
+  // — a photo the commissioner removed doesn't linger from your list.
+  const photo = (detail.data ? detail.data.league.avatar_url : row?.avatar_url) ?? null
 
   // Members by user id, with their avatar colour: their team's colour (the
   // one the Team view and the trade screens give it), else a seat colour.
@@ -171,6 +176,7 @@ function LeagueBoardThread({ leagueId }: { leagueId: string }) {
       avatar={
         <MessagesAvatar
           text={name ? initials(name) : ''}
+          src={photo}
           sizeClass="size-9"
           radiusClass="rounded-[11px]"
           colorClass={leagueAvClass(index)}

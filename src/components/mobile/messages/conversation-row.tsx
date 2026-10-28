@@ -112,7 +112,9 @@ export function boardSender(
 
 /**
  * A league's message board as the group conversation ("Sunday Funday
- * League" in the design): the league mark, the latest post as
+ * League" in the design): the league mark — its uploaded photo when it
+ * has one, else its letters, as the dock, the switcher and Home draw it
+ * (gap list §3 #20) — the latest post as
  * "{Sender}: {text} · {time}". Real data — `league_chat` (context
  * 'league') over the league channel. Never bold, no unread dot: the board
  * has no per-member read marker (a gap).
@@ -160,6 +162,7 @@ export function LeagueBoardRow({
       avatar={
         <MessagesAvatar
           text={initials(league.name)}
+          src={league.avatar_url}
           sizeClass="size-[52px]"
           radiusClass="rounded-[16px]"
           colorClass={leagueAvClass(index)}
