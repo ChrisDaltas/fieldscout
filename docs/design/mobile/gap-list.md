@@ -284,7 +284,7 @@ This also covers desktop features the design left out, which we bring back in th
     - Leagues list: #507
     - Mock drafts and reports: #514
     - NFL teams: #505
-    - Trash: #504
+    - Trash: #504. Its way in (audit frame-1, 2026-10-27): nothing linked to Trash before. Now My lists ends with a Trash row on the phone, desktop's Lists header has a Trash button, and every “moved to trash” toast has a View trash button.
     - Rankings history: #515
     - Start-or-sit question pages: #516
     - People's profiles, with their Followers / Following (audit profile-1, 2026-10-27): every username on a phone, your own @handle and People search included, now opens a phone screen inside the app (`/app/u/<name>`) with the dock, Back and dark mode. The public `/u/<name>` page is unchanged for search engines, signed-out visitors and desktop; a signed-in phone that lands there is handed to the phone screen.

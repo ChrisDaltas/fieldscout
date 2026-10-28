@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
@@ -7,6 +8,7 @@ import { PageHeader } from '@/components/layout/app-header'
 import { AttachListToLeagueModal } from '@/components/leagues/attach-list-modal'
 import { FolderFormDialog } from '@/components/lists/folder-form-dialog'
 import { GenerateAiButton } from '@/components/lists/generate-ai-button'
+import { TRASH_HREF, toastMovedToTrash } from '@/components/lists/trash-door'
 import { Button } from '@/components/ui/button'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
@@ -380,6 +382,14 @@ export function ListsPageV2() {
         }
         actions={
           <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
+            {/* Trash's door (audit frame-1): your deleted lists, each with
+                Restore. Quiet, and first, so it never competes with making a
+                list; the delete toast's View trash goes to the same place. */}
+            <Button asChild variant="ghost" size="sm">
+              <Link href={TRASH_HREF} data-lists-trash-door>
+                <Icon name="remove" size={13} /> Trash
+              </Link>
+            </Button>
             <GenerateAiButton size="sm" />
             {/* Folders survive the cutover (LV.7, Chris 2026-08-11), so their
                 one entry point does too — the retired Lists page carried this
@@ -486,7 +496,7 @@ export function ListsPageV2() {
             }
             onDelete={(list) =>
               deleteList.mutate(list.id, {
-                onSuccess: () => toast({ title: `“${list.title}” moved to trash` }),
+                onSuccess: () => toastMovedToTrash(list.title),
               })
             }
             onNew={() => openCreateList(true)}
