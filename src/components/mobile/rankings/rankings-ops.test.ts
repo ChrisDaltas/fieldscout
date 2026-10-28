@@ -16,6 +16,9 @@ import {
   movementBetween,
   movementText,
   previousOrder,
+  RANK_ENTRY_KEY,
+  rankEntryOf,
+  rankEntryState,
   rankPosOr,
   scoringFormatOf,
   scoringFromFormat,
@@ -359,6 +362,25 @@ describe('url state', () => {
   })
   it('the desktop ?tab=pre link opens the Mine tab', () => {
     expect(parseRankingsParams(new URLSearchParams('tab=pre'), { type: 'season' }).view).toBe('mine')
+  })
+})
+
+describe('the note on an overlay’s history entry (Back from the profile’s team page)', () => {
+  it('round-trips beside Next’s own keys, which the screen never writes', () => {
+    const data = rankEntryState({ pushed: true, linkRooted: true })
+    expect(data).toEqual({ [RANK_ENTRY_KEY]: { pushed: true, linkRooted: true } })
+    // What the entry holds once Next adds its keys and the profile its mark.
+    const onEntry = { ...data, __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: [], fsProfileResume: { id: 'm' } }
+    expect(rankEntryOf(onEntry)).toEqual({ pushed: true, linkRooted: true })
+    expect(rankEntryOf(rankEntryState({ pushed: false, linkRooted: false }))).toEqual({ pushed: false, linkRooted: false })
+  })
+  it('the hub’s entry carries none, so an editor arriving on a bare entry is a fresh link', () => {
+    expect(rankEntryState(null)).toBeNull()
+    expect(rankEntryOf(null)).toBeNull()
+    expect(rankEntryOf({ __NA: true })).toBeNull()
+    expect(rankEntryOf({ [RANK_ENTRY_KEY]: { pushed: 'yes', linkRooted: true } })).toBeNull()
+    expect(rankEntryOf({ [RANK_ENTRY_KEY]: null })).toBeNull()
+    expect(rankEntryOf([])).toBeNull()
   })
 })
 

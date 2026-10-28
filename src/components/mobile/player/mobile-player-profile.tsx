@@ -2,6 +2,7 @@
 
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { useQueryClient } from '@tanstack/react-query'
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type MutableRefObject } from 'react'
 
@@ -14,6 +15,7 @@ import {
   currentWeekOf,
   headerColors,
   injuryDetail,
+  jerseyText,
   PRESS,
   scoringChipLabel,
   scoringChipName,
@@ -23,7 +25,8 @@ import {
 } from '@/components/mobile/player/profile-ops'
 import { GameLogTab, HistoryTab, TeamTab } from '@/components/mobile/player/profile-stats-tabs'
 import { SummaryTab } from '@/components/mobile/player/profile-summary'
-import { trailBackTo, useProfileUiStore, type ProfileDraftContext } from '@/components/mobile/player/profile-ui-store'
+import { isPlainClick, markProfileResume, nflTeamDoor, useProfileResume, type TeamDoor } from '@/components/mobile/player/profile-team-door'
+import { trailBackTo, usePageHoldsDraft, useProfileUiStore, type ProfileDraftContext } from '@/components/mobile/player/profile-ui-store'
 import { poolOf, useProfileLeague, useProfileScoring } from '@/components/mobile/player/use-profile-context'
 import { TradeBuilderOverlay } from '@/components/mobile/trades/trade-builder-overlay'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
@@ -71,8 +74,13 @@ const ProfileEscape = createContext<MutableRefObject<(() => void) | null> | null
  * profile's own small stack (`useProfileUiStore().trail`). No history entry
  * is pushed: the page under the profile is never navigated, so the stack
  * ends when the profile closes.
+ *
+ * The one exception is the header's team (audit frame-2): it opens the
+ * player's NFL team page, and Back from there reopens the profile as it was
+ * left — tab, stack and all (`profile-team-door.ts`).
  */
 export function MobilePlayerProfile({ target, onClose }: { target: PlayerModalTarget | null; onClose: () => void }) {
+  useProfileResume()
   const escape = useRef<(() => void) | null>(null)
   const trail = useProfileUiStore((s) => s.trail)
   const backTo = trailBackTo(trail, target?.playerId ?? null)
@@ -328,6 +336,20 @@ export function ProfileLoaded({
   const openMove = (kind: MoveSheetKind, leagueId: string) => setSheet({ kind, leagueId })
   // Propose trade / Trade: the builder opens over the profile (§3).
   const openTrade = (leagueId: string, teamId: string) => setBuilder({ leagueId, teamId })
+  // His NFL team's page (audit frame-2). Leaving remembers this profile, on
+  // this tab, so Back from the team page opens it again; over that very
+  // page, the door just closes the profile.
+  const pathname = usePathname()
+  const door = nflTeamDoor(player.team, pathname, target.listContext, usePageHoldsDraft())
+  const goToTeam = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!door) return
+    if (door.here) {
+      e.preventDefault()
+      onClose()
+      return
+    }
+    if (isPlainClick(e)) markProfileResume(window.history, window.location.pathname, target, tab)
+  }
 
   // Tabs (WAI-ARIA tabs pattern): one tab stop, arrows / Home / End move it.
   const ids = useId()
@@ -357,6 +379,8 @@ export function ProfileLoaded({
         draft={draft}
         draftLeagueName={draft?.leagueId ? (ctx.leagues.find((l) => l.id === draft.leagueId)?.name ?? null) : null}
         nav={nav}
+        door={door}
+        onTeam={goToTeam}
         onList={() => setSheet({ kind: 'list' })}
         removal={removal}
         onMove={openMove}
@@ -577,6 +601,8 @@ function ProfileHeader({
   draft,
   draftLeagueName,
   nav,
+  door,
+  onTeam,
   onList,
   removal,
   onMove,
@@ -589,6 +615,9 @@ function ProfileHeader({
   draft: ProfileDraftContext | null
   draftLeagueName: string | null
   nav: ProfileNav
+  /** His NFL team's page, when he has one to open (`nflTeamDoor`). */
+  door: TeamDoor | null
+  onTeam: (e: React.MouseEvent<HTMLAnchorElement>) => void
   onList: () => void
   /** "Remove from list" when the profile was opened from the viewer's list. */
   removal: ReturnType<typeof useListRemoval>
@@ -668,7 +697,35 @@ function ProfileHeader({
           </DialogPrimitive.Title>
           <span className="flex items-center gap-1.5 text-[12px] font-semibold">
             <MPosChip pos={player.position} className="h-[17px] min-w-0 rounded-[5px] px-[5px] text-[10px] font-semibold" />
-            {teamLine(player)}
+            {door && player.team ? (
+              <>
+                {/* His NFL team's page (audit frame-2; desktop's header
+                    links the team the same way). The design draws plain
+                    text, and a touch screen has no hover, so the team wears
+                    the header's see-through control fill and a chevron — a
+                    pill, like the header's other controls — with a 36px
+                    touch area over the lines above and below (neither is
+                    tappable). */}
+                <Link
+                  href={door.href}
+                  onClick={onTeam}
+                  className={cn(
+                    "relative flex h-[18px] flex-none items-center gap-[3px] rounded-pill pl-1.5 pr-[5px] after:absolute after:-inset-x-1.5 after:-inset-y-[9px] after:content-['']",
+                    light ? 'bg-black/[.08] active:bg-black/[.16]' : 'bg-white/[.16] active:bg-white/[.28]',
+                  )}
+                  data-profile-team={door.href}
+                >
+                  {player.team}
+                  <span className="sr-only">, {door.name} team page</span>
+                  <MIcon name="chevronRight" size={8} stroke={2.6} />
+                </Link>
+                {/* After a pill no "·" is needed — chip, pill, number, as
+                    the position chip and the team sit side by side. */}
+                {jerseyText(player) && <span>{jerseyText(player)}</span>}
+              </>
+            ) : (
+              teamLine(player)
+            )}
           </span>
           {bio && <span className={cn('truncate text-[11px] font-medium', light ? 'text-ink/[.72]' : 'text-white/80')}>{bio}</span>}
           {/* What the pill is about (pprofile-1): "Hamstring · limited
