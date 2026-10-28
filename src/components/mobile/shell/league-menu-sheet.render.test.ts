@@ -105,3 +105,29 @@ describe('the Menu’s Draft results row', () => {
     expect(draftResultsSub(menu({ detail: detail(SAVED_AT) }))).toBeNull()
   })
 })
+
+/** The Menu's FieldScout grid, as [label, href] per tile. */
+function gridTiles(html: string): Array<[string, string]> {
+  const at = html.indexOf('>FieldScout</p>')
+  expect(at).toBeGreaterThan(-1)
+  return [...html.slice(at).matchAll(/<a[^>]*href="([^"]+)"[^>]*>.*?<span class="[^"]*">([^<]+)<\/span><\/a>/g)].map((m) => [m[2]!, m[1]!])
+}
+
+describe('the Menu’s FieldScout grid (Chris, 2026-10-27)', () => {
+  const tiles = gridTiles(menu({ detail: detail(null), completed: null }))
+
+  it('Stats opens player research — the Players screen, not your Profile', () => {
+    const stats = tiles.find(([label]) => label === 'Stats')
+    expect(stats).toEqual(['Stats', '/app/research'])
+    // `/app/stats` is desktop's "My stats", which lands on your Profile.
+    expect(tiles.map(([, href]) => href)).not.toContain('/app/stats')
+  })
+
+  it('keeps the design’s tiles, each opening a different screen', () => {
+    const labels = tiles.map(([label]) => label)
+    for (const label of ['Home', 'Stats', 'Profile', 'Settings']) expect(labels).toContain(label)
+    expect(tiles.find(([label]) => label === 'Profile')?.[1]).toBe('/app/profile')
+    const hrefs = tiles.map(([, href]) => href)
+    expect(new Set(hrefs).size).toBe(hrefs.length)
+  })
+})
