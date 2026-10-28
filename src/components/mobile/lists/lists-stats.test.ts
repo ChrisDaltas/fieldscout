@@ -4,8 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const flags = vi.hoisted(() => ({ consensus: false }))
 vi.mock('@/lib/feature-flags', () => ({ featureFlags: flags }))
 
+import { STAT_CATALOG } from '@/components/lists/v2/list-stats'
+import { SEASON_PROJ_LABEL } from '@/components/players/projected-points'
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
 import type { FrameTotals } from '@/hooks/use-mobile-lists-timeframe-stats'
+import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/aggregate-fantasy'
 
 import {
   DASH,
@@ -53,6 +56,39 @@ describe('Add stats catalogue', () => {
         .map((s) => s.chip)
     expect(chips('Rankings')).toEqual(['Pos rk'])
     expect(chips('Usage')).toEqual(['Snap %', 'Tgt share'])
+  })
+
+  it('the season projection is "Season proj" — column and chip — from the label Community uses (gap list §3 #29)', () => {
+    const proj = stat('proj')
+    // Beside "Week N / Last 3 / Season" a bare "Proj" read as this week's;
+    // the number is the season total and ignores the time frame.
+    expect(proj.label).toBe('Season proj')
+    expect(proj.chip).toBe('Season proj')
+    expect(proj.label).toBe(SEASON_PROJ_LABEL)
+    expect(proj.timeframe).toBe(false)
+    expect(offeredStats().filter((s) => s.group === 'Fantasy').map((s) => s.chip)).toEqual([
+      'Season proj',
+      'Pts',
+      'Avg pts',
+      `${CURRENT_SEASON} pts`,
+      `${LAST_SEASON} pts`,
+    ])
+    // No phone column or chip is a bare "Proj".
+    expect(MOBILE_STATS.some((s) => s.label === 'Proj' || s.chip === 'Proj')).toBe(false)
+    // Only the name changed: the same id (shared with desktop's chosen
+    // columns) and the same season number, whatever the time frame.
+    const entry = {
+      ...player('WR'),
+      stats: { current_pts: 0, current_games: 0, last_pts: 0, last_games: 0, projected_pts: 331.4 },
+    } as unknown as ListPlayerWithPlayer
+    for (const tf of ['week', 'last3', 'season'] as const) {
+      expect(proj.value(entry, ctx({ tf, scoring: 'ppr' }))).toBe('331.4')
+    }
+    expect(resolveMobileStats(['proj']).map((s) => s.label)).toEqual(['Season proj'])
+  })
+
+  it('desktop lists, with no time frame, keep their "Proj" beside the season-points columns', () => {
+    expect(STAT_CATALOG.find((s) => s.id === 'proj')?.label).toBe('Proj')
   })
 
   it('gap list §3 #9: Users is offered, before Pos rk, only while community rankings are on', () => {

@@ -163,7 +163,10 @@ describe('mobile List view', () => {
     expect(out).toContain('Tier 2')
     expect(out).toContain('w-[172px]')
     expect(out).toContain('J. Allen')
-    expect(out).toContain('>Proj<')
+    // The projection is the season's, so beside "Week 6" it says so, as
+    // Community does (gap list §3 #29) — never a bare "Proj".
+    expect(out).toContain('>Season proj<')
+    expect(out).not.toContain('>Proj<')
     // The time frame shows whenever the list has stats, labelled with the
     // season's last completed week.
     expect(out).toContain('>Week 6<')
@@ -295,7 +298,7 @@ describe('List view: the slim bar and pinned column names (gap list #25)', () =>
     // Sticky just under the 48px bar and the safe area, on the page colour.
     expect(strip).toContain('sticky z-10 bg-m-b0 top-[calc(env(safe-area-inset-top)+48px)]')
     expect(strip).toContain('>Player<')
-    expect(strip).toContain('>Proj<')
+    expect(strip).toContain('>Season proj<')
     // The Player name keeps its locked column in the strip too.
     expect(strip).toContain('sticky left-0')
     expect(strip).toContain('w-[172px]')
@@ -320,6 +323,9 @@ describe('mobile List editor', () => {
     expect(out).toContain('Tiers')
     expect(out).toContain('aria-checked="true"')
     expect(out).toContain('Add stat')
+    // The projection chip beside the time frame names the season too.
+    expect(out).toContain('aria-label="Remove Season proj"')
+    expect(out).not.toContain('aria-label="Remove Proj"')
     expect(out).toContain('Add players')
     expect(out).toContain('Auto tiers')
     expect(out).toContain('Add tier line')

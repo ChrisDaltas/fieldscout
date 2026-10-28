@@ -132,7 +132,7 @@
 | Position and overall rank in your league's scoring | League › Players | M | Needs one read that ranks the whole player pool. |
 | Past weeks and last season in league scoring | League › Players period filter | M | Needs each week's projection saved. |
 | Free agents beyond the top 300 | League › Players | M | The "+" on the count marks the cutoff today. |
-| This week's projection for a whole list | Community list page | M | Label it "Season proj" until then (Build now #29). |
+| This week's projection for a whole list | Community list page, Lists (column and chip) | M | Label it "Season proj" until then (Build now #29; Lists too, audit lists-3). |
 
 ### Messages and social
 | Gap | Screens | Size | Note |

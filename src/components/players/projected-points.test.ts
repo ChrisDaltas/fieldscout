@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { PlayerRow } from './player-row'
-import { M_PROJ_TEXT, PROJ_TEXT } from './projected-points'
+import { M_PROJ_TEXT, PROJ_TEXT, SEASON_PROJ_LABEL } from './projected-points'
 
 import tailwindConfig from '../../../tailwind.config'
 
@@ -163,7 +163,7 @@ describe('projected points are dark blue on the phone too, one mechanism (gap li
   it('every phone projected-points surface takes its colour from M_PROJ_TEXT', () => {
     for (const rel of PHONE_SURFACES) {
       const src = readFileSync(path.join(ROOT, rel), 'utf8')
-      expect(src, rel).toMatch(/import \{ M_PROJ_TEXT \} from '@\/components\/players\/projected-points'/)
+      expect(src, rel).toMatch(/import \{[^}]*\bM_PROJ_TEXT\b[^}]*\} from '@\/components\/players\/projected-points'/)
       expect(src, rel).toMatch(/M_PROJ_TEXT\)/)
       // The desktop's fixed blue would stay dim in phone dark mode.
       expect(src, rel).not.toMatch(/\bPROJ_TEXT\b/)
@@ -175,6 +175,41 @@ describe('projected points are dark blue on the phone too, one mechanism (gap li
       .map((f) => path.relative(ROOT, f).split(path.sep).join('/'))
       .filter((rel) => rel !== 'src/components/players/projected-points.ts')
       .filter((rel) => /text-m-proj(?![\w-])/.test(readFileSync(path.join(ROOT, rel), 'utf8')))
+    expect(offenders).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// "Season proj" (gap list §3 #29)
+// ---------------------------------------------------------------------------
+
+/**
+ * A season-long projection shown beside something weekly is named by ONE
+ * label, so Community and phone Lists can't drift apart — and both change
+ * together when weekly projections arrive.
+ */
+const SEASON_PROJ_SURFACES = [
+  'src/components/mobile/community/community-detail.tsx', // Community list page: the players heading row
+  'src/components/mobile/lists/lists-stats.ts', // phone Lists: the column beside Week N / Last 3 / Season, and its chip
+]
+
+describe('"Season proj" is one label (gap list §3 #29)', () => {
+  it('reads "Season proj"', () => {
+    expect(SEASON_PROJ_LABEL).toBe('Season proj')
+  })
+
+  it('every surface naming the season projection takes it from SEASON_PROJ_LABEL', () => {
+    for (const rel of SEASON_PROJ_SURFACES) {
+      const src = readFileSync(path.join(ROOT, rel), 'utf8')
+      expect(src, rel).toMatch(/import \{[^}]*\bSEASON_PROJ_LABEL\b[^}]*\} from '@\/components\/players\/projected-points'/)
+    }
+  })
+
+  it('the words are never hand-written at a call site', () => {
+    const offenders = walk(path.join(ROOT, 'src'))
+      .map((f) => path.relative(ROOT, f).split(path.sep).join('/'))
+      .filter((rel) => rel !== 'src/components/players/projected-points.ts')
+      .filter((rel) => /['"`]Season proj['"`]/i.test(readFileSync(path.join(ROOT, rel), 'utf8')))
     expect(offenders).toEqual([])
   })
 })
