@@ -89,7 +89,9 @@ describe('the “moved to trash” toast offers a way to Trash', () => {
 describe('the Lists page has a door to Trash on both layouts', () => {
   it('desktop: a quiet Trash link leads the Lists header actions, before Create with AI', () => {
     const source = code(LISTS_PAGE_V2)
-    const door = source.match(/<Button asChild variant="ghost" size="sm">\s*<Link href=\{TRASH_HREF\} data-lists-trash-door>\s*<Icon name="remove" size=\{13\} \/> Trash\s*<\/Link>\s*<\/Button>/)
+    const door = source.match(/<Button asChild variant="ghost" size="sm">\s*<Link href=\{TRASH_HREF\} data-lists-trash-door aria-label="Trash" title="Trash">\s*<Icon name="remove" size=\{13\} \/>\s*<span className="hidden xl:inline">Trash<\/span>\s*<\/Link>\s*<\/Button>/)
+    // The word shows from `xl` only, so the 1024px desktop minimum keeps the
+    // page title whole; below that the can is still named and has a tooltip.
     expect(door).not.toBeNull()
     const actions = source.slice(source.indexOf('actions={'))
     expect(actions.indexOf('data-lists-trash-door')).toBeGreaterThan(-1)

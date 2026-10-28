@@ -384,10 +384,15 @@ export function ListsPageV2() {
           <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
             {/* Trash's door (audit frame-1): your deleted lists, each with
                 Restore. Quiet, and first, so it never competes with making a
-                list; the delete toast's View trash goes to the same place. */}
+                list; the delete toast's View trash goes to the same place.
+                Its word shows from `xl` only: at the 1024px desktop minimum
+                the label squeezed the page title to "Lis…". Narrower, it is
+                the can alone, still named (aria-label) and with a tooltip
+                (title) so it can't be read as Delete. */}
             <Button asChild variant="ghost" size="sm">
-              <Link href={TRASH_HREF} data-lists-trash-door>
-                <Icon name="remove" size={13} /> Trash
+              <Link href={TRASH_HREF} data-lists-trash-door aria-label="Trash" title="Trash">
+                <Icon name="remove" size={13} />
+                <span className="hidden xl:inline">Trash</span>
               </Link>
             </Button>
             <GenerateAiButton size="sm" />
