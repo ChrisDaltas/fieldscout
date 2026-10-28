@@ -5,6 +5,7 @@ import * as React from 'react'
 
 import { AttachListToLeagueModal } from '@/components/leagues/attach-list-modal'
 import { AiBuildBanner } from '@/components/lists/ai-build-banner'
+import { toastMovedToTrash } from '@/components/lists/trash-door'
 import { Icon } from '@/components/ui/icon'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAiListBuild } from '@/hooks/use-ai-list-build'
@@ -497,7 +498,7 @@ export function ListDetailPanel({
         onDelete={() =>
           deleteList.mutate(list.id, {
             onSuccess: () => {
-              toast({ title: `“${list.title}” moved to trash` })
+              toastMovedToTrash(list.title)
               onDeleted()
             },
           })

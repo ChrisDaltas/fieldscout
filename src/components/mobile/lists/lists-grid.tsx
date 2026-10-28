@@ -1,7 +1,9 @@
 'use client'
 
+import Link from 'next/link'
 import * as React from 'react'
 
+import { TRASH_HREF } from '@/components/lists/trash-door'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { UsernameLink } from '@/components/shared/username-link'
@@ -23,8 +25,8 @@ import { CenterNote, CoverCollage, CoverImage, LIcon, PillButton, coverClass } f
  *
  * Kept from the app, which the design lacks: "Create with AI" (a second tile
  * in the New list style, CLAUDE.md → never drop AI list generation), folders
- * (a chip row over My lists once you have folders), and the loading / error /
- * offline / empty states.
+ * (a chip row over My lists once you have folders), Trash's door at the foot
+ * of My lists, and the loading / error / offline / empty states.
  */
 export function ListsGrid({ tab }: { tab: 'mine' | 'saved' }) {
   const nav = useListsNav()
@@ -175,6 +177,10 @@ export function ListsGrid({ tab }: { tab: 'mine' | 'saved' }) {
         </div>
       )}
 
+      {/* Your own lists' Trash — not on Saved, and not under a loading grid
+          it would jump past. */}
+      {tab === 'mine' && (lists.isSuccess || lists.isError || paused) && <TrashDoor />}
+
       <AiCreateSheet open={aiOpen} onOpenChange={setAiOpen} />
       {openFolder && (
         <FolderNameSheet
@@ -185,6 +191,37 @@ export function ListsGrid({ tab }: { tab: 'mine' | 'saved' }) {
         />
       )}
     </MobileScreen>
+  )
+}
+
+/**
+ * Trash's door on the phone (audit frame-1): the foot of My lists, where a
+ * phone keeps its recently deleted things. A row in the Trash screen's own
+ * language — the 40px b2 tile (the trash glyph), a 15/600 title over a 12/500
+ * grey line — with a chevron, ruled off from the grid by a b2 hairline. The
+ * delete toast's View trash opens the same screen.
+ */
+function TrashDoor() {
+  return (
+    <div className="px-4 pb-6">
+      <Link
+        href={TRASH_HREF}
+        className="flex items-center gap-3 border-t border-m-b2 pt-3.5 active:opacity-70"
+        data-lists-trash-door
+      >
+        <span
+          aria-hidden
+          className="flex size-10 flex-none items-center justify-center rounded-[12px] bg-m-b2 text-m-t1"
+        >
+          <LIcon name="trash" size={18} />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-[15px] font-semibold text-m-t1">Trash</span>
+          <span className="truncate text-[12px] font-medium text-m-t3">Deleted lists you can restore</span>
+        </span>
+        <MIcon name="chevronRight" size={14} stroke={2} className="flex-none text-m-t3" />
+      </Link>
+    </div>
   )
 }
 

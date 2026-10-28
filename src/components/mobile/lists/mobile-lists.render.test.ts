@@ -148,6 +148,43 @@ describe('mobile Lists grid', () => {
   })
 })
 
+describe('mobile Lists grid: the door to Trash (audit frame-1)', () => {
+  const door = (out: string) => out.match(/<a[^>]*data-lists-trash-door[^>]*>[\s\S]*?<\/a>/)?.[0] ?? null
+
+  it('My lists ends with a Trash row that opens /app/trash', () => {
+    search = new URLSearchParams()
+    const out = render()
+    const row = door(out)
+    expect(row).not.toBeNull()
+    expect(row).toMatch(/^<a [^>]*href="\/app\/trash"/)
+    expect(row).toContain('>Trash</span>')
+    expect(row).toContain('>Deleted lists you can restore</span>')
+    // After the grid: the last list card comes before it.
+    expect(out.indexOf('My top 5 QBs for Week 6')).toBeLessThan(out.indexOf('data-lists-trash-door'))
+    // The Trash screen's own row language, in phone tokens (dark mode follows).
+    expect(row).toContain('bg-m-b2')
+    expect(row).toContain('border-m-b2')
+    expect(row).toContain('text-m-t3')
+  })
+
+  it('also with no lists yet — someone who deleted their only list can still get it back', () => {
+    search = new URLSearchParams()
+    const out = render((qc) =>
+      qc.setQueryData(['lists', 'collection', 1, 50], { lists: [], pagination: { page: 1, pageSize: 50, total: 0, hasMore: false } }),
+    )
+    expect(door(out)).not.toBeNull()
+  })
+
+  it('not on Saved (Trash holds your own lists), and not under a loading grid', () => {
+    search = new URLSearchParams('tab=saved')
+    expect(door(render())).toBeNull()
+    search = new URLSearchParams()
+    const loading = render((qc) => qc.removeQueries({ queryKey: ['lists', 'collection', 1, 50] }))
+    expect(loading).toContain('aria-label="Loading lists"')
+    expect(door(loading)).toBeNull()
+  })
+})
+
 describe('mobile List view', () => {
   it('cover controls, meta, video, tiers and the locked player column', () => {
     search = new URLSearchParams('list=l1')
