@@ -11,7 +11,9 @@ import { createElement, Fragment, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
+import { auctionPoolKeys } from '@/hooks/use-draft-pool'
 import type { LeagueDetail } from '@/hooks/use-league'
+import { leaguesKeys, type MyLeagueRow } from '@/hooks/use-leagues'
 import { teamLineupKeys } from '@/hooks/use-lineup'
 import { leagueRosterKeys } from '@/hooks/use-rosters'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
@@ -363,6 +365,39 @@ describe('Trade offer (incoming, pending)', () => {
     expect(html).toContain('data-trade-op="counter"')
     expect(html).toContain('data-trade-op="accept"')
     expect(html).toContain('Hide usernames for screenshots')
+  })
+})
+
+describe('Trade offer — the league tag is the size and scoring (item #8, match-team-3)', () => {
+  /** The top bar's league tag: the avatar tile's initials, then the format. */
+  const tag = (qc: QueryClient) => {
+    const html = render(qc, createElement(TradeDetailOverlay, { leagueId: LEAGUE, detail, tradeId: 'trade-1', onClose: () => {}, onCounter: () => {} }))
+    return html.match(/<span class="flex size-5[^"]*">SF<\/span>([^<]*)<\/span>/)?.[1] ?? null
+  }
+  const myLeague = (team_count: number): MyLeagueRow => ({
+    id: LEAGUE, name: 'Sunday Funday League', avatar_url: null, season: 2099, status: 'in_season', team_count, created_at: null, my_role: 'manager', my_team_id: ME,
+  })
+  const withScoring = (rules: unknown, teamCount?: number) => {
+    const qc = seeded()
+    qc.setQueryData(auctionPoolKeys.scoring(LEAGUE), rules)
+    if (teamCount !== undefined) qc.setQueryData(leaguesKeys.all, [myLeague(teamCount)])
+    return qc
+  }
+
+  it('"12-team standard" — the league\'s size and scoring, like the Switch league sheet — never the season', () => {
+    expect(tag(withScoring({ receptions: 0 }, 12))).toBe('12-team standard')
+    expect(tag(withScoring({ receptions: 1 }, 12))).toBe('12-team PPR')
+    expect(tag(withScoring({ receptions: 0.5 }, 10))).toBe('10-team half PPR')
+    expect(tag(withScoring({ receptions: 0 }, 12))).not.toContain('2099')
+  })
+
+  it('before My leagues has loaded, the size is the league\'s own team count', () => {
+    expect(tag(withScoring({ receptions: 1 }))).toBe(`${detail.teams.length}-team PPR`)
+  })
+
+  it('scoring that can\'t be read leaves the word out ("12-team") rather than guessing — and still no season', () => {
+    expect(tag(withScoring(null, 12))).toBe('12-team')
+    expect(tag(seeded())).toBe(`${detail.teams.length}-team`)
   })
 })
 
