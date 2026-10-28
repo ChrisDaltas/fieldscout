@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 
 import { GuestShell } from '@/components/layout/guest-shell'
-import { PhoneProfileHandoff } from '@/components/profile/phone-profile-handoff'
+import { PhoneHandoff } from '@/components/shared/phone-handoff'
 import { ProfileListRow } from '@/components/profile/profile-list-row'
 import { credOrStart } from '@/lib/cred-tiers'
 import { createServerClient } from '@/lib/supabase/server'
@@ -63,7 +63,7 @@ export default async function FollowingPage({ params }: PageProps) {
   return (
     <GuestShell>
       {/* A signed-in phone opens this as its phone screen, in the app. */}
-      <PhoneProfileHandoff to={phoneFollowsHref(profile.username, 'following')} />
+      <PhoneHandoff to={phoneFollowsHref(profile.username, 'following')} />
       <div className="mx-auto flex max-w-2xl flex-col gap-5">
         <header>
           <Link

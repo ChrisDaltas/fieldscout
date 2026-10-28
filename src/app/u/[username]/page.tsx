@@ -6,7 +6,7 @@ import { GuestShell } from '@/components/layout/guest-shell'
 import { ProfileHeader } from '@/components/profile/profile-header'
 import { ProfileStats } from '@/components/profile/profile-stats'
 import { PublicListCard } from '@/components/lists/public-list-card'
-import { PhoneProfileHandoff } from '@/components/profile/phone-profile-handoff'
+import { PhoneHandoff } from '@/components/shared/phone-handoff'
 import { Button } from '@/components/ui/button'
 import { phoneProfileHref } from '@/components/shared/username-link-ops'
 import { credOrStart } from '@/lib/cred-tiers'
@@ -77,7 +77,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
   return (
     <GuestShell>
       {/* A signed-in phone opens this as its phone screen, in the app. */}
-      <PhoneProfileHandoff to={phoneProfileHref(profile.username)} />
+      <PhoneHandoff to={phoneProfileHref(profile.username)} />
       <div className="mx-auto flex max-w-[833px] flex-col gap-6">
         <ProfileHeader
           username={profile.username}

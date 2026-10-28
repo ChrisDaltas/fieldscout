@@ -16,6 +16,7 @@ import {
   type CommunityScoring,
 } from '@/components/mobile/community/community-ops'
 import { ListActions } from '@/components/mobile/community/list-actions'
+import { ListAiAttribution } from '@/components/mobile/lists/list-ai-attribution'
 import { tierChipClass, viewSections, youTubeId, youTubeThumb } from '@/components/mobile/lists/lists-model'
 import { YouTubeBadge } from '@/components/mobile/lists/lists-parts'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
@@ -380,6 +381,13 @@ function DetailBody({
           </ListTag>
         </div>
       ))}
+      {/* An AI expert's list says it was made by AI, as on the List view and
+          the share page (spec-ai-expert-personas UI requirement 4). */}
+      {list.ai_persona_id ? (
+        <div className="pt-4">
+          <ListAiAttribution personaId={list.ai_persona_id} />
+        </div>
+      ) : null}
     </>
   )
 }

@@ -1,7 +1,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-import { publicPersonPath } from '@/components/shared/username-link-ops'
+import { phoneListIdOf } from '@/components/mobile/lists/lists-routes'
+import { publicPersonPath, userProfileHref } from '@/components/shared/username-link-ops'
 import {
   classifyRateLimitedRequest,
   parseRateLimitTake,
@@ -102,6 +103,46 @@ async function rateLimitRefusal(
   }
 }
 
+/**
+ * A list's public page (`/u/<owner>/lists/<slug>`) — the address a phone's
+ * `/app/lists?list=<id>` or `/app/explore?list=<id>` stands for when someone
+ * who isn't signed in opens it (audit lists-2). Only a public, undeleted list
+ * has one; anyone can read those (RLS), so this reads as the visitor. `null`
+ * when there's none — a private, deleted or unknown list, an owner with no
+ * username yet, or a failed or slow read (logged) — and the visitor is asked
+ * to sign in, as before.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const PUBLIC_LIST_TIMEOUT_MS = 1500
+
+async function publicListPath(
+  supabase: ReturnType<typeof createServerClient>,
+  listId: string,
+): Promise<string | null> {
+  if (!UUID.test(listId)) return null
+  try {
+    const { data, error } = await supabase
+      .from('lists')
+      .select('slug, owner:profiles!lists_owner_id_fkey(username)')
+      .eq('id', listId)
+      .eq('is_private', false)
+      .is('deleted_at', null)
+      .abortSignal(AbortSignal.timeout(PUBLIC_LIST_TIMEOUT_MS))
+      .maybeSingle()
+    if (error) {
+      console.error('[middleware] could not read a shared list, asking the visitor to sign in:', error.code, error.message)
+      return null
+    }
+    const row = data as { slug: string | null; owner: { username: string | null } | { username: string | null }[] | null } | null
+    const owner = Array.isArray(row?.owner) ? row.owner[0] : row?.owner
+    if (!row?.slug || !owner?.username) return null
+    return `${userProfileHref(owner.username)}/lists/${encodeURIComponent(row.slug)}`
+  } catch (err) {
+    console.error('[middleware] reading a shared list threw, asking the visitor to sign in:', err)
+    return null
+  }
+}
+
 /** R1688: classify what the router will route — `%xx` escapes decoded
  *  (an encoded id must not slip past the UUID match); a malformed escape
  *  falls back to the raw path. */
@@ -158,12 +199,29 @@ export async function middleware(request: NextRequest) {
     return redirectPreservingAuthCookies(publicUrl, supabaseResponse)
   }
 
-  // Redirect unauthenticated users away from protected routes
+  // A list on the phone (`/app/lists?list=<id>`, Community's
+  // `/app/explore?list=<id>`) gets shared from a phone's address bar too.
+  // Signed out, a public list opens its public page instead.
+  const phoneListId = user ? null : phoneListIdOf(pathname, request.nextUrl.searchParams)
+  if (phoneListId) {
+    const publicList = await publicListPath(supabase, phoneListId)
+    if (publicList) {
+      const publicUrl = request.nextUrl.clone()
+      publicUrl.pathname = publicList
+      publicUrl.search = ''
+      return redirectPreservingAuthCookies(publicUrl, supabaseResponse)
+    }
+  }
+
+  // Redirect unauthenticated users away from protected routes. `redirect`
+  // carries the query string too, so signing in lands on what was opened
+  // (`/app/lists?list=<id>` opens that list, not the Lists grid).
   const isProtected = PROTECTED_PATHS.some((p) => pathname.startsWith(p))
   if (isProtected && !user) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/login'
-    loginUrl.searchParams.set('redirect', pathname)
+    loginUrl.search = ''
+    loginUrl.searchParams.set('redirect', pathname + request.nextUrl.search)
     return redirectPreservingAuthCookies(loginUrl, supabaseResponse)
   }
 
