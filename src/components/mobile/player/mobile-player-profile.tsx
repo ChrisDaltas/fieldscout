@@ -13,6 +13,7 @@ import {
   bioLine,
   currentWeekOf,
   headerColors,
+  injuryDetail,
   PRESS,
   scoringChipLabel,
   scoringChipName,
@@ -597,6 +598,7 @@ function ProfileHeader({
   const colors = headerColors(player.team)
   const light = colors?.light ?? false
   const status = statusPill(player.status)
+  const injury = injuryDetail(player)
   const bio = bioLine(player, new Date())
   return (
     <div
@@ -646,7 +648,6 @@ function ProfileHeader({
         <span className="flex-1" />
         {status && (
           <span
-            title={player.injury_notes ?? player.injury_body_part ?? undefined}
             className={cn(
               'flex h-[22px] flex-none items-center rounded-pill px-[9px] text-[11px] font-semibold',
               // Out / IR / PUP / Suspended: the red tint with red text — the
@@ -670,6 +671,16 @@ function ProfileHeader({
             {teamLine(player)}
           </span>
           {bio && <span className={cn('truncate text-[11px] font-medium', light ? 'text-ink/[.72]' : 'text-white/80')}>{bio}</span>}
+          {/* What the pill is about (pprofile-1): "Hamstring · limited
+              practice", in words — a touch screen never shows a tooltip.
+              Home's injury row puts the same note under the name with the
+              pill at the right; here it closes the name block, in the
+              header's own colour, and wraps rather than cut words off. */}
+          {injury && (
+            <span className="break-words text-[11px] font-semibold leading-[14px]" data-profile-injury>
+              {injury}
+            </span>
+          )}
         </div>
       </div>
     </div>

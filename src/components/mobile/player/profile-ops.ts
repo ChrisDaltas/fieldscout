@@ -15,6 +15,7 @@ import type { DepthChartPlayer } from '@/hooks/use-mobile-pprofile-depth-chart'
 import type { ProfileBoxColumn, ProfileStatLine } from '@/hooks/use-mobile-pprofile-stat-lines'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
+import { injuryNote } from '@/components/mobile/home/home-ops'
 import { SCORING_OPTIONS } from '@/components/mobile/lists/lists-stats'
 import { gameState, isLiveStatus } from '@/components/mobile/players/players-ops'
 import type { ListScoring } from '@/hooks/use-mobile-lists-timeframe-stats'
@@ -110,6 +111,16 @@ const STATUS_PILLS: Record<string, { label: string; tone: 'warn' | 'negative' }>
 
 export function statusPill(status: string | null): { label: string; tone: 'warn' | 'negative' } | null {
   return status ? (STATUS_PILLS[status] ?? null) : null
+}
+
+/** What is wrong, shown in the header beside the pill (audit pprofile-1):
+ *  "Hamstring · limited practice" — phone Home's injury wording
+ *  (`injuryNote`), read from the stored injury fields. Only while the pill
+ *  shows: an Active player's leftover body part says nothing. */
+export function injuryDetail(
+  player: Pick<PlayerStatsPlayer, 'status' | 'injury_body_part' | 'injury_notes' | 'practice_participation'>,
+): string | null {
+  return statusPill(player.status) ? injuryNote(player) : null
 }
 
 /** "ATL · #36"; D/ST shows the team only; no team reads "FA". */

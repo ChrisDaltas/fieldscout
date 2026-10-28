@@ -144,6 +144,40 @@ describe('mobile player profile — leagues gated off', () => {
     expect(out).toMatch(/Age \d+ · 6'0" · 220 lb · 4th season/)
   })
 
+  it("injury detail (pprofile-1): what is wrong is on screen in Home's words, never only a tooltip", () => {
+    const hurt = { ...player, injury_body_part: 'Hamstring', practice_participation: 'Limited' }
+    const out = html(createElement(ProfileLoaded, { data: { ...data, player: hurt }, target, onClose: () => {} }), seeded())
+    // The pill keeps its look and its one word; the detail closes the name block, after the bio.
+    const pill = out.match(/<span[^>]*data-profile-status[^>]*>Questionable</)?.[0] ?? ''
+    expect(pill).toContain('bg-warn text-white')
+    expect(pill).not.toContain('title=')
+    expect(out).toMatch(/4th season<\/span><span[^>]*data-profile-injury[^>]*>Hamstring · limited practice<\/span><\/div>/)
+    // Nothing hides it: no tooltip anywhere carries the injury.
+    expect(out).not.toMatch(/title="[^"]*Hamstring/)
+  })
+
+  it('injury detail: Out keeps its own look, with the detail; no status, no detail', () => {
+    const out = html(
+      createElement(ProfileLoaded, {
+        data: { ...data, player: { ...player, status: 'Out', injury_body_part: 'Ankle', injury_notes: 'Sprain' } },
+        target,
+        onClose: () => {},
+      }),
+      seeded(),
+    )
+    expect(out).toMatch(/<span[^>]*bg-m-gr text-m-tr[^>]*data-profile-status[^>]*>Out</)
+    expect(out).toMatch(/data-profile-injury[^>]*>Ankle · Sprain</)
+
+    // Healthy again but the feed left the body part behind: no pill, no detail.
+    const healthy = html(
+      createElement(ProfileLoaded, { data: { ...data, player: { ...player, status: 'Active' } }, target, onClose: () => {} }),
+      seeded(),
+    )
+    expect(healthy).not.toContain('data-profile-status')
+    expect(healthy).not.toContain('data-profile-injury')
+    expect(healthy).not.toContain('Ankle')
+  })
+
   it('an Out pill is the red tint with red text, never a bright-red fill (2026-10-18)', () => {
     const out = html(
       createElement(ProfileLoaded, { data: { ...data, player: { ...player, status: 'Out' } }, target, onClose: () => {} }),
