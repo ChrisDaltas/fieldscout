@@ -6,18 +6,21 @@ import { useState } from 'react'
 
 import { canEditLeagueNote } from '@/components/leagues/league-note-ops'
 import { SCORING_FAMILY_LABEL } from '@/components/leagues/league-shell-ops'
+import { draftTimeText } from '@/components/mobile/home/home-ops'
 import { historyMenuSub } from '@/components/mobile/league/league/league-history-ops'
 import { LeagueNoteSheets } from '@/components/mobile/league/league/league-note'
 import { MyTeamPage } from '@/components/mobile/shell/my-team-page'
 import { initials, useLeagueCard } from '@/components/mobile/shell/use-league-card'
 import { MIcon, type MIconName } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
+import { useCompletedRealDraft, type CompletedRealDraft } from '@/hooks/use-draft'
 import { useLeagueScoringFamily } from '@/hooks/use-draft-pool'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useLeagueNote } from '@/hooks/use-league-note'
 import type { MyLeagueRow } from '@/hooks/use-leagues'
 import { toast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
+import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 
 interface MenuRow {
   label: string
@@ -35,7 +38,8 @@ interface MenuRow {
  * league pages the app has that the design's menu leaves out (Schedule,
  * Trades, Members, Commissioner tools) are kept — restyle everything,
  * delete nothing. The app's Stats page is the design's League history
- * (gap list §3 #16), so it's that row. "Commissioner note" (gap list #13)
+ * (gap list §3 #16), so it's that row. Draft results carries the draft's
+ * day (`draftResultsDate`). "Commissioner note" (gap list #13)
  * opens the league's note in full — with the edit sheet behind it for a
  * commissioner. The My team
  * card opens the My team page, where you rename your team (gap list #10).
@@ -55,6 +59,7 @@ export function LeagueMenuSheet({
   const isCommish = league.my_role === 'commissioner' || league.my_role === 'co_commissioner'
   const detail = useLeague(open ? league.id : undefined)
   const { family } = useLeagueScoringFamily(open ? league.id : null)
+  const completedDraft = useCompletedRealDraft(open ? league.id : undefined)
   // Gap list #13: the commissioner note opens in full from its row.
   const [noteOpen, setNoteOpen] = useState(false)
   const note = useLeagueNote(open ? league.id : undefined)
@@ -68,7 +73,7 @@ export function LeagueMenuSheet({
     { label: 'League settings', sub: `${league.team_count} teams`, icon: 'leaders', href: `${base}/settings` },
     { label: 'Scoring', sub: family ? SCORING_FAMILY_LABEL[family] : undefined, icon: 'scoring', href: `${base}/settings?section=scoring` },
     { label: 'Playoffs', sub: playoffWeeks(detail.data?.settings), icon: 'playoffs', href: `${base}/settings?section=league` },
-    { label: 'Draft results', icon: 'lists', href: `${base}/draft/recap` },
+    { label: 'Draft results', sub: draftResultsDate(completedDraft.data, detail.data), icon: 'lists', href: `${base}/draft/recap` },
     { label: 'Schedule', icon: 'sched', href: `${base}/schedule` },
     { label: 'Trades', icon: 'trade', href: `${base}/trades` },
     { label: 'Members', icon: 'coowners', href: `${base}/members` },
@@ -176,4 +181,30 @@ export function playoffWeeks(settings: Pick<LeagueDetail['settings'], 'playoff_t
   const rounds = Math.ceil(Math.log2(settings.playoff_teams))
   const last = settings.playoff_start_week + rounds * settings.playoff_weeks_per_round - 1
   return last === settings.playoff_start_week ? `Week ${last}` : `Weeks ${settings.playoff_start_week}–${last}`
+}
+
+/**
+ * "Aug 30" — the Menu's Draft results date (handoff §2.5 F). Once the
+ * league's real draft has run, the day it actually ran (its start, else its
+ * finish), whatever time had been saved for it; a draft under way, the day
+ * it started; before the draft, the league's saved draft time. In the
+ * viewer's own clock. Nothing when there is no date, and nothing until the
+ * finished-draft read is in (`completed` undefined) — so a saved time never
+ * stands in for the day the draft really ran. `timeZone` is for tests.
+ */
+export function draftResultsDate(
+  completed: Pick<CompletedRealDraft, 'started_at' | 'completed_at'> | null | undefined,
+  detail:
+    | {
+        active_draft: Pick<NonNullable<LeagueDetail['active_draft']>, 'started_at' | 'scheduled_at'> | null
+        settings: { draft?: Pick<LeagueSettings['draft'], 'draft_scheduled_at'> }
+      }
+    | undefined,
+  timeZone?: string,
+): string | undefined {
+  if (completed === undefined || !detail) return undefined
+  const at = completed
+    ? (completed.started_at ?? completed.completed_at)
+    : (detail.active_draft?.started_at ?? detail.active_draft?.scheduled_at ?? detail.settings.draft?.draft_scheduled_at)
+  return (at ? draftTimeText(at, timeZone, true) : null) ?? undefined
 }
