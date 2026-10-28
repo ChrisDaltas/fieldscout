@@ -8,7 +8,7 @@ import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { teamPageHref } from '@/components/leagues/league-cells'
 import { poolRows, type Availability } from '@/components/leagues/players-page-ops'
 import { AuthorAvatar } from '@/components/mobile/community/community-cards'
-import { formatFollows } from '@/components/mobile/community/community-ops'
+import { formatFollows, postHref } from '@/components/mobile/community/community-ops'
 import { isPreDraft } from '@/components/mobile/player/profile-ops'
 import { mobileRoute } from '@/components/mobile/shell/mobile-nav'
 import { MOverlay, MOverlayScroll } from '@/components/mobile/trades/m-overlay'
@@ -36,7 +36,6 @@ import {
   managerSub,
   matchManagers,
   ownerLabel,
-  postHref,
   readRecentSearches,
   readState,
   sectionCap,

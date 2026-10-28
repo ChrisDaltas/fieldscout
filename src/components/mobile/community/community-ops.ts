@@ -5,6 +5,7 @@ import {
   seasonLabel,
   toRankingsSearch,
 } from '@/components/mobile/rankings/rankings-ops'
+import { listHref } from '@/components/mobile/lists/lists-routes'
 import { authorAvatarClass } from '@/components/mobile/ui/avatar-colors'
 import { DEFAULT_RANKING_SCORING, personaScoringFormat } from '@/lib/lists/ranking-publish'
 import { activeWeekOf } from '@/lib/rankings/week-window'
@@ -901,6 +902,19 @@ export const COMMUNITY_HREF = '/app/explore'
  *  Community page ignores `?list=`. */
 export function communityDetailHref(id: string, from: string = COMMUNITY_HREF): string {
   return `${from}?list=${encodeURIComponent(id)}`
+}
+
+/**
+ * Where someone else's list opens on a phone: Community's list page while
+ * Community is on (the handoff's door — Like, Follow and the counts live
+ * there; lr-lists: "social features belong to Community"), else the List
+ * view. One rule for every way in — People search, a person's profile,
+ * Home's AI-expert boards and a shared link (the share page's phone handoff,
+ * audit lists-2) — so the same list never opens on two different screens.
+ * Your own list opens on the List view, with Edit (`listHref`).
+ */
+export function postHref(listId: string, communityOn: boolean): string {
+  return communityOn ? communityDetailHref(listId) : listHref(listId)
 }
 
 /**

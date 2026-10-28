@@ -52,6 +52,24 @@ const CLEARED: CookieWrite[] = [
 let cookiesWritten: CookieWrite[] = []
 let currentUser: { id: string } | null = null
 
+/** What the fake answers a `lists` read with, and the reads it was asked. */
+let listAnswer: { data: unknown; error: { code: string; message: string } | null } = { data: null, error: null }
+let listReads: { table: string; filters: string[] }[] = []
+
+/** A PostgREST query builder: every filter chains, `maybeSingle` answers. */
+function fakeQuery(table: string) {
+  const read = { table, filters: [] as string[] }
+  listReads.push(read)
+  const builder = {
+    select: (cols: string) => (read.filters.push(`select ${cols}`), builder),
+    eq: (col: string, value: unknown) => (read.filters.push(`eq ${col} ${String(value)}`), builder),
+    is: (col: string, value: unknown) => (read.filters.push(`is ${col} ${String(value)}`), builder),
+    abortSignal: () => builder,
+    maybeSingle: async () => listAnswer,
+  }
+  return builder
+}
+
 vi.mock('@supabase/ssr', () => ({
   createServerClient: (
     _url: string,
@@ -66,6 +84,7 @@ vi.mock('@supabase/ssr', () => ({
         return { data: { user: currentUser } }
       },
     },
+    from: fakeQuery,
   }),
 }))
 
@@ -97,6 +116,8 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon'
   cookiesWritten = []
   currentUser = null
+  listAnswer = { data: null, error: null }
+  listReads = []
 })
 
 describe('the harness builds the request it claims to build (R343)', () => {
@@ -194,6 +215,98 @@ describe('a person’s phone screen is shareable: signed out, it opens the publi
     const res = await middleware(request('/app/u/devpro', 'sb-127-auth-token=base64-DEAD'))
     expect(res.status).toBe(307)
     expect(authCookie(res)).toMatch(/^sb-127-auth-token=;/)
+  })
+})
+
+describe('a list’s phone address is shareable: signed out, a public list opens its public page (audit lists-2)', () => {
+  const LIST = '5d0c1a7e-3b2f-4c11-9e8a-0f1b2c3d4e5f'
+
+  it('signed out → /app/lists?list=<id> goes to /u/<owner>/lists/<slug>, not the sign-in page', async () => {
+    listAnswer = { data: { slug: 'my-rb-sleepers', owner: { username: 'devpro' } }, error: null }
+    const res = await middleware(request(`/app/lists?list=${LIST}`))
+    expect(res.status).toBe(307)
+    const location = new URL(res.headers.get('location')!)
+    expect(location.pathname).toBe('/u/devpro/lists/my-rb-sleepers')
+    expect(location.search).toBe('')
+  })
+
+  it('…reading only a public, undeleted list, by its id', async () => {
+    listAnswer = { data: { slug: 'my-rb-sleepers', owner: [{ username: 'devpro' }] }, error: null }
+    const res = await middleware(request(`/app/lists?list=${LIST}&from=grid`))
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/u/devpro/lists/my-rb-sleepers')
+    expect(listReads).toHaveLength(1)
+    expect(listReads[0]!.table).toBe('lists')
+    expect(listReads[0]!.filters).toEqual(
+      expect.arrayContaining([`eq id ${LIST}`, 'eq is_private false', 'is deleted_at null']),
+    )
+  })
+
+  it('Community’s list page (/app/explore?list=<id>, and over the Latest page) too', async () => {
+    listAnswer = { data: { slug: 'my-rb-sleepers', owner: { username: 'devpro' } }, error: null }
+    for (const path of ['/app/explore', '/app/explore/latest']) {
+      const res = await middleware(request(`${path}?list=${LIST}`))
+      expect(res.status, path).toBe(307)
+      expect(new URL(res.headers.get('location')!).pathname, path).toBe('/u/devpro/lists/my-rb-sleepers')
+    }
+  })
+
+  it('a private, deleted or unknown list asks them to sign in, and signing in opens that list', async () => {
+    listAnswer = { data: null, error: null }
+    const res = await middleware(request(`/app/lists?list=${LIST}`))
+    expect(res.status).toBe(307)
+    const location = new URL(res.headers.get('location')!)
+    expect(location.pathname).toBe('/login')
+    expect(location.searchParams.get('redirect')).toBe(`/app/lists?list=${LIST}`)
+    // Only the destination rides along — not the list id as a /login param.
+    expect([...location.searchParams.keys()]).toEqual(['redirect'])
+  })
+
+  it('a failed read is logged, never taken for “no such list”, and falls back to sign in', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    listAnswer = { data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } }
+    const res = await middleware(request(`/app/lists?list=${LIST}`))
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/login')
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('could not read a shared list'), '57014', expect.any(String))
+    logged.mockRestore()
+  })
+
+  it('an owner with no username yet has no public page: sign in', async () => {
+    listAnswer = { data: { slug: 'x', owner: { username: null } }, error: null }
+    const res = await middleware(request(`/app/lists?list=${LIST}`))
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/login')
+  })
+
+  it('no read for an id that isn’t a list id, or an address that opens no list', async () => {
+    for (const path of ['/app/lists?list=not-an-id', '/app/lists', '/app/explore', '/app/rankings?list=' + LIST]) {
+      const res = await middleware(request(path))
+      expect(new URL(res.headers.get('location')!).pathname, path).toBe('/login')
+    }
+    expect(listReads).toHaveLength(0)
+  })
+
+  it('signed in → the phone screen is served, with no read', async () => {
+    currentUser = { id: 'u1' }
+    const res = await middleware(request(`/app/lists?list=${LIST}`))
+    expect(res.status).toBe(200)
+    expect(listReads).toHaveLength(0)
+  })
+
+  it('the redirect keeps the cookies the request produced (D148(b))', async () => {
+    cookiesWritten = CLEARED
+    listAnswer = { data: { slug: 'my-rb-sleepers', owner: { username: 'devpro' } }, error: null }
+    const res = await middleware(request(`/app/lists?list=${LIST}`, 'sb-127-auth-token=base64-DEAD'))
+    expect(res.status).toBe(307)
+    expect(authCookie(res)).toMatch(/^sb-127-auth-token=;/)
+  })
+})
+
+describe('signing in lands on the page that was opened, query string included', () => {
+  it('a protected address with a query string keeps it in ?redirect', async () => {
+    const res = await middleware(request('/app/leagues/join?code=ABC123'))
+    const location = new URL(res.headers.get('location')!)
+    expect(location.pathname).toBe('/login')
+    expect(location.searchParams.get('redirect')).toBe('/app/leagues/join?code=ABC123')
+    expect([...location.searchParams.keys()]).toEqual(['redirect'])
   })
 })
 

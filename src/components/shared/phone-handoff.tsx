@@ -15,8 +15,10 @@ import { detectMode } from '@/hooks/use-layout-mode'
  *
  *  - A person (`/u/[username]`, its Followers / Following) → their phone
  *    profile (`phoneProfileHref` / `phoneFollowsHref`, audit profile-1).
- *  - A shared list (`/u/[username]/lists/[listSlug]`) → the phone List view
- *    (`listHref`, audit lists-2): read-only, or with Edit on your own list.
+ *  - A shared list (`/u/[username]/lists/[listSlug]`) → its phone screen
+ *    (audit lists-2): your own on the List view with Edit (`listHref`);
+ *    someone else's where every phone link to it goes (`postHref`) —
+ *    Community's list page while Community is on, else the List view.
  *
  * Everyone else stays: search engines and signed-out visitors (the page is
  * server-rendered for them, and the app would ask them to sign in), and

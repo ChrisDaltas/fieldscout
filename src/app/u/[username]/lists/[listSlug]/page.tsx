@@ -5,6 +5,7 @@ import type { Metadata } from 'next'
 import { GuestShell } from '@/components/layout/guest-shell'
 import { PersonaBadge } from '@/components/personas/persona-badge'
 import { PublicListView } from '@/components/lists/public-list-view'
+import { postHref } from '@/components/mobile/community/community-ops'
 import { listHref } from '@/components/mobile/lists/lists-routes'
 import { PhoneHandoff } from '@/components/shared/phone-handoff'
 import { featureFlags } from '@/lib/feature-flags'
@@ -30,12 +31,15 @@ import type { ListPlayerWithPlayer, ListWithDetails } from '@/hooks/use-lists'
  * would silently render `—` in every stat cell on the one page strangers see.
  * Widening a SELECT is not a schema change and adds no route (plan §5 DoD 3).
  *
- * **On a phone** (audit lists-2) a signed-in visitor is handed to the phone
- * List view inside the app (`PhoneHandoff` → `listHref`): the dock, Back and
- * the phone's light/dark come with it, the owner's @handle opens their phone
- * profile, and your own list opens there with Edit. This page stays what
- * search engines, signed-out visitors and desktop get — the same split the
- * public profile makes (`/u/[username]`, audit profile-1).
+ * **On a phone** (audit lists-2) a signed-in visitor is handed to the list's
+ * phone screen inside the app (`PhoneHandoff`), where Back and the phone's
+ * light/dark come with it and the owner's @handle opens their phone profile.
+ * Your own list opens on the List view with Edit (`listHref`). Someone else's
+ * opens where every other phone link to it goes (`postHref`): Community's
+ * list page while Community is on (Like, Follow, the counts), else the List
+ * view, read-only. This page stays what search engines, signed-out visitors
+ * and desktop get — the same split the public profile makes
+ * (`/u/[username]`, audit profile-1).
  */
 
 interface PageProps {
@@ -241,7 +245,7 @@ export default async function PublicListPage({ params }: PageProps) {
   return (
     <GuestShell>
       {/* A signed-in phone opens this list as its phone screen, in the app. */}
-      <PhoneHandoff to={listHref(list.id)} />
+      <PhoneHandoff to={isOwner ? listHref(list.id) : postHref(list.id, featureFlags.community)} />
       <div className="mx-auto flex w-full max-w-[900px] flex-col gap-5">
         <PublicListView
           list={list}

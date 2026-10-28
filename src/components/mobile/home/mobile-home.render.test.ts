@@ -20,7 +20,7 @@ vi.mock('@/lib/supabase/client', () => ({
     removeChannel: () => {},
   }),
 }))
-const flags = vi.hoisted(() => ({ leagues: true, mockDrafts: true, personas: false, messages: false, weeklyRanks: true, startOrSit: true }))
+const flags = vi.hoisted(() => ({ leagues: true, mockDrafts: true, personas: false, messages: false, weeklyRanks: true, startOrSit: true, community: false }))
 vi.mock('@/lib/feature-flags', () => ({ featureFlags: flags }))
 
 import { leagueStandingsKeys } from '@/hooks/use-standings'
@@ -242,24 +242,38 @@ describe('mobile Home', () => {
 })
 
 describe('From the AI experts (audit lists-2)', () => {
-  it('an expert’s board opens the phone List view — never the desktop share page', () => {
+  const board = {
+    id: 'b1',
+    title: 'Week 9 RB rankings',
+    slug: 'week-9-rb-rankings',
+    description: null,
+    position_filter: 'RB',
+    player_count: 24,
+    updated_at: new Date().toISOString(),
+    persona: { username: 'bathew', display_name: 'Bathew Merry', avatar_url: null },
+    owner: { username: 'bathew_ai' },
+  }
+  const renderBoards = () => {
     const qc = seeded()
-    qc.setQueryData(['persona-boards', 9], [
-      {
-        id: 'b1',
-        title: 'Week 9 RB rankings',
-        slug: 'week-9-rb-rankings',
-        description: null,
-        position_filter: 'RB',
-        player_count: 24,
-        updated_at: new Date().toISOString(),
-        persona: { username: 'bathew', display_name: 'Bathew Merry', avatar_url: null },
-        owner: { username: 'bathew_ai' },
-      },
-    ])
-    const out = render(qc)
+    qc.setQueryData(['persona-boards', 9], [board])
+    return render(qc)
+  }
+
+  it('an expert’s board opens the phone List view while Community is off — never the desktop share page', () => {
+    const out = renderBoards()
     expect(out).toContain('From the AI experts')
     expect(out).toContain('href="/app/lists?list=b1"')
     expect(out).not.toContain('/lists/week-9-rb-rankings')
+  })
+
+  it('…and Community’s list page while it is on, as search, profiles and a shared link do (postHref)', () => {
+    flags.community = true
+    try {
+      const out = renderBoards()
+      expect(out).toContain('href="/app/explore?list=b1"')
+      expect(out).not.toContain('/lists/week-9-rb-rankings')
+    } finally {
+      flags.community = false
+    }
   })
 })

@@ -4,11 +4,16 @@
  * Back, always light — so:
  *
  *  - a signed-in phone that lands there (Copy link, Community's Share, any
- *    link from outside the app) is handed to the phone List view inside the
- *    app (`PhoneHandoff` → `listHref`): someone else's list read-only, your
- *    own with Edit. The page itself stays the server-rendered one for search
- *    engines, signed-out visitors and desktop — the split the public profile
- *    makes (audit profile-1);
+ *    link from outside the app) is handed to the list's phone screen inside
+ *    the app (`PhoneHandoff`): your own list on the List view with Edit
+ *    (`listHref`); someone else's where every other phone link to it goes
+ *    (`postHref`) — Community's list page while Community is on, else the
+ *    List view, read-only. The page itself stays the server-rendered one for
+ *    search engines, signed-out visitors and desktop — the split the public
+ *    profile makes (audit profile-1);
+ *  - a signed-out visitor who opens one of those phone addresses (shared
+ *    from a phone's address bar) gets the public page back — the middleware
+ *    reads them with `phoneListIdOf`;
  *  - and no phone screen links to the share page itself, except to build the
  *    address it copies (a share link must be the public page).
  */
@@ -17,19 +22,21 @@ import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { communityDetailHref, LATEST_HREF } from '@/components/mobile/community/community-ops'
+
 import { listHref as navListHref } from './lists-nav'
-import { listHref } from './lists-routes'
+import { listHref, phoneListIdOf } from './lists-routes'
 
 const ROOT = path.resolve(__dirname, '../../../..')
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), 'utf8')
 
 const SHARE_PAGE = 'src/app/u/[username]/lists/[listSlug]/page.tsx'
 
-describe('the share page hands a signed-in phone to the List view (audit lists-2)', () => {
+describe('the share page hands a signed-in phone to the list’s phone screen (audit lists-2)', () => {
   const page = read(SHARE_PAGE)
 
-  it('renders the handoff to this list’s phone List view', () => {
-    expect(page).toContain('<PhoneHandoff to={listHref(list.id)} />')
+  it('renders the handoff: your own list to the List view, someone else’s where every phone link to it goes', () => {
+    expect(page).toContain('<PhoneHandoff to={isOwner ? listHref(list.id) : postHref(list.id, featureFlags.community)} />')
     // The one handoff — the person pages use it too — not a copy of it.
     expect(page).toContain("import { PhoneHandoff } from '@/components/shared/phone-handoff'")
   })
@@ -44,10 +51,14 @@ describe('the share page hands a signed-in phone to the List view (audit lists-2
     expect(page).toContain('<PublicListView')
   })
 
-  it('builds the address from the plain module: a server page cannot call into a client one', () => {
+  it('builds the address from plain modules: a server page cannot call into a client one', () => {
     expect(page).toContain("import { listHref } from '@/components/mobile/lists/lists-routes'")
+    expect(page).toContain("import { postHref } from '@/components/mobile/community/community-ops'")
     expect(page).not.toContain("from '@/components/mobile/lists/lists-nav'")
-    expect(read('src/components/mobile/lists/lists-routes.ts')).not.toMatch(/^['"]use client['"]/m)
+    expect(page).not.toContain("from '@/components/mobile/search/search-ops'")
+    for (const file of ['src/components/mobile/lists/lists-routes.ts', 'src/components/mobile/community/community-ops.ts']) {
+      expect(read(file), file).not.toMatch(/^['"]use client['"]/m)
+    }
   })
 
   it('the List view’s address — one spelling, which the Lists screens share', () => {
@@ -55,6 +66,28 @@ describe('the share page hands a signed-in phone to the List view (audit lists-2
     expect(listHref('a b/c')).toBe('/app/lists?list=a%20b%2Fc')
     expect(listHref('l1', 'grid')).toBe('/app/lists?list=l1&from=grid')
     expect(navListHref).toBe(listHref)
+  })
+})
+
+describe('the phone addresses the middleware turns back into the public page (audit lists-2)', () => {
+  const at = (href: string) => {
+    const url = new URL(href, 'http://x')
+    return phoneListIdOf(url.pathname, url.searchParams)
+  }
+
+  it('reads the list from every phone screen that opens one: the List view and Community’s list page', () => {
+    const id = '5d0c1a7e-3b2f-4c11-9e8a-0f1b2c3d4e5f'
+    expect(at(listHref(id))).toBe(id)
+    expect(at(listHref(id, 'grid'))).toBe(id)
+    expect(at(communityDetailHref(id))).toBe(id)
+    expect(at(communityDetailHref(id, LATEST_HREF))).toBe(id)
+    expect(at(`/app/lists/?list=${id}`)).toBe(id)
+  })
+
+  it('…and nothing else', () => {
+    for (const href of ['/app/lists', '/app/lists?list=', '/app/explore', '/app/weekly-ranks?list=l1', '/app/lists/l1', '/u/a/lists/b']) {
+      expect(at(href), href).toBeNull()
+    }
   })
 })
 
@@ -104,8 +137,8 @@ describe('phone screens never link to the desktop share page (audit lists-2)', (
     expect(hits.filter((h) => h.file === entry.file && h.text.includes(entry.contains))).toHaveLength(1)
   })
 
-  it('Home’s AI-expert boards open the List view', () => {
+  it('Home’s AI-expert boards open where every other phone link to them goes', () => {
     const home = read('src/components/mobile/home/home-extras.tsx')
-    expect(home).toContain('href: listHref(b.id),')
+    expect(home).toContain('href: postHref(b.id, featureFlags.community),')
   })
 })
