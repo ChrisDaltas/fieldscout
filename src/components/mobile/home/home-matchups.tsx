@@ -32,7 +32,8 @@ import { HomeNote, HomeSectionTitle } from './home-section'
  * league with a season in play (shown only when one exists — a list of
  * pre-draft leagues has no week to name). A card in season carries the red
  * alert dot when something in its league needs the user — a trade offer
- * waiting on their answer, or a starter out / on IR / on bye or an empty
+ * waiting on their answer, a player who isn't IR-eligible in their IR spot
+ * (adds and claims blocked), or a starter out / on IR / on bye or an empty
  * starting slot this week (ruling #14, `useMobileHomeAlert`).
  */
 export function HomeMatchups() {

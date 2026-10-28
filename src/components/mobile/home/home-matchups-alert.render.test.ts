@@ -31,7 +31,7 @@ import { leagueRosterKeys } from '@/hooks/use-rosters'
 import { scheduleKeys } from '@/hooks/use-schedule'
 import { tradeKeys } from '@/hooks/use-trades'
 
-import { HomeMatchups } from './home-matchups'
+import { HomeMatchups, LeagueCard } from './home-matchups'
 
 const L = (id: string, status: string, team: string) => ({
   id,
@@ -55,7 +55,8 @@ const SETTINGS = {
   ir_slots: [],
   swap_spots: 0,
 }
-const player = (id: string, position: string, status = 'Active') => ({
+const IR_SETTINGS = { ...SETTINGS, ir_slots: [{ key: 'ir1', type: 'unrestricted', eligible_designations: ['OUT', 'IR'] }] }
+const player = (id: string, position: string, status = 'Active', over: Record<string, unknown> = {}) => ({
   player_id: id,
   full_name: id,
   position,
@@ -70,17 +71,18 @@ const player = (id: string, position: string, status = 'Active') => ({
   acquired_at: null,
   pool_state: 'rostered',
   game_lock: { state: 'unlocked', until: null },
+  ...over,
 })
 const WEEKS = [
   { id: 'w4', season: 2026, week: 4, status: 'final', finalized_at: null, median_score: null },
   { id: 'w5', season: 2026, week: 5, status: 'live', finalized_at: null, median_score: null },
 ]
 
-function seedLeague(qc: QueryClient, id: string, team: string, opts: { outStarter: boolean; offerToMe: boolean }) {
+function seedLeague(qc: QueryClient, id: string, team: string, opts: { outStarter: boolean; offerToMe: boolean; healthyInIr?: boolean }) {
   qc.setQueryData(scheduleKeys.all(id), { weeks: WEEKS, matchups: [] })
   qc.setQueryData(leaguesKeys.detail(id), {
     league: { id, status: 'in_season', season: 2026 },
-    settings: { roster_settings: SETTINGS },
+    settings: { roster_settings: opts.healthyInIr ? IR_SETTINGS : SETTINGS },
     members: [{ team_id: `${id}2`, user_id: 'u2', profiles: { username: 'marcus', avatar_url: null } }],
     teams: [
       { id: team, name: 'Mine' },
@@ -91,7 +93,18 @@ function seedLeague(qc: QueryClient, id: string, team: string, opts: { outStarte
   qc.setQueryData(leagueRosterKeys.all(id), {
     league_id: id,
     season: 2026,
-    teams: [{ team_id: team, name: 'Mine', roster: [player(`${id}-qb`, 'QB'), player(`${id}-rb`, 'RB', opts.outStarter ? 'Out' : 'Active')] }],
+    teams: [
+      {
+        team_id: team,
+        name: 'Mine',
+        roster: [
+          player(`${id}-qb`, 'QB'),
+          player(`${id}-rb`, 'RB', opts.outStarter ? 'Out' : 'Active'),
+          // A healthy player left in the IR spot (placed in week 3).
+          ...(opts.healthyInIr ? [player(`${id}-wr`, 'WR', 'Active', { slot_key: 'ir1:0', ir_placed_week: 3 })] : []),
+        ],
+      },
+    ],
   })
   qc.setQueryData(teamLineupKeys.week(team, 5), { slot_map: { 'qb:0': `${id}-qb`, 'rb:0': `${id}-rb` }, starters: [], bench: [] })
   qc.setQueryData(tradeKeys.list(id, 'all', null), {
@@ -179,6 +192,24 @@ describe('Home league card red dot (ruling #14)', () => {
     // one exception is the league detail: the card itself reads it for the
     // draft time on its pill (gap list §3 #20), not for the dot.
     expect(alertKeys('C', 'c1').map((k) => wasRead(qc, k))).toEqual([false, true, false, false, false])
+  })
+
+  it('lights for a healthy player left in your IR spot — on Home and on the Leagues tab — with no read of its own', () => {
+    const qc = seeded()
+    const D = L('D', 'in_season', 'd1')
+    qc.setQueryData(['leagues'], [...LEAGUES, D])
+    seedLeague(qc, 'D', 'd1', { outStarter: false, offerToMe: false, healthyInIr: true })
+    const d = card(render(qc), 'D')
+    expect(d).toContain('data-league-alert')
+    expect(d).toContain('Needs your attention: you have an ineligible player in your IR spot')
+    // The same reads as every other reason: nothing new is fetched for it.
+    expect(alertKeys('D', 'd1').map((k) => wasRead(qc, k))).toEqual([true, true, true, true, true])
+    // The Leagues tab's card is the same card (variant "leagues").
+    const onLeagues = renderToStaticMarkup(
+      createElement(QueryClientProvider, { client: qc }, createElement(LeagueCard, { league: D, index: 3, variant: 'leagues' })),
+    ).replace(/&#x27;/g, "'")
+    expect(onLeagues).toContain('data-league-alert')
+    expect(onLeagues).toContain('Needs your attention: you have an ineligible player in your IR spot')
   })
 
   it('reads nothing while the leagues release is off', () => {
