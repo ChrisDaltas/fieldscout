@@ -43,6 +43,8 @@ interface MenuRow {
  * opens the league's note in full — with the edit sheet behind it for a
  * commissioner. The My team
  * card opens the My team page, where you rename your team (gap list #10).
+ * The grid's Stats tile opens player research — the Players screen the
+ * account dock opens — not desktop's "My stats", which is your Profile.
  */
 export function LeagueMenuSheet({
   open,
@@ -95,7 +97,11 @@ export function LeagueMenuSheet({
   const apps: Array<{ label: string; icon: MIconName; href: string }> = [
     { label: 'Home', icon: 'home', href: '/app' },
     ...(featureFlags.community ? [{ label: 'Community', icon: 'star' as MIconName, href: '/app/explore' }] : []),
-    { label: 'Stats', icon: 'leaders', href: '/app/stats' },
+    // Stats is player research — the Players screen the account dock opens
+    // (Chris, 2026-10-27). Not `/app/stats`: that's desktop's "My stats",
+    // which lands on your Profile, the tile beside it. A link, so Back from
+    // there goes to where you came from.
+    { label: 'Stats', icon: 'leaders', href: '/app/research' },
     { label: 'Profile', icon: 'profile', href: '/app/profile' },
     { label: 'Settings', icon: 'gear', href: '/app/settings' },
   ]
