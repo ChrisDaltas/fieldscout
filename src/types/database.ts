@@ -6983,6 +6983,10 @@ export type Database = {
         Args: { p_at: string; p_league_id: string }
         Returns: Json
       }
+      profile_avatar_url_allowed_internal: {
+        Args: { p_url: string }
+        Returns: boolean
+      }
       rate_limit_rule_internal: {
         Args: { p_bucket: string }
         Returns: {
@@ -7558,6 +7562,10 @@ export type Database = {
           p_waiver_type: string
         }
         Returns: undefined
+      }
+      username_is_reserved_internal: {
+        Args: { p_username: string }
+        Returns: boolean
       }
       waiver_claim_cancel: {
         Args: {

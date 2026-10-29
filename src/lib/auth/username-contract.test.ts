@@ -5,7 +5,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   isPlaceholderUsername,
+  isReservedUsername,
   PLACEHOLDER_USERNAME_REGEX,
+  RESERVED_USERNAME_AFTER,
+  RESERVED_USERNAME_BEFORE,
+  RESERVED_USERNAME_BRAND,
+  RESERVED_USERNAME_WORDS,
   USERNAME_REGEX,
   validateUsername,
 } from './username-contract'
@@ -71,6 +76,74 @@ describe('validateUsername', () => {
   it('refuses the reserved placeholder shape, case-insensitively', () => {
     expect(validateUsername('user_2c6f328e')).toMatch(/reserved/)
     expect(validateUsername('USER_2C6F328E')).toMatch(/reserved/)
+  })
+
+  it('refuses brand and staff handles before anyone presses Continue (migration 215)', () => {
+    expect(validateUsername('fieldscout')).toBe('This username is reserved')
+    expect(validateUsername('Support_Team')).toBe('This username is reserved')
+    expect(validateUsername('kina_mimes_ai')).toBe('This username is reserved')
+    // The character rules still come first — their message is the useful one.
+    expect(validateUsername('admin!')).toMatch(/letters, numbers/)
+  })
+})
+
+/*
+ * Brand and staff handles (migration 215, readiness S19). The database's
+ * `username_is_reserved_internal` is the rule; this mirror is what the form
+ * shows first. The cases below are pgTAP 165's §R, so both sides are held to
+ * the same examples.
+ */
+describe('reserved brand and staff handles', () => {
+  it('the brand anywhere, underscores out, look-alike digits read as letters (pgTAP 165 R1)', () => {
+    for (const name of ['fieldscout', 'field_scout', 'fieldsc0ut', 'fie1dscout', 'f1eldscout', 'fi3ldscout',
+      'the_fieldscout', 'fieldscout_gg', 'fieldscout_support', 'myfieldscout']) {
+      expect(isReservedUsername(name), name).toBe(true)
+    }
+  })
+
+  it('every staff / system word on its own (R2)', () => {
+    for (const name of ['admin', 'admins', 'administrator', 'sysadmin', 'root1', 'system', 'support', 'help1',
+      'helpdesk', 'moderator', 'moderators', 'mod12', 'mods1', 'staff', 'official', 'team1', 'security', 'abuse',
+      'legal', 'privacy', 'billing', 'api12', 'www12', 'noreply', 'webmaster', 'postmaster']) {
+      expect(isReservedUsername(name), name).toBe(true)
+    }
+  })
+
+  it('with fs / the / official in front, team / hq / desk / official behind, numbers, look-alikes, any case (R3)', () => {
+    for (const name of ['fs_admin', 'fsadmin', 'the_admin', 'official_mods', 'support_team', 'admin_hq', 'help_desk',
+      'staff_official', 'moderator_01', 'admin2026', 'adm1n', '5upport', 'm0ds1', 'ADMIN']) {
+      expect(isReservedUsername(name), name).toBe(true)
+    }
+  })
+
+  it('the AI-account shape written with underscores (R4)', () => {
+    for (const name of ['kina_mimes_ai', 'scout_ai', 'x_y_ai']) expect(isReservedUsername(name), name).toBe(true)
+  })
+
+  it('ordinary handles are not reserved (R5)', () => {
+    for (const name of ['chris_d', 'joetheman', 'seed_owner', 'dev_user', 'devpro', 'adminbob', 'admin_bob',
+      'teamtacos', 'team_tacos', 'helper', 'modern', 'apiary', 'rooted', 'systemic', 'legally', 'official_bob',
+      'mods_r_us', 'scout_master', 'field_day', 'scouting', 'aimee', 'ai_fan', 'chai_lover', 'zz_ai_zz',
+      'user_deadbeef', 'user_2c6f328e', '']) {
+      expect(isReservedUsername(name), name).toBe(false)
+    }
+  })
+
+  it('the word lists are migration 215\'s, exactly — the form and the database cannot drift', () => {
+    const sql = read('supabase/migrations/215_reserved_handles_and_avatar_sources.sql')
+    const list = (label: string) => {
+      const m = sql.match(new RegExp(`ARRAY\\[([^\\]]*)\\]::text\\[\\] AS ${label}`))
+      expect(m, label).not.toBeNull()
+      return [...m![1].matchAll(/'([^']*)'/g)].map((x) => x[1])
+    }
+    expect(sql.match(/'([a-z]+)'::text AS brand/)?.[1]).toBe(RESERVED_USERNAME_BRAND)
+    expect(list('words')).toEqual([...RESERVED_USERNAME_WORDS])
+    expect(list('before')).toEqual([...RESERVED_USERNAME_BEFORE])
+    expect(list('after')).toEqual([...RESERVED_USERNAME_AFTER])
+    // The same look-alike readings on both sides.
+    expect(sql).toContain("translate(h.flat, '013457', 'oieast')")
+    expect(sql).toContain("translate(h.flat, '013457', 'oleast')")
+    expect(sql).toContain("r.raw ~ '_ai$'")
   })
 })
 

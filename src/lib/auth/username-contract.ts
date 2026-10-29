@@ -29,6 +29,52 @@ export function isPlaceholderUsername(username: string | null | undefined): bool
   return !username || PLACEHOLDER_USERNAME_REGEX.test(username)
 }
 
+/*
+ * Brand and staff handles nobody can claim (migration 215,
+ * `username_is_reserved_internal` — the database refuses them; this mirror
+ * lets the form say so before anyone presses Continue). The four lists below
+ * are read out of the migration by username-contract.test.ts, so the two
+ * cannot drift. Someone who already holds one keeps it; only a new claim is
+ * refused.
+ */
+export const RESERVED_USERNAME_BRAND = 'fieldscout'
+export const RESERVED_USERNAME_WORDS = [
+  'admin', 'admins', 'administrator', 'administrators', 'sysadmin', 'root', 'system',
+  'support', 'help', 'helpdesk', 'moderator', 'moderators', 'mod', 'mods', 'staff',
+  'official', 'team', 'security', 'abuse', 'legal', 'privacy', 'billing', 'api',
+  'www', 'noreply', 'webmaster', 'postmaster',
+] as const
+export const RESERVED_USERNAME_BEFORE = ['fs', 'the', 'official'] as const
+export const RESERVED_USERNAME_AFTER = ['team', 'hq', 'desk', 'official'] as const
+
+const RESERVED_STAFF_REGEX = new RegExp(
+  `^(${RESERVED_USERNAME_BEFORE.join('|')})?(${RESERVED_USERNAME_WORDS.join('|')})(${RESERVED_USERNAME_AFTER.join('|')})?$`,
+)
+
+/** Look-alike digits read as letters, "1" both ways (Postgres `translate`). */
+function lookAlikes(value: string): [string, string] {
+  const read = (one: string) =>
+    value.replace(/[013457]/g, (d) => ({ '0': 'o', '1': one, '3': 'e', '4': 'a', '5': 's', '7': 't' })[d] ?? d)
+  return [read('i'), read('l')]
+}
+
+/**
+ * True for a brand or staff handle: "fieldscout" anywhere (underscores out,
+ * look-alike digits read as letters); a staff word on its own, optionally
+ * with fs / the / official in front, team / hq / desk / official behind and a
+ * number on the end; or the AI-account shape written with underscores (…_ai).
+ */
+export function isReservedUsername(value: string): boolean {
+  const raw = value.toLowerCase()
+  const flat = raw.replace(/_/g, '')
+  const bare = flat.replace(/[0-9]+$/, '')
+  return (
+    lookAlikes(flat).some((v) => v.includes(RESERVED_USERNAME_BRAND)) ||
+    lookAlikes(bare).some((v) => RESERVED_STAFF_REGEX.test(v)) ||
+    /_ai$/.test(raw)
+  )
+}
+
 /** Returns a human-readable problem, or null when the value is acceptable. */
 export function validateUsername(value: string): string | null {
   if (value.length < 5) return 'Must be at least 5 characters'
@@ -39,5 +85,7 @@ export function validateUsername(value: string): string | null {
   if (PLACEHOLDER_USERNAME_REGEX.test(value.toLowerCase())) {
     return 'This username format is reserved'
   }
+  // Brand and staff handles (migration 215 refuses them too).
+  if (isReservedUsername(value)) return 'This username is reserved'
   return null
 }
