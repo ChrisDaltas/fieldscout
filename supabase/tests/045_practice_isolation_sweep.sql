@@ -196,6 +196,13 @@ select is(
         -- UNCHANGED — the delta cells are the proof. Census 86 → 87.
         'commish_trade_actions',
         'commissioner_actions',
+        -- 214 / Community C9: what people report (lists, comments, start/sit
+        -- questions). UNREACHABLE from a mock (zero policies; written only by
+        -- report_content, mark_content_report_reviewed and an operator's
+        -- remove_list_comment — no mock RPC calls any of them), so §C's and
+        -- §E's mid-state allowlists are re-derived UNCHANGED — the delta
+        -- cells are the proof. Census 96 → 97.
+        'content_reports',
         'cred_scores', 'defense_position_splits', 'draft_bids',
         'draft_budget_adjustments',  -- 099/AP.6: the E69 replay store — UNREACHABLE from a mock (draft_adjust_budget refuses every mock by name, D138/038:1402), so §C's and §E's mid-state allowlists are re-derived UNCHANGED in the same PR
         'draft_dnd_marks', 'draft_liveness', 'draft_picks', 'draft_queues', 'drafts',
@@ -328,7 +335,7 @@ select is(
         -- mock engine never will — §8.8's zero-side-effect contract), so §C's
         -- and §E's mid-state allowlists are re-derived UNCHANGED in the same
         -- PR — the delta cells below are the proof, not this comment.
-  'THE CENSUS, as a stored literal: the 96 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+  'THE CENSUS, as a stored literal: the 97 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -373,8 +380,8 @@ select is(
   'PRECONDITION: no committed scheduled league is past its D94 auto-start instant — our tick would start it inside the snapshot (the F49 fixture-instant class, asserted rather than assumed)');
 
 select lives_ok($$ select pg_temp.mp11_take('before') $$,
-  'BASELINE: all 96 tables snapshotted (count + whole-row digest each)');
-select is((select count(*) from mp11_snap where phase = 'before'), 96::bigint,
+  'BASELINE: all 97 tables snapshotted (count + whole-row digest each)');
+select is((select count(*) from mp11_snap where phase = 'before'), 97::bigint,
   '…one row per table');
 
 -- ---------------------------------------------------------------------------
