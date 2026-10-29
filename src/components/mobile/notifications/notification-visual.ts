@@ -22,6 +22,7 @@ export const NOTIF_PATH = {
   corrections: M_ICON.corrections,
   bell: M_ICON.bell,
   note: M_ICON.news,
+  comment: M_ICON.chat,
 } as const
 
 export type NotifTone = 'blue' | 'purple' | 'green' | 'red' | 'orange' | 'neutral'
@@ -66,6 +67,9 @@ export function notificationVisual(n: Pick<NotificationItem, 'type' | 'data'>): 
   if (type.includes('lock') || type.includes('lineup')) return { path: NOTIF_PATH.clock, tone: 'orange' }
   if (type.includes('rescored') || type.includes('correction')) return { path: NOTIF_PATH.corrections, tone: 'orange' }
   if (type.includes('ranking')) return { path: NOTIF_PATH.bars, tone: 'purple' }
+  // 213 (Community C2): someone commented on your list — a speech bubble,
+  // purple like the rest of list activity.
+  if (type === 'list_comment') return { path: NOTIF_PATH.comment, tone: 'purple' }
   if (type.startsWith('list')) return { path: NOTIF_PATH.lists, tone: 'purple' }
   if (type.includes('invite')) return { path: NOTIF_PATH.person, tone: 'blue' }
   if (type.includes('vote')) return { path: NOTIF_PATH.check, tone: 'blue' }

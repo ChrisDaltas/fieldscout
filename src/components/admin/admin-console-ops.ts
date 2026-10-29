@@ -311,6 +311,8 @@ export const VERB_WORDS: Record<string, string> = {
   set_game_status: 'Marked a game',
   send_notification: 'Sent a notice',
   set_commissioner: 'Made a commissioner',
+  // 213 (Community C2): an operator removing someone's comment.
+  remove_list_comment: 'Removed a comment',
 }
 
 export function verbWords(verb: string): string {

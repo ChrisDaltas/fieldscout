@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { commentRateLimitedParts, parseCommentRateLimit } from '@/lib/rate-limit/comment-limit'
 import { createServerClient } from '@/lib/supabase/server'
 import {
   commentsQuerySchema,
@@ -125,6 +126,15 @@ export async function POST(request: Request, { params }: RouteParams) {
        author:profiles!list_comments_author_id_fkey(id, username, avatar_url, cred_score, is_pro)`,
     )
     .single()
+
+  // 213: a person's 6th comment in a minute is refused on the insert path
+  // (BEFORE INSERT trigger → PostgREST 429). Answer it as a 429 with
+  // Retry-After and the reason in plain words — never a 500, never a drop.
+  const limited = parseCommentRateLimit(insertError)
+  if (limited) {
+    const { body, retryAfter } = commentRateLimitedParts(limited)
+    return NextResponse.json(body, { status: 429, headers: { 'Retry-After': retryAfter } })
+  }
 
   if (insertError || !created) {
     return NextResponse.json(

@@ -108,9 +108,9 @@ select is(
   'A4 the chat guard is a BEFORE INSERT ROW trigger on league_chat (tgtype 7 = ROW|BEFORE|INSERT)');
 select is(
   (select string_agg(format('%s=%s/%s', b, r.max_hits, r.window_ms), ' ' order by b)
-   from unnest(array['bid', 'chat', 'mutation']) b, lateral public.rate_limit_rule_internal(b) r),
-  'bid=5/1000 chat=5/10000 mutation=10/10000',
-  'A5 §22.5''s numbers, golden: bids 5/s, chat 5 per 10 s, mutations 10 per 10 s');
+   from unnest(array['ask', 'bid', 'chat', 'comment', 'mutation', 'report']) b, lateral public.rate_limit_rule_internal(b) r),
+  'ask=10/3600000 bid=5/1000 chat=5/10000 comment=5/60000 mutation=10/10000 report=10/3600000',
+  'A5 §22.5''s numbers, golden: bids 5/s, chat 5 per 10 s, mutations 10 per 10 s; 213''s per-person buckets: comment 5 a minute, report and ask 10 an hour (pgTAP 163)');
 select is((select count(*)::int from public.rate_limit_rule_internal('pick')), 0,
   'A6 an unknown bucket has no rule');
 

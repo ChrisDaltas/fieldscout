@@ -16,6 +16,7 @@ vi.mock('next/navigation', () => ({
 import type { NotificationItem } from '@/hooks/use-notifications'
 
 import { MobileNotifications } from './mobile-notifications'
+import { NOTIF_PATH } from './notification-visual'
 
 const AT = new Date(Date.now() - 8 * 60_000).toISOString()
 const N: NotificationItem[] = [
@@ -57,6 +58,15 @@ describe('mobile Notifications', () => {
     // A won waiver claim opens My moves.
     expect(out).toMatch(/<a [^>]*data-notif-row="n2"[^>]*href="\/app\/leagues\/L1\/activity\/transactions\?mine=1"/)
     expect(out).toContain('href="/app/lists/x"')
+  })
+
+  it('213: a new comment on your list — the bubble glyph, the title, a link to the list', () => {
+    const out = render([
+      { id: 'c1', type: 'list_comment', title: '@sam commented on Waiver sleepers', body: null, data: { list_id: 'L9', actor_id: 'u2' }, read: false, created_at: AT },
+    ])
+    expect(out).toContain('@sam commented on Waiver sleepers')
+    expect(out).toMatch(/<a [^>]*data-notif-row="c1"[^>]*href="\/app\/lists\/L9"/)
+    expect(out).toContain(`d="${NOTIF_PATH.comment}"`)
   })
 
   it('empty and loading states', () => {

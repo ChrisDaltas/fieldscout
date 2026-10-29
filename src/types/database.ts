@@ -6953,6 +6953,10 @@ export type Database = {
         Args: { p_feature: string; p_user_id: string }
         Returns: number
       }
+      remove_list_comment: {
+        Args: { p_comment_id: string; p_list_id: string }
+        Returns: Json
+      }
       remove_manager: {
         Args: {
           p_action_id?: string
