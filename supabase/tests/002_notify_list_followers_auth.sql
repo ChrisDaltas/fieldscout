@@ -58,12 +58,17 @@ select throws_ok(
   'null p_actor is denied in-body'
 );
 
--- Caller-as-actor executes (no-op here: the list id matches nothing).
-select lives_ok(
+-- RE-CUT BY 210 (M7 L.F2.8, F714): caller-as-actor passes the actor check,
+-- but the list must also be the caller's own — a list id that matches nothing
+-- is refused with the ownership words (no silent no-op, no existence oracle).
+-- pgTAP 160 §A proves the owner's call lands on a real list.
+select throws_ok(
   $$ select public.notify_list_followers(
        '22222222-2222-2222-2222-222222222222'::uuid,
        '11111111-1111-1111-1111-111111111111'::uuid) $$,
-  'p_actor = auth.uid() executes'
+  '42501',
+  'notify_list_followers: only the list''s owner may notify its followers',
+  'p_actor = auth.uid() passes the actor check, and a list he does not own is refused (210)'
 );
 reset role;
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncPlayers } from '@/lib/sync/players'
+import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
  * The DAILY full player sync (PROGRESS D592; spec §14's `sync-players` row) —
@@ -21,9 +22,7 @@ import { syncPlayers } from '@/lib/sync/players'
 export const maxDuration = 120
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

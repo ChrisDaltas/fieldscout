@@ -7,8 +7,9 @@ import { createServerClient } from '@/lib/supabase/server'
 /**
  * Server-side admin gate for every `/api/admin/*` route (persona-post review
  * and the M8 operator console). profiles.is_admin is service-role-write-only
- * (migration 026), so the column is trustworthy when read with the user's
- * own client.
+ * (migration 026) and, since migration 210 (F720), not readable through the
+ * API roles at all: the gate asks `is_platform_operator()` (182 — SECURITY
+ * DEFINER, the caller's own status only) with the user's own client.
  *
  * To anyone who is not an admin — signed out or signed in — it answers
  * **404**, never 401 / 403: the console must not reveal that it exists
@@ -18,20 +19,16 @@ import { createServerClient } from '@/lib/supabase/server'
 
 
 /**
- * The one read both gates share: the user's own `profiles.is_admin`.
+ * The one read both gates share: is the session's user a platform operator
+ * (`is_platform_operator()`, reading his own `profiles.is_admin` server-side).
  * Returns the boolean, or the read's error — never folds an error into false.
  */
 export async function readIsAdmin(
   supabase: SupabaseClient,
-  userId: string,
 ): Promise<{ isAdmin: boolean; error: null } | { isAdmin: false; error: { message: string } }> {
-  const { data: profile, error } = await supabase
-    .from('profiles')
-    .select('is_admin')
-    .eq('id', userId)
-    .single()
+  const { data, error } = await supabase.rpc('is_platform_operator')
   if (error) return { isAdmin: false, error }
-  return { isAdmin: profile?.is_admin === true, error: null }
+  return { isAdmin: data === true, error: null }
 }
 
 function notFound(): NextResponse {
@@ -52,7 +49,7 @@ export async function requireAdminUser(): Promise<RequireAdminResult> {
     return { ok: false, response: notFound() }
   }
 
-  const { isAdmin, error } = await readIsAdmin(supabase, user.id)
+  const { isAdmin, error } = await readIsAdmin(supabase)
 
   if (error) {
     return {
@@ -79,7 +76,7 @@ export async function isAdminViewer(): Promise<boolean> {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return false
-  const { isAdmin, error } = await readIsAdmin(supabase, user.id)
+  const { isAdmin, error } = await readIsAdmin(supabase)
   if (error) throw new Error(`admin gate: could not read the profile — ${error.message}`)
   return isAdmin
 }

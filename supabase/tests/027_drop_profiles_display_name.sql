@@ -141,11 +141,14 @@ SELECT is_empty(
        AND NOT (COALESCE(p.proconfig, ARRAY[]::text[]) @> ARRAY['search_path=""']) $$,
   'the four spec-form functions still pin search_path = '''' (unchanged by 077)');
 
+-- RE-CUT BY 210 (M7 L.F2.8, F719): the body now qualifies every name and pins
+-- the stricter spec form; the cell still fails if the pin is dropped (004's
+-- precedent: a test that fails when a function is hardened tests the wrong thing).
 SELECT ok(
-  (SELECT COALESCE(p.proconfig, ARRAY[]::text[]) @> ARRAY['search_path=public, pg_temp']
+  (SELECT COALESCE(p.proconfig, ARRAY[]::text[]) @> ARRAY['search_path=""']
      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'notify_list_followers'),
-  'notify_list_followers still pins search_path = public, pg_temp — its unqualified identifiers depend on it (019/038, unchanged by 077)');
+  'notify_list_followers pins search_path = '''' (210 qualified its names; was public, pg_temp through 077)');
 
 -- ---------------------------------------------------------------------------
 -- 4. CREATE OR REPLACE preserved the ACL: 038's REVOKE survived 077.

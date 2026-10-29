@@ -1849,8 +1849,8 @@ select is((select count(*)::int from _allow where length(why) < 60), 0,
 -- C8: gated functions that write nothing are outside the census, named.
 select is(
   (select string_agg(c.fn, ' ' order by c.fn) from _census c where c.writes is null),
-  'commish_matchup_edit_lock draft_queue_for_team is_league_commish op_league_row_internal op_list_leagues_internal schedule_preview',
-  'C8 the six functions that match the gate shape and write no table (the edit-lock read, the commissioner''s Targets read — 178 / F524, the gate itself, the Remix preview, and 193''s two operator reads that look UP who the commissioner is — re-pinned additively, D521) are outside the census, by name');
+  'commish_matchup_edit_lock draft_queue_for_team is_league_commish op_league_row_internal op_list_leagues_internal schedule_preview scoring_system_label_lock_internal',
+  'C8 the seven functions that match the gate shape and write no table (the edit-lock read, the commissioner''s Targets read — 178 / F524, the gate itself, the Remix preview, 193''s two operator reads that look UP who the commissioner is — re-pinned additively, D521 — and 210''s scoring-label read, which asks whether the caller is the SITTING commissioner, F793 — re-pinned additively, D737) are outside the census, by name');
 
 -- C9 / C10: POSITIVE CONTROLS — the census catches a planted offender, and
 -- a helper named only in its comment and a string does not save it.
