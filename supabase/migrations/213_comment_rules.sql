@@ -19,7 +19,12 @@
 --       RAISES — a missing / already-removed comment P0002, someone else's
 --       42501 — so "nothing was removed" is never answered as done. It sets
 --       `deleted_at` (and `updated_at`) and nothing else, and answers who
---       removed it (author / list_owner / operator).
+--       removed it (author / list_owner / operator). An OPERATOR's removal
+--       also writes one `platform_operator_actions` row (182's "one row per
+--       operator change", through `log_operator_action_internal`; verb
+--       remove_list_comment, scope platform, ids + the instant, never the
+--       text), so it is on record however it was reached — not only when C10
+--       stamps a report reviewed (plan correction 12 keeps that stamp too).
 --     * Client UPDATE on list_comments is REVOKEd from anon and
 --       authenticated, so the RPC is the only way a comment changes. The two
 --       001 UPDATE policies are left in place (inert without the grant —
@@ -56,7 +61,12 @@
 --       never limited.
 --       The same guard makes a new comment's server-owned columns honest:
 --       `created_at` / `updated_at` are stamped now and `deleted_at` NULL, so
---       a client cannot post a backdated or pre-removed comment either.
+--       a client cannot post a backdated or pre-removed comment either. And
+--       a reply's `parent_id` must be a LIVE comment on the SAME list (the
+--       POST route's rule, which a direct PostgREST insert skipped): a
+--       removed parent, one on another list or on a private list, and one
+--       that does not exist all get the same 23503 "That comment isn't there
+--       to reply to." — so it reveals nothing about hidden comments.
 --
 -- PART 4 — THE NEW-COMMENT ALERT (S15). `list_comment_notify_owner_
 --   internal()` — AFTER INSERT on list_comments: the list's owner gets a
@@ -84,7 +94,9 @@
 --   * SECURITY DEFINER: the RPC (in-body gate, REVOKE PUBLIC / anon, EXECUTE
 --     authenticated) and the two trigger functions (REVOKE ALL from PUBLIC /
 --     anon / authenticated — triggers need no EXECUTE to fire), all
---     search_path '' with every name schema-qualified.
+--     search_path '' with every name schema-qualified. The RPC calls 182's
+--     PLAIN seam `log_operator_action_internal` (unchanged; it re-checks the
+--     actor is an operator) on its operator branch only.
 --   * Grants: UPDATE on list_comments REVOKEd from anon and authenticated
 --     (pgTAP 081 C3 names the two triples). No other grant changes.
 --   * Additive otherwise: one RPC, two trigger functions + triggers, one
@@ -102,7 +114,8 @@
 --     functions and the index; GRANT UPDATE ON list_comments TO anon,
 --     authenticated; re-create 001's SELECT policy; delete rate_limit_hits
 --     rows in the new buckets; restore 209's CHECK and rule body; drop the
---     two policy COMMENTs.
+--     two policy COMMENTs. (An operator removal's platform_operator_actions
+--     row is append-only by 182's design and stays — a record, not schema.)
 -- pgTAP 163_comment_rules.sql.
 -- ============================================================================
 
@@ -189,6 +202,19 @@ BEGIN
     RAISE EXCEPTION 'That comment isn''t there — it may already have been removed.' USING ERRCODE = 'P0002';
   END IF;
 
+  -- An operator's removal is an operator change: one platform_operator_actions
+  -- row (182's doctrine), however it was reached — Admin › Reports or a plain
+  -- call, reported or not. Ids and the instant only; never the comment's text.
+  -- The author's and the list owner's own removals write none.
+  IF v_as = 'operator' THEN
+    PERFORM public.log_operator_action_internal(
+      pg_catalog.gen_random_uuid(), v_uid, 'remove_list_comment', 'platform', NULL, NULL,
+      pg_catalog.jsonb_build_object('comment_id', p_comment_id, 'list_id', p_list_id,
+                                    'author_id', v_author, 'deleted_at', NULL),
+      pg_catalog.jsonb_build_object('comment_id', p_comment_id, 'list_id', p_list_id,
+                                    'author_id', v_author, 'deleted_at', v_at));
+  END IF;
+
   RETURN pg_catalog.jsonb_build_object(
     'comment_id', p_comment_id, 'list_id', p_list_id, 'removed_at', v_at, 'removed_as', v_as);
 END;
@@ -199,7 +225,8 @@ GRANT EXECUTE ON FUNCTION public.remove_list_comment(UUID, UUID) TO authenticate
 COMMENT ON FUNCTION public.remove_list_comment(UUID, UUID) IS
   '213 (Community C2): remove (soft-delete) one live comment on a list — its author, the list''s owner, '
   'or a platform operator. Raises P0002 when there is no such live comment and 42501 when it is not the '
-  'caller''s to remove; never answers done for nothing. The only way a comment changes (client UPDATE is revoked).';
+  'caller''s to remove; never answers done for nothing. The only way a comment changes (client UPDATE is revoked). '
+  'An operator''s removal writes one platform_operator_actions row (verb remove_list_comment; ids only, no text).';
 
 REVOKE UPDATE ON TABLE public.list_comments FROM anon, authenticated;
 
@@ -256,6 +283,17 @@ BEGIN
   NEW.updated_at := now();
   NEW.deleted_at := NULL;
 
+  -- A reply answers a live comment on the SAME list — the route's rule, held
+  -- here for a direct insert too: never a removed comment, nor one on another
+  -- list (a private one included). One answer for every case, so it says
+  -- nothing about whether a hidden comment exists. Checked before the hit is
+  -- taken (a refused statement rolls its hit back either way).
+  IF NEW.parent_id IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM public.list_comments p
+       WHERE p.id = NEW.parent_id AND p.list_id = NEW.list_id AND p.deleted_at IS NULL) THEN
+    RAISE EXCEPTION 'That comment isn''t there to reply to.' USING ERRCODE = '23503';
+  END IF;
+
   v_take := public.rate_limit_take_internal(v_uid, 'comment', v_uid, now());
   IF (v_take ->> 'allowed')::BOOLEAN THEN
     RETURN NEW;
@@ -280,7 +318,8 @@ $$;
 REVOKE ALL ON FUNCTION public.list_comment_insert_guard_internal() FROM PUBLIC, anon, authenticated;
 COMMENT ON FUNCTION public.list_comment_insert_guard_internal() IS
   '213 (Community C2): BEFORE INSERT on list_comments — a person''s own comment is stamped now (created_at, '
-  'updated_at; deleted_at NULL) and takes one "comment" hit (5 per 60s per person); over the limit the insert '
+  'updated_at; deleted_at NULL), a reply must answer a live comment on the same list (23503 otherwise, one '
+  'answer for every case), and it takes one "comment" hit (5 per 60s per person); over the limit the insert '
   'is refused with HTTP 429 + Retry-After (PostgREST PGRST envelope). Service-role writes are never limited.';
 
 CREATE TRIGGER tr_list_comments_insert_guard

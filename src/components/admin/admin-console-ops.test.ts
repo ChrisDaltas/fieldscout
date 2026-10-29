@@ -24,6 +24,7 @@ import {
   LEGACY_NOTICE_DRAFT_KEY,
   receiptDetail,
   stalledJobs,
+  verbWords,
   type OpGame,
   type OpPause,
   type OpPlatformState,
@@ -130,6 +131,11 @@ describe('plain words', () => {
     expect(receiptDetail({ verb: 'set_game_status', after: { game_id: 'g1', operator_hold: null } })).toBe('g1: Back to normal')
     expect(receiptDetail({ verb: 'set_game_status', after: { game_id: 'g1', operator_hold: 'out_of_week' } })).toBe('g1: Moved out of the week')
     expect(receiptDetail({ verb: 'pause_job', after: { job: 'waivers' } })).toBe('Waivers')
+  })
+
+  it('the operator log names a comment removal (213)', () => {
+    expect(verbWords('remove_list_comment')).toBe('Removed a comment')
+    expect(receiptDetail({ verb: 'remove_list_comment', after: { comment_id: 'c1', list_id: 'l1' } })).toBe('')
   })
 
   it('a pasted league link or id', () => {

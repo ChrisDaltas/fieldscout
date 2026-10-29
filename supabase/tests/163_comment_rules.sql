@@ -14,7 +14,9 @@
 --   §R  REMOVE — anon cannot run it; no uid / a stranger / a missing, moved
 --       or already-removed comment are refused by name (P0002 / 42501), never
 --       answered done; the author, the list's owner and a platform operator
---       each remove (removed_as golden); only deleted_at / updated_at change.
+--       each remove (removed_as golden); only deleted_at / updated_at change;
+--       the operator's removal (and only his) writes one
+--       platform_operator_actions row — ids and the instant, no text.
 --   §S  READS — a removed comment is hidden from anon, the list's owner and
 --       its author alike; private and comments-off lists keep their rules;
 --       the service role still reads removed rows.
@@ -30,6 +32,10 @@
 --       a comment RLS refuses spends nothing; service-role writes are never
 --       limited nor stamped; a client comment is stamped now and live; the
 --       client door still refuses the new buckets by name (159 K6b's rule).
+--   §P  REPLIES — a direct insert cannot reply to a removed comment, to one
+--       on another list (public or private) or to one that does not exist —
+--       one answer (23503) for all four; a reply to a live comment on the
+--       same list lands; the refused ones landed and spent nothing.
 -- Break probes (shown in the PR, reverted): (1) `deleted_at IS NULL`
 -- dropped from the SELECT policy ⇒ S red; (2) GRANT UPDATE back to
 -- authenticated ⇒ U red; (3) the notify trigger's own-comment clause removed
@@ -43,7 +49,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(67);
+select plan(75);
 
 create or replace function pg_temp.err(p_sql text) returns text language plpgsql as $$
 begin
@@ -261,6 +267,22 @@ select is(
   (select string_agg(id::text, ' ' order by id) from list_comments where id::text like 'c1630000-%' and deleted_at is null),
   'c1630000-0000-4000-8000-0000000000a3 c1630000-0000-4000-8000-0000000000a4',
   'R14 the refused calls removed nothing: the two comments nobody removed are still live');
+select is(
+  (select string_agg(format('%s|%s|%s|%s|%s|%s', actor_id, scope, coalesce(league_id::text, '-'), coalesce(reason, '-'),
+                            before, after - 'deleted_at'), ' || ')
+   from platform_operator_actions where verb = 'remove_list_comment'),
+  '99163000-0000-4000-8000-000000000004|platform|-|-|'
+  || '{"list_id": "a1630000-0000-4000-8000-000000000001", "author_id": "99163000-0000-4000-8000-000000000005", "comment_id": "c1630000-0000-4000-8000-0000000000a6", "deleted_at": null}|'
+  || '{"list_id": "a1630000-0000-4000-8000-000000000001", "author_id": "99163000-0000-4000-8000-000000000005", "comment_id": "c1630000-0000-4000-8000-0000000000a6"}',
+  'R15 exactly one operator-audit row, for the operator''s removal (R11) — the author''s (R7, R9) and the owner''s (R10) write none (golden)');
+select is(
+  (select format('%s|%s', ((a.after ->> 'deleted_at')::timestamptz = c.deleted_at)::text,
+                 (position('seed' in a.before::text || a.after::text || coalesce(a.metadata::text, '')) = 0)::text)
+   from platform_operator_actions a
+   join list_comments c on c.id = (a.after ->> 'comment_id')::uuid
+   where a.verb = 'remove_list_comment'),
+  'true|true',
+  'R16 …it records the removal''s instant and never the comment''s text');
 
 -- ---------------------------------------------------------------------------
 -- S. Reads — a removed comment is hidden from every reader
@@ -456,6 +478,33 @@ select set_config('request.jwt.claims', '', true);
 select is(pg_temp.err($$insert into rate_limit_hits (user_id, bucket, scope) values ('99163000-0000-4000-8000-000000000001', 'pick', '99163000-0000-4000-8000-000000000001')$$),
   '23514: new row for relation "rate_limit_hits" violates check constraint "rate_limit_hits_bucket_known"',
   'L18 the bucket CHECK refuses an unknown bucket');
+
+-- ---------------------------------------------------------------------------
+-- P. Replies — a live comment on the same list, held on a direct insert too
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims', '{"sub": "99163000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
+set local role authenticated;
+select is(pg_temp.err($$insert into list_comments (list_id, author_id, body, parent_id) values ('a1630000-0000-4000-8000-000000000001',
+                        '99163000-0000-4000-8000-000000000002', 'reply to removed', 'c1630000-0000-4000-8000-0000000000a1')$$),
+  '23503: That comment isn''t there to reply to.', 'P1 no reply to a removed comment (a1, removed in R7)');
+select is(pg_temp.err($$insert into list_comments (list_id, author_id, body, parent_id) values ('a1630000-0000-4000-8000-000000000004',
+                        '99163000-0000-4000-8000-000000000002', 'reply across lists', 'c1630000-0000-4000-8000-0000000000a3')$$),
+  '23503: That comment isn''t there to reply to.', 'P2 no reply on one list to a live comment on another public list');
+select is(pg_temp.err($$insert into list_comments (list_id, author_id, body, parent_id) values ('a1630000-0000-4000-8000-000000000001',
+                        '99163000-0000-4000-8000-000000000002', 'reply into private', 'c1630000-0000-4000-8000-0000000000a4')$$),
+  '23503: That comment isn''t there to reply to.', 'P3 no reply pointing at a comment on someone''s private list — the same answer');
+select is(pg_temp.err($$insert into list_comments (list_id, author_id, body, parent_id) values ('a1630000-0000-4000-8000-000000000001',
+                        '99163000-0000-4000-8000-000000000002', 'reply to nothing', 'c1630000-0000-4000-8000-0000000000ff')$$),
+  '23503: That comment isn''t there to reply to.', 'P4 …and a comment that never existed gets the same answer (nothing told about hidden ids)');
+select is(pg_temp.err($$insert into list_comments (list_id, author_id, body, parent_id) values ('a1630000-0000-4000-8000-000000000001',
+                        '99163000-0000-4000-8000-000000000002', 'a real reply', 'c1630000-0000-4000-8000-0000000000a3')$$),
+  'no error', 'P5 a reply to a live comment on the same list lands');
+reset role;
+select set_config('request.jwt.claims', '', true);
+select is(
+  (select format('replies=%s stored=%s', count(*) filter (where parent_id is not null), pg_temp.stored('99163000-0000-4000-8000-000000000002'))
+   from list_comments where author_id = '99163000-0000-4000-8000-000000000002'),
+  'replies=1 stored=4', 'P6 only the real reply landed, and the four refused ones spent nothing (u2: three before + one)');
 
 select * from finish();
 rollback;
