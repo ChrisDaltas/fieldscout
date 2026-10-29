@@ -32,10 +32,10 @@ export function isPlaceholderUsername(username: string | null | undefined): bool
 /*
  * Brand and staff handles nobody can claim (migration 215,
  * `username_is_reserved_internal` — the database refuses them; this mirror
- * lets the form say so before anyone presses Continue). The four lists below
- * are read out of the migration by username-contract.test.ts, so the two
- * cannot drift. Someone who already holds one keeps it; only a new claim is
- * refused.
+ * lets the form say so before anyone presses Continue). The lists below are
+ * read out of the migration by username-contract.test.ts, which also runs
+ * every example in pgTAP 165's §R through this function, so the two cannot
+ * drift. Someone who already holds one keeps it; only a new claim is refused.
  */
 export const RESERVED_USERNAME_BRAND = 'fieldscout'
 export const RESERVED_USERNAME_WORDS = [
@@ -47,33 +47,48 @@ export const RESERVED_USERNAME_WORDS = [
 export const RESERVED_USERNAME_BEFORE = ['fs', 'the', 'official'] as const
 export const RESERVED_USERNAME_AFTER = ['team', 'hq', 'desk', 'official'] as const
 
+/*
+ * Each letter, and every way of writing it that reads the same at small
+ * sizes (o = 0, i = l = 1, e = 3, a = 4, s = 5, t = 7, m = rn, d = cl,
+ * w = vv). i and l share one shape: "1" reads as both, so f1e1dscout is the
+ * brand. Index-aligned, as in the migration's `letters` / `shapes` arrays.
+ */
+export const RESERVED_USERNAME_LETTERS = ['o', 'i', 'l', 'e', 'a', 's', 't', 'm', 'd', 'w'] as const
+export const RESERVED_USERNAME_SHAPES = [
+  '[o0]', '[il1]', '[il1]', '[e3]', '[a4]', '[s5]', '[t7]', '(m|rn)', '(d|cl)', '(w|vv)',
+] as const
+
+/** A reserved word as a pattern: each letter replaced by its shape. */
+function shape(word: string): string {
+  return [...word]
+    .map((c) => {
+      const i = (RESERVED_USERNAME_LETTERS as readonly string[]).indexOf(c)
+      return i === -1 ? c : RESERVED_USERNAME_SHAPES[i]
+    })
+    .join('')
+}
+
+const RESERVED_BRAND_REGEX = new RegExp(shape(RESERVED_USERNAME_BRAND))
 const RESERVED_STAFF_REGEX = new RegExp(
-  `^(${RESERVED_USERNAME_BEFORE.join('|')})?(${RESERVED_USERNAME_WORDS.join('|')})(${RESERVED_USERNAME_AFTER.join('|')})?$`,
+  `^(${RESERVED_USERNAME_BEFORE.map(shape).join('|')})?(${RESERVED_USERNAME_WORDS.map(shape).join('|')})(${RESERVED_USERNAME_AFTER.map(shape).join('|')})?[0-9]*$`,
 )
 
-/** Look-alike digits read as letters, "1" both ways (Postgres `translate`). */
-function lookAlikes(value: string): [string, string] {
-  const read = (one: string) =>
-    value.replace(/[013457]/g, (d) => ({ '0': 'o', '1': one, '3': 'e', '4': 'a', '5': 's', '7': 't' })[d] ?? d)
-  return [read('i'), read('l')]
-}
-
 /**
- * True for a brand or staff handle: "fieldscout" anywhere (underscores out,
- * look-alike digits read as letters); a staff word on its own, optionally
- * with fs / the / official in front, team / hq / desk / official behind and a
- * number on the end; or the AI-account shape written with underscores (…_ai).
+ * True for a brand or staff handle, read lower-cased with the underscores
+ * taken out and look-alike spellings counted: "fieldscout" anywhere; or a
+ * staff word on its own, optionally with fs / the / official in front,
+ * team / hq / desk / official behind and a number on the end.
  */
 export function isReservedUsername(value: string): boolean {
-  const raw = value.toLowerCase()
-  const flat = raw.replace(/_/g, '')
-  const bare = flat.replace(/[0-9]+$/, '')
-  return (
-    lookAlikes(flat).some((v) => v.includes(RESERVED_USERNAME_BRAND)) ||
-    lookAlikes(bare).some((v) => RESERVED_STAFF_REGEX.test(v)) ||
-    /_ai$/.test(raw)
-  )
+  const flat = value.toLowerCase().replace(/_/g, '')
+  return RESERVED_BRAND_REGEX.test(flat) || RESERVED_STAFF_REGEX.test(flat)
 }
+
+/** The two patterns, exposed so the unit test can pin them. */
+export const RESERVED_USERNAME_PATTERNS = {
+  brand: RESERVED_BRAND_REGEX.source,
+  staff: RESERVED_STAFF_REGEX.source,
+} as const
 
 /** Returns a human-readable problem, or null when the value is acceptable. */
 export function validateUsername(value: string): string | null {
