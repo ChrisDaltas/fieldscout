@@ -133,8 +133,9 @@ describe('plain words', () => {
     expect(receiptDetail({ verb: 'pause_job', after: { job: 'waivers' } })).toBe('Waivers')
   })
 
-  it('the operator log names a comment removal (213)', () => {
+  it('the operator log names a comment removal (213) and a report review (214)', () => {
     expect(verbWords('remove_list_comment')).toBe('Removed a comment')
+    expect(verbWords('review_content_report')).toBe('Reviewed a report')
     expect(receiptDetail({ verb: 'remove_list_comment', after: { comment_id: 'c1', list_id: 'l1' } })).toBe('')
   })
 

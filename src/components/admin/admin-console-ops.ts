@@ -313,6 +313,8 @@ export const VERB_WORDS: Record<string, string> = {
   set_commissioner: 'Made a commissioner',
   // 213 (Community C2): an operator removing someone's comment.
   remove_list_comment: 'Removed a comment',
+  // 214 (Community C9): an operator marking a report reviewed (Admin › Reports).
+  review_content_report: 'Reviewed a report',
 }
 
 export function verbWords(verb: string): string {

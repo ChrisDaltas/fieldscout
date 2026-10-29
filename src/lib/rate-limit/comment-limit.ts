@@ -23,16 +23,13 @@
  * still holds the same 5-a-minute pace, so the experience is the same.
  */
 
+import { parseRateLimitRefusal, type PostgrestErrorShape } from './rate-limit-refusal'
+
+export type { PostgrestErrorShape }
+
 /** 213's numbers, mirrored for the comment box's count (the server decides). */
 export const COMMENT_LIMIT = 5
 export const COMMENT_WINDOW_MS = 60_000
-
-/** The fields a supabase-js / PostgREST error carries. */
-export interface PostgrestErrorShape {
-  code?: string | null
-  message?: string | null
-  details?: string | null
-}
 
 export interface CommentRateLimit {
   /** The server's wait, whole seconds (≥ 1). */
@@ -41,14 +38,13 @@ export interface CommentRateLimit {
   message: string
 }
 
-/** 213's refusal, or `null` for any other error. */
+/** 213's refusal, or `null` for any other error (the shared reader, with the
+ *  comment window as the fallback wait and the comment copy as the fallback words). */
 export function parseCommentRateLimit(error: PostgrestErrorShape | null | undefined): CommentRateLimit | null {
-  if (!error || error.code !== 'rate_limited') return null
-  const match = /retry_after_seconds=(\d+)/.exec(error.details ?? '')
-  const seconds = match ? Number(match[1]) : NaN
-  const retryAfterSeconds = Number.isFinite(seconds) && seconds >= 1 ? Math.ceil(seconds) : 60
-  const message = error.message?.trim() || commentRefusalCopy(retryAfterSeconds)
-  return { retryAfterSeconds, message }
+  const refusal = parseRateLimitRefusal(error, COMMENT_WINDOW_MS / 1000)
+  if (!refusal) return null
+  const { retryAfterSeconds, serverMessage } = refusal
+  return { retryAfterSeconds, message: serverMessage ?? commentRefusalCopy(retryAfterSeconds) }
 }
 
 function secondsWord(seconds: number): string {

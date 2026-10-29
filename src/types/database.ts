@@ -856,6 +856,67 @@ export type Database = {
           },
         ]
       }
+      content_reports: {
+        Row: {
+          created_at: string
+          id: string
+          list_id: string | null
+          note: string | null
+          reason: string | null
+          reporter_id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          target_id: string
+          target_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          list_id?: string | null
+          note?: string | null
+          reason?: string | null
+          reporter_id: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          target_id: string
+          target_type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          list_id?: string | null
+          note?: string | null
+          reason?: string | null
+          reporter_id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          target_id?: string
+          target_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_reports_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_reports_reporter_id_fkey"
+            columns: ["reporter_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_reports_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cred_scores: {
         Row: {
           average_accuracy: number | null
@@ -6614,6 +6675,10 @@ export type Database = {
         }
         Returns: string
       }
+      mark_content_report_reviewed: {
+        Args: { p_report_id: string }
+        Returns: Json
+      }
       matchup_broadcast_payload: {
         Args: { m: Database["public"]["Tables"]["matchups"]["Row"] }
         Returns: Json
@@ -6979,6 +7044,15 @@ export type Database = {
       reorder_list_players: {
         Args: { p_list_id: string; p_positions: Json }
         Returns: undefined
+      }
+      report_content: {
+        Args: {
+          p_note?: string
+          p_reason?: string
+          p_target_id: string
+          p_target_type: string
+        }
+        Returns: Json
       }
       restore_league: {
         Args: { p_league_id: string; p_reason?: string }
@@ -7869,6 +7943,8 @@ export type CommishLineupAction =
   Database['public']['Tables']['commish_lineup_actions']['Row']
 export type CommishMatchupAction =
   Database['public']['Tables']['commish_matchup_actions']['Row']
+// 214 (Community C9): server-owned — read only with the service role (Admin › Reports).
+export type ContentReport = Database['public']['Tables']['content_reports']['Row']
 export type LineupAction = Database['public']['Tables']['lineup_actions']['Row']
 export type List = Database['public']['Tables']['lists']['Row']
 export type ListComment = Database['public']['Tables']['list_comments']['Row']
