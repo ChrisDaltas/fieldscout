@@ -9,6 +9,7 @@ import { MobileScreen, MPageBar } from '@/components/mobile/ui/mobile-header'
 import { useLeagues } from '@/hooks/use-leagues'
 
 import { LEAGUES_COPY, LEAGUES_PARENT } from './leagues-ops'
+import { MobileArchivedLeagues } from './mobile-league-archive'
 
 /**
  * Leagues on the phone (`/app/leagues`, gap list §4 item 104) — the same
@@ -82,6 +83,8 @@ export function MobileLeagues() {
       <div className="px-4 pb-8 pt-3" data-leagues>
         {body}
         <JoinOrCreate />
+        {/* F716 (212): leagues their commissioner archived — read-only, Restore for him. */}
+        <MobileArchivedLeagues />
       </div>
     </MobileScreen>
   )

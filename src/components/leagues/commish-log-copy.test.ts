@@ -400,6 +400,9 @@ describe('league setup (129 / 169) in words', () => {
     expect(line({ action_type: 'edit_league_profile', target_type: 'league', before: { avatar_url: null }, after: { avatar_url: 'https://x' } })).toBe('changed the league picture')
     expect(line({ action_type: 'lifecycle_change', target_type: 'league', before: { status: 'setup' }, after: { status: 'scheduled' } })).toBe('moved the league from setting up to draft scheduled')
     expect(line({ action_type: 'delete_league', target_type: 'league', before: { deleted: false }, after: { deleted: true } })).toBe('deleted the league')
+    // 212 (F716): leagues are archived and restored, never deleted (older delete receipts still read).
+    expect(line({ action_type: 'archive_league', target_type: 'league', before: { archived: false }, after: { archived: true } })).toBe('archived the league')
+    expect(line({ action_type: 'restore_league', target_type: 'league', before: { archived: true }, after: { archived: false } })).toBe('restored the league')
   })
 
   it('the bracket (134) and a waiver claim made for a team (145) — blind: no player, no bid', () => {

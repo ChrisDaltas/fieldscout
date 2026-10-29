@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { listMyArchivedLeagues } from '@/lib/leagues/api/league-archive-service'
 import { createLeague, listMyLeagues } from '@/lib/leagues/api/leagues-service'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -23,8 +24,11 @@ export async function POST(request: Request) {
   return NextResponse.json(result.body, { status: result.status })
 }
 
-/** GET /api/leagues — my leagues via league_members (spec §15.1). */
-export async function GET() {
+/** GET /api/leagues — my leagues via league_members (spec §15.1). An
+ *  ARCHIVED league is not one of them (212 / F716 — `deleted_at` is the
+ *  archived-at stamp); `?archived=1` lists those instead, read-only, for the
+ *  Leagues page's "Archived leagues" section. */
+export async function GET(request: Request) {
   const supabase = await createServerClient()
   const {
     data: { user },
@@ -33,6 +37,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const result = await listMyLeagues(supabase, user.id)
+  const archived = new URL(request.url).searchParams.get('archived') === '1'
+  const result = archived ? await listMyArchivedLeagues(supabase, user.id) : await listMyLeagues(supabase, user.id)
   return NextResponse.json(result.body, { status: result.status })
 }

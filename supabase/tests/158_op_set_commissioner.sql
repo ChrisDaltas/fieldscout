@@ -98,7 +98,7 @@ select v.id::uuid, v.owner::uuid, v.nm, 2097, 'setup', 8, '{}',
 from (values
   ('b1580000-0000-4000-8000-000000000001', '99158000-0000-4000-8000-000000000001', 'x158 One', null),
   ('b1580000-0000-4000-8000-000000000002', '99158000-0000-4000-8000-000000000006', 'x158 Two', null),
-  ('b1580000-0000-4000-8000-0000000000dd', '99158000-0000-4000-8000-000000000001', 'x158 Deleted', '2097-02-01 00:00+00'),
+  ('b1580000-0000-4000-8000-0000000000dd', '99158000-0000-4000-8000-000000000001', 'x158 Deleted', null),   -- stamped below, after its member rows (212)
   ('b1580000-0000-4000-8000-0000000000ee', '99158000-0000-4000-8000-000000000007', 'x158 Headless', null)
 ) v(id, owner, nm, del);
 
@@ -122,6 +122,11 @@ insert into league_members (id, league_id, user_id, team_id, role, is_placeholde
  ('d1580000-0000-4000-8000-0000000000d2', 'b1580000-0000-4000-8000-0000000000dd', '99158000-0000-4000-8000-000000000002', null, 'manager', false),
  ('d1580000-0000-4000-8000-000000000007', 'b1580000-0000-4000-8000-0000000000ee', '99158000-0000-4000-8000-000000000007', 'c1580000-0000-4000-8000-000000000007', 'co_commissioner', false),
  ('d1580000-0000-4000-8000-000000000008', 'b1580000-0000-4000-8000-0000000000ee', '99158000-0000-4000-8000-000000000008', 'c1580000-0000-4000-8000-000000000008', 'manager', false);
+-- RE-CUT BY 212 (F716): a soft-deleted league is now an ARCHIVED one, and an
+-- archived league's rows refuse every write (league_archived_guard_internal),
+-- so the fixture builds the league's rows FIRST and stamps deleted_at LAST —
+-- the same end state the cells below read.
+update leagues set deleted_at = '2097-02-01 00:00+00' where id = 'b1580000-0000-4000-8000-0000000000dd';
 
 create temp table r158 (tag text primary key, r jsonb);
 grant all on r158 to anon, authenticated, service_role;
@@ -256,7 +261,7 @@ set local role authenticated;
 insert into r158 select 'N', op_set_commissioner('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-000000000002',
   'a1580000-0000-4000-8000-000000000002');
 select is(pg_temp.err($$select op_set_commissioner('b1580000-0000-4000-8000-0000000000dd', 'd1580000-0000-4000-8000-0000000000d2', 'a1580000-0000-4000-8000-000000000003')$$),
-  'P0002: set_commissioner: league b1580000-0000-4000-8000-0000000000dd does not exist', 'N2 a deleted league is refused');
+  'P0002: set_commissioner: league b1580000-0000-4000-8000-0000000000dd is archived — restore it first (the admin league page''s Restore)', 'N2 a deleted league is refused — RE-CUT BY 212 (R1733): named as archived, not "does not exist"');
 select is(pg_temp.err($$select op_set_commissioner('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-000000000006', 'a1580000-0000-4000-8000-000000000004')$$),
   'P0002: set_commissioner: member d1580000-0000-4000-8000-000000000006 is not in this league', 'N3 another league''s member is refused');
 select is(pg_temp.err($$select op_set_commissioner('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-0000000000ff', 'a1580000-0000-4000-8000-000000000005')$$),

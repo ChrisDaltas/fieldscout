@@ -68,6 +68,10 @@ banner **"Live stats delayed — scores show the last update we received."**
 4. **Our scoring is stalled.** Write down what **Scheduler** and **Stalled
    jobs** say (the exact words and times), and raise it with Chris as a
    bug. Then send the notice in step 2, which is true in this case too.
+   - A `STALE-WRITE WINDOW` line in the `score-week` log with `lease_lost`
+     just after a league was restored is expected, not a fault: the restore
+     takes back the lease on that league's queued scores, and the next run
+     re-scores them (R1757).
 
 5. **After it recovers: check the numbers.**
    - For a week that has already finished, re-pull its stats:

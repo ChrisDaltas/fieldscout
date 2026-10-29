@@ -20,6 +20,7 @@ import {
   pageWords,
   recordWords,
   roleWords,
+  restoreLeagueConfirm,
   setCommissionerUrl,
   type LeagueSort,
   type OpLeagueDetail,
@@ -108,7 +109,7 @@ export function AdminLeagueTablePage() {
               }}
             />
             <Label htmlFor="admin-leagues-deleted" className="text-[11px] font-medium text-n-3">
-              Show deleted
+              Show archived
             </Label>
           </div>
         </div>
@@ -167,7 +168,7 @@ export function LeagueTableBody({
     <div className={cn('flex flex-col gap-2', fetching && 'opacity-70')} data-league-table>
       <p className="text-[11px] font-semibold text-n-3" data-league-total={list.total}>
         {pageWords(list)}
-        {list.include_deleted ? ' (deleted included)' : ''}
+        {list.include_deleted ? ' (archived included)' : ''}
       </p>
       <Table>
         <TableHeader>
@@ -243,9 +244,11 @@ function LeagueTableRow({ league: l, onOpen }: { league: OpLeagueRow; onOpen: (i
         >
           {l.name}
         </Link>
+        {/* 212 (F716): `deleted_at` is the archived-at stamp — leagues are
+            archived by their commissioner, never deleted. */}
         {l.deleted_at && (
-          <Badge variant="pink" className="mt-0.5" data-deleted>
-            Deleted {day(l.deleted_at)}
+          <Badge variant="pink" className="mt-0.5" data-archived>
+            Archived {day(l.deleted_at)}
           </Badge>
         )}
       </TableCell>
@@ -341,14 +344,28 @@ export function LeagueDetailBody({
             <span className="fs-num">{l.members}</span> {l.members === 1 ? 'manager' : 'managers'} in{' '}
             <span className="fs-num">{l.team_count}</span> seats ·{' '}
             <span className="fs-num">{l.open_seats}</span> open · {l.phase}
-            {l.deleted_at && <> · deleted {day(l.deleted_at)}</>}
+            {l.deleted_at && <> · archived {day(l.deleted_at)}</>}
           </>
         }
         data-admin-section="league-members"
       >
+        {/* F851 (212): an archived league can be restored by FieldScout — its
+            commissioner may be the one who is gone. */}
+        {l.deleted_at && (
+          <div className="flex flex-wrap items-center gap-2.5 rounded-message bg-surface-sunken px-3 py-2" data-archived-notice>
+            <span className="mr-auto text-[11px] font-semibold text-ink">
+              Archived {day(l.deleted_at)} — hidden from its members, and nothing in it changes.
+            </span>
+            {onConfirm && (
+              <Button size="sm" variant="stroke" onClick={() => onConfirm(restoreLeagueConfirm(l))} data-restore-league={l.id}>
+                Restore league
+              </Button>
+            )}
+          </div>
+        )}
         {detail.record_error && (
           <p className="text-[11px] font-semibold text-caution-strong" data-record-error>
-            Records not shown: {detail.record_error}
+            Records not shown: {recordErrorWords(detail.record_error)}
           </p>
         )}
         {detail.members.length === 0 ? (
@@ -450,4 +467,12 @@ export function LeagueDetailBody({
       </AdminSection>
     </>
   )
+}
+
+/** 193's detail read still says "deleted" for a league whose `deleted_at` is
+ *  set (SQL text pinned by pgTAP 141); since 212 (F716) that stamp means
+ *  ARCHIVED, so the operator reads the word that is true. Anything else
+ *  passes through unchanged. */
+export function recordErrorWords(text: string): string {
+  return text === 'The league is deleted, so it has no standings.' ? 'The league is archived, so its standings aren’t shown.' : text
 }

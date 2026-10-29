@@ -71,7 +71,9 @@ select is(
      and p.proname not in ('op_list_leagues', 'op_list_leagues_internal', 'op_league_detail',
        'op_league_detail_internal', 'op_league_row_internal')
      -- RE-PINNED BY 208 (F750, additive, R992): op_set_commissioner's pair is pinned by pgTAP 158 A1.
-     and p.proname not like 'op\_set\_commissioner%'),
+     and p.proname not like 'op\_set\_commissioner%'
+     -- RE-PINNED BY 212 (F851, additive, R992): the operator's restore + its prelude are pinned by pgTAP 162 A2.
+     and p.proname not in ('op_restore_league', 'op_restore_league_internal', 'op_archived_league_prelude_internal')),
   'op_job_check_internal=f:search_path="":f:f op_job_words_internal=f:search_path="":f:f op_league_line_internal=f:search_path="":f:f op_pause_job=t:search_path="":f:t op_pause_job_internal=f:search_path="":f:f op_resume_job=t:search_path="":f:t op_resume_job_internal=f:search_path="":f:f op_run_job_now=t:search_path="":f:t op_run_job_now_internal=f:search_path="":f:f op_verb_prelude_internal=f:search_path="":f:f',
   'A4 the three doors DEFINER + search_path '''' + authenticated only; every internal plain and closed to anon / authenticated');
 select is(
@@ -103,6 +105,12 @@ select ok(
 
 -- pg_temp.un183 — migration 183's two inserted lines per job body removed
 -- (each marked `183 / L.G1.3 (TD4)`); an identity on every other body.
+-- pg_temp.un212 — migration 212's inserted lines removed (each ends
+-- `-- 212 / F716…`; pgTAP 162 A9 pins them); an identity on every body
+-- without them.
+create function pg_temp.un212(p_src text) returns text language sql as $un212$
+  select regexp_replace(p_src, E'\n[^\n]*-- 212 / F716[^\n]*', '', 'g')
+$un212$;
 create function pg_temp.un183(p_src text) returns text language sql as $un183$
   select regexp_replace(
            regexp_replace(p_src,
@@ -110,7 +118,7 @@ create function pg_temp.un183(p_src text) returns text language sql as $un183$
            E'        AND NOT public\\.job_paused_internal\\(''[a-z-]+'', l\\.id\\)   -- 183 / L\\.G1\\.3 \\(TD4\\)\n', '', 'g')
 $un183$;
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un183(p.prosrc)), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un183(pg_temp.un212(p.prosrc))), ' ' order by p.proname)   -- 212 (R1755): finalize's restore-window hunk removed first
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('waiver_tick', 'league_week_advance', 'finalize_matchups')),
   'finalize_matchups=5239ab311af797a401bb91d00d78f9bd league_week_advance=1ea76a893bada31b54ebe1a82f004625 waiver_tick=8477f03af76d5117fa021e3b38cd1667',

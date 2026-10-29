@@ -165,3 +165,30 @@ export function commissionerBeforeAfter(
 export function setCommissionerUrl(leagueId: string): string {
   return `/api/admin/leagues/${encodeURIComponent(leagueId)}/commissioner`
 }
+
+// FieldScout restores an archived league (F851; migration 212 `op_restore_league`).
+export const RESTORE_LEAGUE_UNAVAILABLE = 'Restoring a league is not available yet.'
+
+export function restoreLeagueUrl(leagueId: string): string {
+  return `/api/admin/leagues/${encodeURIComponent(leagueId)}/restore`
+}
+
+/** The confirm dialog for restoring an archived league (F851). */
+export function restoreLeagueConfirm(league: Pick<OpLeagueRow, 'id' | 'name'>): {
+  title: string
+  before: string
+  after: string
+  confirmLabel: string
+  url: string
+  body: Record<string, unknown>
+} {
+  return {
+    title: `Restore ${league.name}`,
+    before: 'The league is archived: hidden from its members, and nothing in it changes.',
+    after:
+      'The league is back for every member, exactly as it was. The league sees “FieldScout restored the league.” If its commissioner is gone, make a member the commissioner next.',
+    confirmLabel: 'Restore league',
+    url: restoreLeagueUrl(league.id),
+    body: {},
+  }
+}

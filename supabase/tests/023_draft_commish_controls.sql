@@ -430,7 +430,7 @@ insert into leagues (id, owner_id, name, season, status, team_count,
                      scoring_system_id, settings, deleted_at) values
   ('b4000000-0000-4000-8000-0000000000f2', '93000000-0000-4000-8000-000000000007',
    'pgtap-cc-LD-deleted', 2026, 'scheduled', 8, null, '{}',
-   now() - interval '1 day');
+   null);   -- stamped below, after its rows (212)
 -- (league status 'scheduled', not 'drafting': the D43 guard refuses a
 -- snapshot-less 'drafting' league, and the outage arm reads ONLY
 -- drafts.status + leagues.deleted_at — the LP fabrication precedent.)
@@ -449,6 +449,11 @@ insert into drafts (id, league_id, draft_type, status, is_mock, config,
 insert into draft_liveness (draft_id, user_id, last_seen_at) values
   ('e4000000-0000-4000-8000-0000000000f2', '93000000-0000-4000-8000-000000000007',
    now() - interval '2 hours');
+-- RE-CUT BY 212 (F716): a soft-deleted league is now an ARCHIVED one, and an
+-- archived league's rows refuse every write (league_archived_guard_internal),
+-- so the fixture builds the league's rows FIRST and stamps deleted_at LAST —
+-- the same end state the cells below read.
+update leagues set deleted_at = now() - interval '1 day' where id = 'b4000000-0000-4000-8000-0000000000f2';
 
 -- LR: t1 holds cc-rb15 (pick 1), t2 holds cc-rb16 (pick 2) — t2 is AT
 -- capacity (total_rounds 1).

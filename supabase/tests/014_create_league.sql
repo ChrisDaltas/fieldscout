@@ -45,7 +45,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(53);
+select plan(54);   -- 53 until 212 (F716) added E0: soft_delete_league is retired
 
 -- ---------------------------------------------------------------------------
 -- A. Shape: functions, SECURITY DEFINER + search_path, ACLs, column, UNIQUE.
@@ -388,37 +388,47 @@ select is(
   8,
   'edge size 8 stored');
 
--- u2 is not a member of u1's league: soft delete refused (42501), and a
--- NONEXISTENT league id yields the same error — no existence leak.
+-- RE-CUT BY 212 (F716, Chris 2026-10-27 — leagues are archived, never
+-- deleted): soft_delete_league is retired (refuses every caller, 0A000); the
+-- league leaves the lists through archive_league, the commissioner's alone.
+-- These cells keep their claims on the door that replaced it.
 select throws_ok(
   $$ select public.soft_delete_league(
        (select id from public.leagues where creation_action_id = 'ac000000-0000-4000-8000-000000000001')) $$,
-  '42501',
-  'soft_delete_league: not a commissioner of this league',
-  'a non-member cannot soft-delete (42501, exact message)');
+  '0A000',
+  'soft_delete_league: leagues are archived, not deleted — the commissioner archives the league (archive_league) and can restore it',
+  'E0 (212) soft_delete_league is retired — refused by name for every caller');
+-- u2 is not a member of u1's league: archive refused (42501), and a
+-- NONEXISTENT league id yields the same error — no existence leak.
 select throws_ok(
-  $$ select public.soft_delete_league('ea000000-0000-4000-8000-00000000dead') $$,
+  $$ select public.archive_league(
+       (select id from public.leagues where creation_action_id = 'ac000000-0000-4000-8000-000000000001')) $$,
   '42501',
-  'soft_delete_league: not a commissioner of this league',
+  'archive_league: only the league''s commissioner can archive it — a co-commissioner or a manager cannot',
+  'a non-member cannot archive (42501, exact message)');
+select throws_ok(
+  $$ select public.archive_league('ea000000-0000-4000-8000-00000000dead') $$,
+  '42501',
+  'archive_league: only the league''s commissioner can archive it — a co-commissioner or a manager cannot',
   'nonexistent league yields the SAME 42501 — no existence leak');
 
 -- ---------------------------------------------------------------------------
--- F. u1 soft-deletes own league; idempotent on retry.
+-- F. u1 archives own league (212 — was the soft delete); idempotent on retry.
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims',
   '{"sub": "77000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 
 select lives_ok(
-  $$ select public.soft_delete_league(
+  $$ select public.archive_league(
        (select id from public.leagues where creation_action_id = 'ac000000-0000-4000-8000-000000000001')) $$,
-  'the commissioner soft-deletes their league');
+  'the commissioner archives their league');
 select ok(
   (select deleted_at from leagues where creation_action_id = 'ac000000-0000-4000-8000-000000000001') is not null,
-  'deleted_at is set (soft delete — the row survives, CLAUDE.md rule 8)');
+  'deleted_at is set (archived — the row survives, CLAUDE.md rule 8; deleted_at means "archived at" since 212)');
 select lives_ok(
-  $$ select public.soft_delete_league(
+  $$ select public.archive_league(
        (select id from public.leagues where creation_action_id = 'ac000000-0000-4000-8000-000000000001')) $$,
-  'a retried delete is an idempotent no-op (D63 doctrine)');
+  'a retried archive is an idempotent no-op (D63 doctrine)');
 
 -- R76: retrying the ORIGINAL create against the now soft-deleted league must
 -- NOT replay success (a route 200 whose league 404s on detail) — friendly

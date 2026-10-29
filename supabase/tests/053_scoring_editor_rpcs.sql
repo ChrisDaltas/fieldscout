@@ -322,7 +322,7 @@ from (values ('a1','pgtap-se5-setup','setup'),
              ('a7','pgtap-se5-deleted','setup'),
              ('a8','pgtap-se5-other','setup')) v(sfx, nm, st);
 
-update leagues set deleted_at = now() where id = 'b0530000-0000-4000-8000-0000000000a7';
+-- (a7 is stamped deleted below, after its member rows — 212.)
 
 insert into league_members (league_id, user_id, role)
 select l.id, m.uid::uuid, m.role
@@ -334,6 +334,11 @@ where l.name like 'pgtap-se5-%' and l.name <> 'pgtap-se5-other';
 
 insert into league_members (league_id, user_id, role) values
   ('b0530000-0000-4000-8000-0000000000a8', '90530000-0000-4000-8000-000000000005', 'commissioner');
+-- RE-CUT BY 212 (F716): a soft-deleted league is now an ARCHIVED one, and an
+-- archived league's rows refuse every write (league_archived_guard_internal),
+-- so the fixture builds the league's rows FIRST and stamps deleted_at LAST —
+-- the same end state the cells below read.
+update leagues set deleted_at = now() where id = 'b0530000-0000-4000-8000-0000000000a7';
 
 -- A personal research row owned by the OUTSIDER: the "any other non-template
 -- row" §F2 proves still refuses.

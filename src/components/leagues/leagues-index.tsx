@@ -26,6 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { LayoutMode } from '@/hooks/use-layout-mode'
 import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 
+import { ArchivedLeaguesSection } from './league-archive'
 import { Crest } from './league-cells'
 import { extractJoinCode } from './invite-panel-ops'
 import { LeagueCreateModal } from './league-create-modal'
@@ -276,6 +277,10 @@ export function LeaguesIndex() {
           </div>
         </Card>
       )}
+
+      {/* F716 (212): the leagues their commissioner archived — read-only;
+          Restore for the commissioner. Renders nothing when there are none. */}
+      <ArchivedLeaguesSection />
     </div>
   )
 }

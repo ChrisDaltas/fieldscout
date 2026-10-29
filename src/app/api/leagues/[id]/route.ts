@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { deleteLeague, getLeagueDetail, patchLeague } from '@/lib/leagues/api/leagues-service'
+import { LEAGUE_DELETE_RETIRED_MESSAGE } from '@/lib/leagues/api/league-archive-service'
+import { getLeagueDetail, patchLeague } from '@/lib/leagues/api/leagues-service'
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -57,21 +58,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   return NextResponse.json(result.body, { status: result.status })
 }
 
-/** DELETE /api/leagues/[id] — commish soft delete via RPC (§15.1; Q8/v2.8.2). */
-export async function DELETE(_request: Request, { params }: RouteParams) {
-  const { id } = await params
-  if (!idSchema.safeParse(id).success) {
-    return NextResponse.json({ error: 'League not found' }, { status: 404 })
-  }
-
-  const supabase = await createServerClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const result = await deleteLeague(supabase, id)
-  return NextResponse.json(result.body, { status: result.status })
+/** DELETE /api/leagues/[id] — RETIRED by 212 (F716, Chris 2026-10-27:
+ *  leagues are archived, never deleted). Answers 405 in plain words, for
+ *  every caller, without touching the database; the commissioner archives
+ *  through POST /api/leagues/[id]/archive. */
+export async function DELETE() {
+  return NextResponse.json({ error: LEAGUE_DELETE_RETIRED_MESSAGE }, { status: 405, headers: { Allow: 'GET, PATCH' } })
 }

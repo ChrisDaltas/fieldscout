@@ -29,7 +29,7 @@ import {
   rotateInviteCode,
   setInviteSlug,
 } from './invites-service'
-import { deleteLeague } from './leagues-service'
+import { archiveLeague } from './league-archive-service'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_ANON_KEY =
@@ -111,6 +111,10 @@ async function cleanup(): Promise<void> {
     .like('name', `${LEAGUE_NAME_PREFIX}%`)
   const ids = (stale ?? []).map((row) => row.id)
   if (ids.length > 0) {
+    // 212 (F716): an ARCHIVED league's rows refuse every write — so the
+    // fixtures this suite archived are brought back first (the restore-shaped
+    // update is the one write an archived league's row accepts).
+    await service.from('leagues').update({ deleted_at: null, archived_by: null }).in('id', ids)
     await service.from('teams').delete().in('league_id', ids)
     await service.from('leagues').delete().in('id', ids)
   }
@@ -513,7 +517,8 @@ describe('batch-14 hardening: nested-route scoping, deleted-league status, slug 
 
   it('R87: a SOFT-DELETED league answers 404 on all three commish invite RPCs — the same answer a malformed id already gets, never a 400 (and never an invite_slug field error)', async () => {
     const league3Id = await createLeagueAsCommish(`${LEAGUE_NAME_PREFIX}-3`, ACTION.league3)
-    const gone = await deleteLeague(commishClient, league3Id)
+    // 212 (F716): leagues are archived, not deleted — the same deleted_at stamp.
+    const gone = await archiveLeague(commishClient, league3Id, {})
     expect(gone.status).toBe(200)
 
     const create = await createInvite(commishClient, league3Id, { max_uses: 1 })
