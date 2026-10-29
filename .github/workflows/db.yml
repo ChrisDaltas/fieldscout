@@ -129,6 +129,10 @@ on:
       - 'scripts/correction-replay-source.ts'
       - 'scripts/correction-snapshot-diff.ts'
       - 'scripts/correction-events-export.ts'
+      # M7 L.F2.3: the chaos drills' fallback poller, duplicate-pick check and reconcile CLI
+      - 'src/hooks/use-realtime-fallback-poll-ops.ts'
+      - 'load/k6/lib/checks.ts'
+      - 'scripts/reconcile.ts'
       # the captures the replay scan reads (R1434) — a capture-only PR must run it
       - 'fixtures/nfl/**'
   push:
@@ -170,6 +174,10 @@ on:
       - 'scripts/correction-replay-source.ts'
       - 'scripts/correction-snapshot-diff.ts'
       - 'scripts/correction-events-export.ts'
+      # M7 L.F2.3: the chaos drills' fallback poller, duplicate-pick check and reconcile CLI
+      - 'src/hooks/use-realtime-fallback-poll-ops.ts'
+      - 'load/k6/lib/checks.ts'
+      - 'scripts/reconcile.ts'
       # the captures the replay scan reads (R1434) — a capture-only PR must run it
       - 'fixtures/nfl/**'
 

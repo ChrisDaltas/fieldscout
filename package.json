@@ -44,6 +44,7 @@
     "test:unit": "vitest run --exclude '**/node_modules/**' --exclude '**/*-db.test.ts' --exclude '**/m1-gate/**'",
     "test:stack": "vitest run 'db.test' 'm1-gate'",
     "test:gate": "vitest run src/lib/leagues/gate",
+    "test:chaos": "vitest run src/lib/leagues/chaos",
     "test:gate:m1": "bash scripts/gate-m1.sh",
     "test:gate:m2": "bash scripts/gate-m2.sh",
     "test:gate:m3": "bash scripts/gate-m3.sh",

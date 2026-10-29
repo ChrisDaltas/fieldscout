@@ -167,6 +167,9 @@ export interface IngestStatsReport {
   empty: number
   /** Advanced keys dropped because they are not registry-canonical (D33). */
   droppedAdvancedKeys: number
+  /** Rows dropped as byte-identical repeats of a line already in this answer
+   *  (M7 L.F2.3, F830 — `collapseIdenticalRows`). */
+  duplicates: number
   inserted: number
   /** Existing rows whose scoring inputs (box columns / advanced) moved. */
   updated: number
@@ -560,6 +563,44 @@ export interface StatDiff {
   /** Only is_live / game_id / source moved — written, NOT enqueued. */
   metaOnly: StatRow[]
   unchanged: number
+}
+
+/** Key-sorted JSON — two rows are the same line iff these strings are equal. */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'undefined'
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`
+}
+
+/**
+ * M7 L.F2.3 (PROGRESS F830 / D762): a provider answer that carries the SAME
+ * line for a player more than once is one line — §23.2's "every upsert is
+ * idempotent". Byte-identical copies (after `toStatRow`) collapse to the
+ * first; the door (167) refuses a batch naming one player twice, so before
+ * this a single repeated row refused the whole week's poll, every poll,
+ * until the provider stopped repeating it. Copies that DIFFER are left
+ * exactly as they arrive — which of two numbers to believe is not decided
+ * here (PROGRESS F831).
+ */
+export function collapseIdenticalRows(rows: readonly StatRow[]): { rows: StatRow[]; collapsed: number } {
+  const keptByPlayer = new Map<string, Set<string>>()
+  const out: StatRow[] = []
+  let collapsed = 0
+  for (const row of rows) {
+    const key = canonicalJson(row)
+    const kept = keptByPlayer.get(row.player_id)
+    if (kept?.has(key)) {
+      collapsed += 1
+      continue
+    }
+    if (kept) kept.add(key)
+    else keptByPlayer.set(row.player_id, new Set([key]))
+    out.push(row)
+  }
+  return { rows: out, collapsed }
 }
 
 /**
@@ -993,6 +1034,7 @@ function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degr
       unknownPlayer: 0,
       empty: 0,
       droppedAdvancedKeys: 0,
+      duplicates: 0,
       inserted: 0,
       updated: 0,
       metaOnly: 0,
@@ -1113,6 +1155,18 @@ function correctionsReason(report: IngestReport, deltas: number, writes: number)
  * contract. Returns a report; throws only on a DB failure (a provider
  * failure is a REPORTED failed poll, never a throw — the tracker is the
  * flag, and the caller's loop keeps polling).
+ *
+ * M7 L.F2.3 (PROGRESS D766): an answer carrying two DIFFERENT lines for one
+ * player is a REPORTED failed poll, before the first write (F831 — Chris
+ * 2026-10-27, "Skip it, retry next update"); a DB failure after the provider
+ * answered is counted on `io.degradation` as a failed poll BEFORE it is
+ * re-thrown, and marked so (`pollFailureCounted`) for the caller (F832); the
+ * tracker records a success only once every write is done; and a stored open
+ * game's move to final / postponed (R1741) and the week bounds
+ * (`nfl_weeks.last_game_ends_at`, F832) are written AFTER the lines, so a
+ * failed door never closes the live window or stamps a week all-final
+ * without them. What a failed poll may still have written: new game rows
+ * and the lines of the batches before the failing one (R1744).
  */
 export async function ingestWeek(
   provider: StatsProvider,
@@ -1120,7 +1174,7 @@ export async function ingestWeek(
   io: IngestIo,
 ): Promise<IngestReport> {
   const polledAt = time.now()
-  const { db, season, week } = io
+  const { season, week } = io
 
   // ── Every provider read BEFORE any write (§23.2: never partial data) ──
   let schedule: ProviderGame[]
@@ -1138,8 +1192,72 @@ export async function ingestWeek(
     )
     return report
   }
-  io.degradation.recordPollResult(true)
+  // M7 L.F2.3 (F832): the poll counts as a SUCCESS only once everything it
+  // read is written — a failure after the provider answered (a door refusal,
+  // a database error) counts toward `stats_degraded` exactly like a provider
+  // outage, and the error is marked counted for the caller (live-poll keeps
+  // polling the round's other weeks).
   const report = emptyReport(provider, io, polledAt, io.degradation.degraded)
+  try {
+    const done = await ingestAnswer(provider, polledAt, io, report, schedule, lines)
+    io.degradation.recordPollResult(done.ok) // an answer skipped by F831 is a failed poll
+    done.degraded = io.degradation.degraded
+    return done
+  } catch (err) {
+    io.degradation.recordPollResult(false)
+    const error = err instanceof Error ? err : new Error(String(err))
+    COUNTED_POLL_FAILURES.add(error)
+    throw error
+  }
+}
+
+/** Errors `ingestWeek` threw AFTER counting them as a failed poll (F832). */
+const COUNTED_POLL_FAILURES = new WeakSet<object>()
+
+/**
+ * Did `ingestWeek` already count this thrown error as a failed poll on the
+ * caller's tracker? (F832 — `runLivePollInvocation` counts any other throw
+ * itself, so a failure is counted once, never zero times or twice.)
+ */
+export function pollFailureCounted(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && COUNTED_POLL_FAILURES.has(err)
+}
+
+/**
+ * A failed poll's report, for a caller whose `ingestWeek` THREW (F832): the
+ * same shape a provider failure returns — `ok: false`, nothing written, the
+ * error named — so the round persists it and moves on.
+ */
+export function failedPollReport(providerName: string, season: number, week: number, polledAt: Date, degraded: boolean, error: string): IngestReport {
+  const report = emptyReport({ name: providerName } as StatsProvider, { season, week } as IngestIo, polledAt, degraded)
+  report.ok = false
+  report.error = error
+  report.reasons.push(`poll failed after the provider answered — counted as a failed poll (F832); some writes may have landed (new games, lines before the failing batch), the week's moves to final and its completion stamp were withheld (R1741 / R1744); stats_degraded=${degraded}`)
+  return report
+}
+
+/**
+ * M7 L.F2.3 — Chris's F831 ruling (2026-10-27): two DIFFERENT lines for the
+ * same player in one answer — *"Skip it, retry next update"*. The players
+ * that still carry more than one line once byte-identical copies are
+ * collapsed (F830).
+ */
+export function conflictingPlayers(rows: readonly StatRow[]): string[] {
+  const seen = new Map<string, number>()
+  for (const row of rows) seen.set(row.player_id, (seen.get(row.player_id) ?? 0) + 1)
+  return [...seen].filter(([, n]) => n > 1).map(([id]) => id).sort()
+}
+
+/** Everything after the provider answered: reads, the whole diff, then the writes. */
+async function ingestAnswer(
+  provider: StatsProvider,
+  polledAt: Date,
+  io: IngestIo,
+  report: IngestReport,
+  schedule: ProviderGame[],
+  lines: ProviderPlayerWeekStats[],
+): Promise<IngestReport> {
+  const { db, season, week } = io
   const stamp = isoOf(polledAt)
 
   // ── Reads, then the whole diff, then writes ──
@@ -1230,7 +1348,21 @@ export async function ingestWeek(
     if (row === null) report.stats.empty += 1
     else statRows.push(row)
   }
-  const statDiff = diffStats(statRows, existingStats)
+  const unique = collapseIdenticalRows(statRows)
+  report.stats.duplicates = unique.collapsed
+  // F831 (Chris 2026-10-27, "Skip it, retry next update"): an answer that
+  // carries two DIFFERENT lines for one player is not believed at all — a
+  // failed poll, before the first write: every stored line stays as it was,
+  // nothing is queued or announced, it counts toward `stats_degraded`, and
+  // the next poll tries again.
+  const conflicts = conflictingPlayers(unique.rows)
+  if (conflicts.length > 0) {
+    report.ok = false
+    report.error = `the provider's answer carried two different lines for ${conflicts.length} player(s) (${conflicts.join(', ')}) — the whole answer is skipped, nothing written; retried next poll (F831)`
+    report.reasons.push(`provider answer skipped — two different lines for one player; nothing written (F831, Chris 2026-10-27: "Skip it, retry next update")`)
+    return report
+  }
+  const statDiff = diffStats(unique.rows, existingStats)
   // TD2 — against the games as stored BEFORE this poll (`existingGames`),
   // never `merged`: the poll that first sees a game final carries its last
   // in-game changes, and those are not corrections.
@@ -1243,35 +1375,37 @@ export async function ingestWeek(
   })
   for (const keys of settled.values()) report.corrections.settled += keys.length
 
-  // ── Writes: games → weeks → (stats + events + queue: one door call per batch) ──
-  const gameWrites = [...gameDiff.inserts, ...gameDiff.updates]
-  if (gameWrites.length > 0) {
+  // ── Writes: games → (stats + events + queue: one door call per batch) → weeks ──
+  // F832 (M7 L.F2.3): the week bounds — `last_game_ends_at`, the stamp
+  // league_week_advance reads — go LAST, so a door that fails never leaves a
+  // week stamped all-final while its lines are missing (the next poll writes
+  // both). Games stay first: `player_stats.game_id` references them.
+  // R1741 (M7 L.F2.3): a stored OPEN game (scheduled / live) that this poll
+  // closes (final / postponed) is moved only AFTER the lines are written. The
+  // live poll keeps a week hot while any of its games is stored open, so a
+  // door that fails leaves the game open and the week is retried at the live
+  // cadence, not the hourly sweep. New rows and every other change go first
+  // (`player_stats.game_id` references the row).
+  const closingMoves = gameDiff.updates.filter((row) => {
+    const prior = existingGames.get(row.id)
+    return prior !== undefined && isOpenStatus(prior.status) && !isOpenStatus(row.status)
+  })
+  const gameWrites = [...gameDiff.inserts, ...gameDiff.updates.filter((row) => !closingMoves.includes(row))]
+  const writeGames = async (rows: GameRow[]) => {
+    if (rows.length === 0) return
     await upsertCounted(
       db,
       'nfl_games',
-      gameWrites.map((row) => ({ ...row, updated_at: stamp })),
+      rows.map((row) => ({ ...row, updated_at: stamp })),
       'id',
       'id',
       `nfl_games (${season})`,
     )
   }
+  await writeGames(gameWrites)
   report.games.inserted = gameDiff.inserts.length
   report.games.updated = gameDiff.updates.length
   report.games.unchanged = gameDiff.unchanged
-
-  for (const w of weekWrites) {
-    const { data, error } = await db
-      .from('nfl_weeks')
-      .update(w.bounds)
-      .eq('season', w.season)
-      .eq('week', w.week)
-      .select('week')
-    if (error) throw new Error(`nfl_weeks update failed (${w.season} week ${w.week}): ${error.message}`)
-    if ((data ?? []).length !== 1) {
-      throw new Error(`nfl_weeks update matched ${(data ?? []).length} rows for ${w.season} week ${w.week}`)
-    }
-    report.weeks.updated += 1
-  }
 
   const deltas = [...statDiff.inserts, ...statDiff.updates]
   report.stats.deltas = deltas.length
@@ -1288,6 +1422,21 @@ export async function ingestWeek(
     await writeThroughDoor(db, door, season, week, stamp, statWrites, new Set(deltas.map((r) => r.player_id)), corrections, report, teamColumn)
     report.write.path = 'door'
   }
+  await writeGames(closingMoves) // R1741: the moves to final / postponed, once the lines are in
+
+  for (const w of weekWrites) {
+    const { data, error } = await db
+      .from('nfl_weeks')
+      .update(w.bounds)
+      .eq('season', w.season)
+      .eq('week', w.week)
+      .select('week')
+    if (error) throw new Error(`nfl_weeks update failed (${w.season} week ${w.week}): ${error.message}`)
+    if ((data ?? []).length !== 1) {
+      throw new Error(`nfl_weeks update matched ${(data ?? []).length} rows for ${w.season} week ${w.week}`)
+    }
+    report.weeks.updated += 1
+  }
   report.corrections.reason = correctionsReason(report, deltas.length, statWrites.length)
 
   report.stats.inserted = statDiff.inserts.length
@@ -1296,6 +1445,11 @@ export async function ingestWeek(
   report.stats.unchanged = statDiff.unchanged
 
   // ── Reasons: an empty section says why ──
+  if (report.stats.duplicates > 0) {
+    report.reasons.push(
+      `player_stats: ${report.stats.duplicates} repeated provider row(s) — identical copies of a line already in this answer — written once (§23.2 idempotent; F830)`,
+    )
+  }
   if (heldRows.length > 0) {
     report.reasons.push(
       `nfl_games: ${heldRows.length} game(s) are marked out of the week / cancelled (operator_hold) — the provider's row was not written: ${heldRows.map((g) => g.id).join(', ')}`,
