@@ -17,7 +17,9 @@
  *   2. READ THE REPORT — the loud surface (D321(6)):
  *        * ALERT (`console.error`, an operator pages on it — §24.1 "job
  *          failures: any"): `ack_missed.lease_lost + ack_missed.gone > 0`
- *          (the one window a STALE write can land in — R873); `failed > 0`
+ *          (the one window a STALE write can land in — R873; a league
+ *          restore taking back a lease is a known, benign `lease_lost` —
+ *          212 / R1757, named in the alert); `failed > 0`
  *          (a quarantined league-week, D292); `nothing_writable > 0` (the
  *          door wrote nothing where the worker expected to — F259(e)).
  *        * INFO (`console.log`): `all_leased` / `all_deferred` (another
@@ -75,7 +77,8 @@ export function classifyDrain(report: BatchReport): DrainVerdict {
   const stale = report.ack_missed.lease_lost + report.ack_missed.gone
   if (stale > 0) {
     alerts.push(
-      `STALE-WRITE WINDOW: lease_lost ${report.ack_missed.lease_lost} + gone ${report.ack_missed.gone} = ${stale} row(s) re-claimed by another drain while this one was in flight (F263(f)/R873) — the drain outlived its lease; raise SCORE_WEEK_LEASE_SECONDS or cut the batch`,
+      `STALE-WRITE WINDOW: lease_lost ${report.ack_missed.lease_lost} + gone ${report.ack_missed.gone} = ${stale} row(s) re-claimed by another drain while this one was in flight (F263(f)/R873) — the drain outlived its lease; raise SCORE_WEEK_LEASE_SECONDS or cut the batch. ` +
+        `Known benign cause of lease_lost: a league RESTORE takes back the lease on its players' queue rows (212 / R1757) — if a league was restored in the last few minutes, the next drain re-scores those rows and nothing is left stale`,
     )
   }
   for (const entry of report.leagues) {

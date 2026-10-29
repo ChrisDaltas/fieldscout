@@ -40,7 +40,9 @@ import { isCronAuthorized } from '@/lib/auth/cron-secret'
  *   * the last-poll seam bound to `system_flags` (122 — F263(e)/F217), so
  *     an orphaned queue row (a crash, then an identical re-poll) is released
  *     instead of held forever;
- *   * ALERTS on `lease_lost + gone > 0` (R873), a quarantined league-week
+ *   * ALERTS on `lease_lost + gone > 0` (R873; a league restore's lease
+ *     take-back is a known benign `lease_lost`, named in the alert — R1757),
+ *     a quarantined league-week
  *     (D292) and `nothing_writable` (F259(e)) — `console.error` with
  *     `league_id`; `all_leased` / `all_deferred` informational (R875/R872).
  *

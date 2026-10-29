@@ -103,7 +103,11 @@ describe('C42: the engine never reads draft_dnd_marks (the ruled skip stays decl
     // one index — and that is the entire SQL surface of the feature.
     // 088's two mentions are COMMENTS (its own "still carries NO
     // broadcast" note) and are stripped above, which is the point.
-    expect(hits).toEqual([['083_draft_bids.sql', 4]])
+    // RE-PINNED BY 212 (F716, additive): one CREATE TRIGGER of the archive
+    // freeze names the table — a WRITE guard that refuses a mark in an
+    // archived league; it reads no mark and is outside every function body
+    // (the next cell), so the engine still never reads the table.
+    expect(hits).toEqual([['083_draft_bids.sql', 4], ['212_league_archive.sql', 1]])
   })
 
   it('no FUNCTION BODY anywhere in the chain mentions it', () => {

@@ -406,8 +406,15 @@ reset role;
 update leagues set deleted_at = now() where id = '91605000-0000-4000-8000-000000000001';
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "91600000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
-with u as (update scoring_systems set name = 'x160 after delete' where id = '91604000-0000-4000-8000-000000000001' returning 1)
-select is(count(*)::int, 1, 'I11 once the league is deleted the owner''s row is his own again') from u;
+-- RE-CUT 2026-10-29 by 212 (F858, merging after 210): `deleted_at` is now
+-- "archived at" and leagues are never deleted — an ARCHIVED league keeps its
+-- scoring row's label lock, as a live one does (212 drops the lock's
+-- `deleted_at IS NULL`; pgTAP 162 S3-S5). The cell used to read "once the
+-- league is deleted the owner's row is his own again" (RETURNING 1).
+select throws_ok(
+  $$ update scoring_systems set name = 'x160 after archive' where id = '91604000-0000-4000-8000-000000000001' $$,
+  '42501', 'This scoring system belongs to the league "x160 League". Only its commissioner or a co-commissioner can change its name or description.',
+  'I11 once the league is ARCHIVED the owner (a manager) still cannot rename its scoring — the lock holds (212 / F858)');
 reset role;
 select ok(not has_function_privilege('anon', 'public.scoring_system_label_lock_internal(uuid)', 'EXECUTE')
       and not has_function_privilege('authenticated', 'public.scoring_systems_league_label_guard_internal()', 'EXECUTE'),

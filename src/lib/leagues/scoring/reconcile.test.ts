@@ -93,6 +93,14 @@ describe('classifyCell — the order of explanations', () => {
     expect(out[0].message).toMatch(/is 60 min old \(> 60\) — the worker is not draining it/)
   })
 
+  it('R1753: a row is aged from its NEWEST stamp — a fresh lease or defer keeps an old enqueue in flight (124’s rule)', () => {
+    const old = new Date(NOW.getTime() - 5 * STALE_QUEUE_MS).toISOString()
+    const recent = new Date(NOW.getTime() - 60_000).toISOString()
+    expect(queueFindings([{ week: 1, player_id: 'p1', enqueued_at: old, deferred_until: recent }], 2026, NOW)).toEqual([])
+    expect(queueFindings([{ week: 1, player_id: 'p1', enqueued_at: old, claimed_at: recent }], 2026, NOW)).toEqual([])
+    expect(queueFindings([{ week: 1, player_id: 'p1', enqueued_at: old, claimed_at: null, deferred_until: null }], 2026, NOW)).toHaveLength(1)
+  })
+
   it('PENDING vs stored: alert on h2h, warn on total_points (F263(c))', () => {
     const pending = team(null, ['p1'], [{ player_id: 'p1', keys: ['example_charted_yards'] }])
     expect(classifyCell(19.5, pending, ctx())).toMatchObject({ kind: 'pending_vs_stored', severity: 'alert' })

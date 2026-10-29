@@ -82,6 +82,7 @@ import { isDoorNotPushed } from '@/lib/supabase/postgrest-errors'
 import type { Database, Draft, Json } from '@/types/database'
 
 import type { ServiceResult } from './leagues-service'
+import { archivedLeagueResult } from './inseason-errors'
 
 type Supabase = SupabaseClient<Database>
 
@@ -106,6 +107,8 @@ function mapDraftRpcError(
   error: { code?: string; message: string },
   forbiddenMessage: string = NOT_COMMISH_MESSAGE,
 ): ServiceResult {
+  const archived = archivedLeagueResult(error)
+  if (archived) return archived
   if (error.code === '42501') {
     // Non-commish AND nonexistent league both land here (the RPCs' no-leak
     // fast-fail) — surface as 403, the deleteLeague precedent.

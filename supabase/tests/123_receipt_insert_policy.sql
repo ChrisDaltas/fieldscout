@@ -79,7 +79,9 @@ select is(
   'A4 THE GRANT MATRIX (stored literal; upper = held): no INSERT for PUBLIC / anon / authenticated (175, D23 explicit REVOKE); UPDATE / DELETE held but policed to 0 rows by RLS (section E); TRUNCATE revoked (123:410); service_role unchanged');
 select is(
   (select string_agg(format('%s:%s', tgname, tgenabled), ' ' order by tgname)
-   from pg_trigger where tgrelid = 'public.commissioner_actions'::regclass and not tgisinternal),
+   from pg_trigger where tgrelid = 'public.commissioner_actions'::regclass and not tgisinternal
+     -- RE-PINNED BY 212 (F716, additive, R992): the archive freeze trigger `tr_aa_league_archived_guard` is pinned by pgTAP 162 A3–A6. (archive writes its receipt BEFORE the stamp, restore AFTER clearing it — 212's ORDER.)
+     and tgname <> 'tr_aa_league_archived_guard'),
   'trg_commish_actions_immutable:A trg_commish_actions_no_truncate:A trg_zz_reverts_action_id_league_check:A',
   'A5 immutability backstops unchanged: both triggers ENABLE ALWAYS (123; section E exercises them) — plus 179''s reverts_action_id guard (F520), also ENABLE ALWAYS');
 select is(

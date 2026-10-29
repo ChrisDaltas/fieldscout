@@ -122,6 +122,12 @@ const SOURCE_PATHS = [
   'scripts/correction-replay-source.ts',
   'scripts/correction-snapshot-diff.ts',
   'scripts/correction-events-export.ts',
+  // M7 L.F2.3: the chaos drills — the realtime drill's fallback poller and the
+  // §22.6 duplicate-pick check it shares with the load harness; the reconcile
+  // CLI every drill runs for its "exit 0".
+  'src/hooks/use-realtime-fallback-poll-ops.ts',
+  'load/k6/lib/checks.ts',
+  'scripts/reconcile.ts',
 ]
 
 /** Every `paths:` list in the workflow, in file order. Deliberately textual:

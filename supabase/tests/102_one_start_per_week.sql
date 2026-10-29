@@ -788,7 +788,9 @@ select ok(
                         'set_lineup_internal', 'commish_edit_lineup_internal', 'lineup_autopilot_internal')),
   'A3 PUBLIC holds EXECUTE on none of the six (REVOKEs restated)');
 select is(
-  (select format('%s|%s|%s', t.tgenabled, pg_get_triggerdef(t.oid), (select count(*) from pg_trigger x where x.tgrelid = t.tgrelid and not x.tgisinternal))
+  (select format('%s|%s|%s', t.tgenabled, pg_get_triggerdef(t.oid), (select count(*) from pg_trigger x where x.tgrelid = t.tgrelid and not x.tgisinternal
+       -- RE-PINNED BY 212 (F716, additive, R992): the archive freeze trigger `tr_aa_league_archived_guard` is pinned by pgTAP 162 A3–A6.
+       and x.tgname <> 'tr_aa_league_archived_guard'))
    from pg_trigger t where t.tgrelid = 'public.team_lineups'::regclass and t.tgname = 'trg_team_lineups_one_start_per_week'),
   'A|CREATE TRIGGER trg_team_lineups_one_start_per_week BEFORE INSERT OR UPDATE OF slot_map, team_id, season, week ON public.team_lineups FOR EACH ROW EXECUTE FUNCTION team_lineups_one_start_per_week()|1',
   'A4 THE RULE lives on team_lineups itself: BEFORE INSERT / UPDATE OF slot_map, team_id, season, week, per row, ENABLE ALWAYS (a replica-mode session cannot skip it — R616), the table''s only trigger');

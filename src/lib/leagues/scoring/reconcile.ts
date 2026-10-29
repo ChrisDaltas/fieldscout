@@ -434,14 +434,32 @@ export interface QueueRow {
   week: number
   player_id: string
   enqueued_at: string
+  /** R1753: the lease and the defer stamps — a row is aged from the NEWEST of
+   *  the three, as 124's `scoring_stall_check` reads it (a restore's re-queue
+   *  carries an old stat stamp but `deferred_until` = the restore, R1731).
+   *  Optional so older callers / fixtures keep the enqueue-only reading. */
+  claimed_at?: string | null
+  deferred_until?: string | null
 }
 
-/** The QUEUE findings (pure; R881): one `stuck_queue` alert per row older than `STALE_QUEUE_MS` — exactly one hour old is still in flight, one millisecond more is stuck. */
+/** A queue row's last sign of life (R1753): the newest of `enqueued_at`,
+ *  `claimed_at` and `deferred_until` — 124's stall check treats each as an
+ *  instant the row was touched. */
+export function queueRowTouchedMs(q: QueueRow): number {
+  return Math.max(
+    ...[q.enqueued_at, q.claimed_at ?? null, q.deferred_until ?? null]
+      .filter((v): v is string => typeof v === 'string')
+      .map((v) => new Date(v).getTime())
+      .filter((ms) => Number.isFinite(ms)),
+  )
+}
+
+/** The QUEUE findings (pure; R881): one `stuck_queue` alert per row untouched for longer than `STALE_QUEUE_MS` — exactly one hour is still in flight, one millisecond more is stuck. A row's age runs from its NEWEST stamp (R1753). */
 export function queueFindings(queue: readonly QueueRow[], season: number, now: Date): Finding[] {
   const nowMs = now.getTime()
   const out: Finding[] = []
   for (const q of queue) {
-    const ageMs = nowMs - new Date(q.enqueued_at).getTime()
+    const ageMs = nowMs - queueRowTouchedMs(q)
     if (ageMs <= STALE_QUEUE_MS) continue
     out.push({
       kind: 'stuck_queue',
@@ -687,7 +705,7 @@ async function readPlayers(db: ScoreWorkerClient, ids: readonly string[]): Promi
 
 async function readQueue(db: ScoreWorkerClient, season: number): Promise<QueueRow[]> {
   return pageAll<QueueRow>((from, to) =>
-    db.from('score_fanout').select('week, player_id, enqueued_at', { count: 'exact' }).eq('season', season).order('week').order('player_id').range(from, to),
+    db.from('score_fanout').select('week, player_id, enqueued_at, claimed_at, deferred_until', { count: 'exact' }).eq('season', season).order('week').order('player_id').range(from, to),
   )
 }
 

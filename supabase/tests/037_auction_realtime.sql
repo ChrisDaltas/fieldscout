@@ -128,7 +128,9 @@ select is(
   'the void trigger declares BOTH transition tables (OLD before_rows / NEW after_rows) — the in-body NULL→non-NULL discrimination needs both (Postgres forbids `UPDATE OF col` alongside transition tables)');
 select is(
   (select count(*) from pg_trigger t
-   where t.tgrelid = 'public.draft_bids'::regclass and not t.tgisinternal),
+   where t.tgrelid = 'public.draft_bids'::regclass and not t.tgisinternal
+     -- RE-PINNED BY 212 (F716, additive, R992): the archive freeze trigger `tr_aa_league_archived_guard` is pinned by pgTAP 162 A3–A6.
+     and t.tgname <> 'tr_aa_league_archived_guard'),
   2::bigint,
   'draft_bids carries EXACTLY two non-internal triggers — the INSERT and the VOID broadcast (the positive control for the F58 absence pins below: the inventory query sees triggers where they exist)');
 
@@ -144,7 +146,9 @@ select ok(
 -- F58 (a): draft_dnd_marks — NO trigger of any kind, NO publication.
 select is(
   (select count(*) from pg_trigger t
-   where t.tgrelid = 'public.draft_dnd_marks'::regclass and not t.tgisinternal),
+   where t.tgrelid = 'public.draft_dnd_marks'::regclass and not t.tgisinternal
+     -- RE-PINNED BY 212 (F716, additive, R992): the archive freeze trigger `tr_aa_league_archived_guard` is pinned by pgTAP 162 A3–A6. It writes nothing and broadcasts nothing — F58's claim (never broadcast) is unchanged.
+     and t.tgname <> 'tr_aa_league_archived_guard'),
   0::bigint,
   'F58(a): draft_dnd_marks carries ZERO non-internal triggers AFTER 088 created the draft_bids triggers — never broadcast (§9.2 blind prep; 083 banner)');
 select is(

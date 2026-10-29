@@ -25,6 +25,7 @@ import {
   type OpLeagueDetail,
   type OpLeagueList,
   type OpLeagueRow,
+  restoreLeagueConfirm,
 } from '@/lib/admin/league-table'
 
 import { LeagueDetailBody, LeagueTableBody, rawSettings } from './admin-league-table'
@@ -76,7 +77,7 @@ describe('All-leagues table', () => {
     }
     expect(out).toContain('aria-sort="descending"')
     expect(out).not.toContain('data-overflow')
-    expect(out).not.toContain('data-deleted')
+    expect(out).not.toContain('data-archived')
   })
 
   it('overflow: a cut page says so with the true total and pages on', () => {
@@ -86,8 +87,12 @@ describe('All-leagues table', () => {
     expect(out).toContain('240 in all')
   })
 
-  it('a deleted league carries its badge', () => {
-    expect(table({ ...list, include_deleted: true, leagues: [{ ...row, deleted_at: '2026-09-01T00:00:00Z' }] })).toContain('data-deleted')
+  it('an archived league carries its badge (212 / F716 — deleted_at is the archived-at stamp)', () => {
+    const out = table({ ...list, include_deleted: true, leagues: [{ ...row, deleted_at: '2026-09-01T12:00:00Z' }] })
+    expect(out).toContain('data-archived')
+    expect(out).toMatch(/Archived Sep 1/)
+    expect(out).toContain('(archived included)')
+    expect(out).not.toMatch(/[Dd]eleted/)
   })
 
   it('empty: no leagues, and a search with no match, are said in words', () => {
@@ -145,6 +150,8 @@ describe('League page: Members and Settings', () => {
     const out = html(createElement(LeagueDetailBody, { detail: { ...detail, record_error: 'The league is deleted, so it has no standings.', members: detail.members.map((m) => ({ ...m, record: null })) } }))
     expect(out).toContain('data-record-error')
     expect(out).not.toContain('0-0')
+    // 212 (F716): the read's "deleted" sentence reads as what it means now.
+    expect(out.replace(/&#x27;|&rsquo;/g, '’')).toContain('The league is archived, so its standings aren’t shown.')
   })
 
   it('a league with no members says so', () => {
@@ -168,6 +175,22 @@ describe('League page: Make commissioner (F750, migration 208)', () => {
     expect(out).not.toContain('data-make-commissioner="m1"')
     expect(out).not.toContain('data-make-commissioner="m3"')
     expect(out.match(/>Make commissioner</g)?.length).toBe(2)
+  })
+
+  it('F851 (212): an archived league says so and offers FieldScout\'s Restore — behind the confirm', () => {
+    const archived = { ...withCo, league: { ...row, deleted_at: '2026-09-01T12:00:00Z' } }
+    let opened: unknown = null
+    const out = html(createElement(LeagueDetailBody, { detail: archived, onConfirm: (spec: unknown) => { opened = spec } }))
+    expect(out).toContain('data-archived-notice')
+    expect(out).toContain(`data-restore-league="${row.id}"`)
+    expect(out).not.toContain('data-make-commissioner')
+    expect(html(createElement(LeagueDetailBody, { detail: withCo, onConfirm: noop }))).not.toContain('data-restore-league')
+    expect(html(createElement(LeagueDetailBody, { detail: archived }))).not.toContain('data-restore-league')
+    expect(opened).toBeNull()
+    const spec = restoreLeagueConfirm(row)
+    expect(spec.url).toBe(`/api/admin/leagues/${row.id}/restore`)
+    expect(spec.after).toContain('“FieldScout restored the league.”')
+    expect(spec.confirmLabel).toBe('Restore league')
   })
 
   it('no control without the confirm dialog, and none in a deleted league', () => {
