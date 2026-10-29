@@ -106,7 +106,9 @@ select is(
 select is(
   (select string_agg(t.tgname || ':' || p.proname || ':' || t.tgenabled::text, ',' order by t.tgname)
    from pg_trigger t join pg_proc p on p.oid = t.tgfoid
-   where not t.tgisinternal and t.tgrelid in ('public.league_week_player_points'::regclass, 'public.nfl_weeks'::regclass)),
+   where not t.tgisinternal and t.tgrelid in ('public.league_week_player_points'::regclass, 'public.nfl_weeks'::regclass)
+     -- RE-PINNED BY 212 (F716, additive, R992): the archive freeze trigger `tr_aa_league_archived_guard` is pinned by pgTAP 162 A3–A6.
+     and t.tgname <> 'tr_aa_league_archived_guard'),
   'trg_league_week_player_points_lock:league_week_player_points_lock:A,trg_nfl_weeks_window_follow:nfl_weeks_window_follow:A,trg_nfl_weeks_window_row:nfl_weeks_window_row:A',
   'A4 three triggers, ENABLE ALWAYS (R616): the lock on the rows, the window row + follow pair on nfl_weeks');
 select ok(

@@ -1203,6 +1203,7 @@ describe('My Team (League UX batch 3) — stats, checks, matchup, read-only', ()
       ...Array.from({ length: 30 }, (_, i) => ({ defense: `T${i + 2}`, position: 'QB', rank: i + 2 })),
     ],
     proj: (id) => ({ qb1: 21.4, 'rb-open': 12.1, 'rb-locked': 9.5, wr1: 0 } as Record<string, number>)[id] ?? null,
+    projections: 'ready',
     points: (id) => (id === 'qb1' ? { phase: 'done', points: 18.25, pending: [] } : null),
     snap: (id) => (id === 'qb1' ? 97 : null),
   }
@@ -1263,6 +1264,64 @@ describe('My Team (League UX batch 3) — stats, checks, matchup, read-only', ()
     expect(total).not.toContain('without a projection')
     const partial = render({ stats: { ...stats, proj: (id) => (id === 'qb1' ? 20 : null) } })
     expect(partial).toContain('3 without a projection')
+  })
+
+  // One rule with the phone (`wholeProjectedTotal`, audit match-team-1): a
+  // number only when every filled starter has a projection.
+  describe('the projected total is "—" unless every starter has a projection', () => {
+    const totalRow = (html: string) => {
+      const at = html.indexOf('data-projected-total')
+      return html.slice(at, html.indexOf('</tr>', at))
+    }
+    const opp = { kind: 'opponent' as const, selfName: 'You', name: 'Rivals', href: '/m/1', myScore: 10, oppScore: 12.5, oppProjected: { total: 40, missing: 0 } }
+
+    it('a starter without a projection: "—" and the count — never the partial sum; the strip and the check agree', () => {
+      const html = render({ stats: { ...stats, proj: (id) => (id === 'qb1' ? 20 : null) }, opponent: opp })
+      const row = totalRow(html)
+      expect(row).toContain('3 without a projection')
+      expect(row).toMatch(/>—<\/td>/)
+      expect(row).not.toContain('20.0')
+      expect(html).toContain('proj —')
+      expect(html).toContain('proj 40.0')
+      // No "Proj vs opponent" from a partial sum.
+      expect(html).not.toContain('data-check-chip="proj"')
+    })
+
+    it('while the projections load: "—", no count, never "0.0"', () => {
+      const html = render({ stats: { ...stats, proj: () => null, projections: 'pending' }, opponent: { ...opp, oppProjected: { total: 0, missing: 2 } } })
+      const row = totalRow(html)
+      expect(row).toMatch(/>—<\/td>/)
+      expect(row).not.toContain('0.0')
+      expect(row).not.toContain('without a projection')
+      expect(html).not.toContain('proj 0.0')
+    })
+
+    it('a failed projections read says so — never "0.0", never "without a projection"', () => {
+      const html = render({ stats: { ...stats, proj: () => null, projections: 'error' }, opponent: { ...opp, oppProjected: { total: 0, missing: 2 } } })
+      const row = totalRow(html)
+      expect(row).toContain('couldn’t load the projections')
+      expect(row).toMatch(/>—<\/td>/)
+      expect(row).not.toContain('0.0')
+      expect(row).not.toContain('without a projection')
+      expect(html).not.toContain('proj 0.0')
+    })
+
+    it('an empty lineup has nothing to project: "—" on both sides of the strip, never "proj 0.0"', () => {
+      const html = render({ stored: { ...lineupRow, slot_map: {} }, opponent: { ...opp, oppProjected: null } })
+      expect(totalRow(html)).toMatch(/>—<\/td>/)
+      expect(html).not.toContain('proj 0.0')
+      expect(html.match(/proj —/g)?.length).toBe(2)
+      expect(html).not.toContain('data-check-chip="proj"')
+    })
+
+    it('a kept (dropped-after-he-played) starter is a filled seat: no projection for him → "—"', () => {
+      const html = render({ stored: { ...lineupRow, slot_map: { ...lineupRow.slot_map, 'te:0': 'gone-te' } } })
+      const row = totalRow(html)
+      expect(row).toContain('1 without a projection')
+      expect(row).not.toContain('43.0')
+      const kept = render({ stored: { ...lineupRow, slot_map: { ...lineupRow.slot_map, 'te:0': 'gone-te' } }, stats: { ...stats, proj: (id) => (id === 'gone-te' ? 7 : stats.proj(id)) } })
+      expect(totalRow(kept)).toContain('50.0')
+    })
   })
 
   it('the Lineup check shows chips collapsed, from the arrangement on screen; the strip links to the matchup', () => {

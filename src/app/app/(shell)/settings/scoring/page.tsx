@@ -21,6 +21,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useScoringEditor } from '@/hooks/use-scoring-editor'
+import { PRO_UPSELL_ENABLED } from '@/lib/pro-upsell'
 import { SCORING_PRESETS } from '@/lib/scoring/default'
 import {
   PRO_SCORING_UPSELL,
@@ -154,16 +155,19 @@ function DesktopScoringSettings() {
             {!canCustomize && (
               <AIInsight heading={PRO_SCORING_UPSELL.heading}>
                 <p>{PRO_SCORING_UPSELL.body}</p>
-                <div className="mt-3">
-                  <Button
-                    variant="blue"
-                    size="sm"
-                    onClick={() => router.push('/app/settings/billing')}
-                  >
-                    <Icon name="star" size={13} />
-                    Upgrade to Pro
-                  </Button>
-                </div>
+                {/* No Upgrade while the app offers no Pro (`PRO_UPSELL_ENABLED`). */}
+                {PRO_UPSELL_ENABLED && (
+                  <div className="mt-3">
+                    <Button
+                      variant="blue"
+                      size="sm"
+                      onClick={() => router.push('/app/settings/billing')}
+                    >
+                      <Icon name="star" size={13} />
+                      Upgrade to Pro
+                    </Button>
+                  </div>
+                )}
               </AIInsight>
             )}
           </div>

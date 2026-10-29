@@ -8,6 +8,7 @@
 import type { BoxGame, BoxStarter } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import type { StarterCell } from '@/components/leagues/matchup-view-ops'
+import { projectedTotal, wholeProjectedTotal, type ProjectedTotal } from '@/components/leagues/my-team-ops'
 import { posLabel } from '@/components/mobile/ui/m-pos-chip'
 import { liveClock } from '@/utils/game-clock'
 
@@ -132,10 +133,22 @@ export function resultWord(result: string | null): { text: string; tone: 'win' |
 
 /** A projected total as the card shows it — the bare number, two decimals —
  *  only when every filled starter has a stored projection (a partial sum
- *  would understate the side; `projectedTotalText`'s rule). */
-export function cardProjection(total: { total: number; missing: number } | null, filled: number): string | null {
-  if (!total || filled === 0 || total.missing > 0) return null
-  return total.total.toFixed(2)
+ *  would understate the side; `wholeProjectedTotal`'s rule). */
+export function cardProjection(total: ProjectedTotal | null, filled: number): string | null {
+  const whole = wholeProjectedTotal(total, filled)
+  return whole === null ? null : whole.toFixed(2)
+}
+
+/**
+ * A lineup's projected total on every phone surface — the Match card, the
+ * Team tab card, the Team view header: its starter seats (null = an empty
+ * seat; a kept, dropped-after-he-played starter is a filled one) summed by
+ * `cardProjection`'s rule. Null — shown as the dash — unless every filled
+ * starter has a projection, so a projections read still loading or one that
+ * failed reads "–", never "0.00".
+ */
+export function lineupProjection(starterIds: ReadonlyArray<string | null>, projOf: (playerId: string) => number | null | undefined): string | null {
+  return cardProjection(projectedTotal(starterIds, projOf), starterIds.filter(Boolean).length)
 }
 
 // ---------------------------------------------------------------------------

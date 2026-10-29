@@ -76,6 +76,8 @@ describe('the lease precondition (F263(f) / R874) — the constants the route pi
 describe('classifyDrain — the loud surface', () => {
   it('lease_lost + gone > 0 is ONE alert on the SUM (R873); lease_lost alone and gone alone each alert', () => {
     expect(classifyDrain(report({ ack_missed: { restamped: 0, lease_lost: 1, gone: 2 } })).alerts).toEqual([expect.stringMatching(/^STALE-WRITE WINDOW: lease_lost 1 \+ gone 2 = 3 row/)])
+    // R1757: the alert names a league restore as a known benign lease_lost (212's re-arm takes the lease back).
+    expect(classifyDrain(report({ ack_missed: { restamped: 0, lease_lost: 1, gone: 0 } })).alerts[0]).toMatch(/Known benign cause of lease_lost: a league RESTORE takes back the lease/)
     expect(classifyDrain(report({ ack_missed: { restamped: 0, lease_lost: 0, gone: 1 } })).alerts).toHaveLength(1)
     expect(classifyDrain(report({ ack_missed: { restamped: 0, lease_lost: 1, gone: 0 } })).alerts).toHaveLength(1)
     expect(classifyDrain(report({ ack_missed: { restamped: 3, lease_lost: 0, gone: 0 } })).alerts).toEqual([])

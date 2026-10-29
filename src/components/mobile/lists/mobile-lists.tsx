@@ -9,7 +9,7 @@ import { ListEditor } from './list-editor'
 import { ListView } from './list-view'
 import { ListsGrid } from './lists-grid'
 import { compareIdsOf } from './list-tools'
-import { editorHref, listHref, returnToOf, type ReturnTo } from './lists-nav'
+import { editorHref, listHref } from './lists-nav'
 
 /**
  * FieldScout Mobile — Lists (`/app/lists`). One route, five screens chosen by
@@ -30,8 +30,6 @@ export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
       ? {
           listId,
           autoAdd: params.get('add') === '1',
-          created: params.get('new') === '1',
-          returnTo: returnToOf(params.get('to')),
           href: `${pathname}?${params.toString()}`,
         }
       : null
@@ -45,8 +43,6 @@ export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
         key={edit.listId}
         listId={edit.listId}
         autoAdd={edit.autoAdd}
-        created={edit.created}
-        returnTo={edit.returnTo}
         currentWeek={currentWeek}
         promptSeq={guard.promptSeq}
         onDirtyChange={guard.setDirty}
@@ -63,10 +59,6 @@ export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
 interface EditTarget {
   listId: string
   autoAdd: boolean
-  /** Opened by New list's Next: the editor is step 2 of 2. */
-  created: boolean
-  /** Where Update returns it, when not the List view (gap list §3 #8). */
-  returnTo: ReturnTo | undefined
   /** The editor's own URL, to put back. */
   href: string
 }
@@ -81,11 +73,11 @@ interface EditTarget {
  *   didn't leave on its own (Update, Discard: `leave`) — the editor stays on
  *   screen in that very render, so its draft survives; its URL is pushed
  *   back and the editor asks "Discard changes?" (`promptSeq`).
- * - An editor the page **opened on** without its List view behind it (New
- *   list → Next, which replaces New list; a deep link) gets that entry put
- *   behind it once, on mount, so the gesture lands on this page — where the
- *   guard can catch it — rather than leaving it with the draft. The List
- *   view keeps where *it* goes back to (`from=grid` or none).
+ * - An editor the page **opened on** without its List view behind it (a
+ *   deep link) gets that entry put behind it once, on mount, so the gesture
+ *   lands on this page — where the guard can catch it — rather than leaving
+ *   it with the draft. The List view keeps where *it* goes back to
+ *   (`from=grid` or none).
  *
  * The pattern is the mobile ranking editor's (`mobile-rankings.tsx`); the
  * native History API calls are kept in sync with `useSearchParams` by Next.
@@ -135,7 +127,7 @@ function useEditorBackGuard(urlEdit: EditTarget | null, from: string | null) {
     window.history.pushState(
       null,
       '',
-      editorHref(urlEdit.listId, { add: urlEdit.autoAdd, created: urlEdit.created, from: 'view', returnTo: urlEdit.returnTo }),
+      editorHref(urlEdit.listId, { add: urlEdit.autoAdd, from: 'view' }),
     )
     // Mount only: this re-roots the entry the page loaded on.
     // eslint-disable-next-line react-hooks/exhaustive-deps

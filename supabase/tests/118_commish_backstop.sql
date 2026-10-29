@@ -80,7 +80,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(246);   -- 252 until 174 retired three matrix rows (three cells each); 243 until 192 added the commissioner note's row
+select plan(249);   -- 252 until 174 retired three matrix rows (three cells each); 243 until 192 added the commissioner note's row; 246 until 212 (F716) swapped the soft-delete row for the archive + restore rows
 
 -- pg_temp.un201 — migration 201's pairs reversed (derive_201.py; pgTAP 151
 -- pins it). RE-PINNED BY D591 ("Allow illegal lineups" retired:
@@ -1053,8 +1053,10 @@ select is(
                        'scoring_systems_league_rules_guard_internal', 'scoring_system_league_use_internal')),
   'commish_action_pointer_guard_internal=069afb1780a25cf45852683947cd7b7d commish_edit_lineup_internal=dfef11dc37d1770ef64f1b876185e39c '
   || 'commish_rename_team_internal=5248f36bd9f29217c7775d3d24fe9776 commish_roster_override_internal=c5ccb46010badc722cd77c356cd0bd15 '
-  || 'scoring_system_league_use_internal=e04d488051a3a637c5f6d87312284254 scoring_systems_league_rules_guard_internal=9464bce068098165c39590bc49a19f11',
-  'A4 the six live prosrc md5s — 170 as written (stored literals)');
+  -- RE-PINNED BY 212 (R1725): scoring_system_league_use_internal's one line lost `AND l.deleted_at IS NULL` (an archived league still
+  -- plays by its scoring) — 212's FILE body hashed; with that line undone it is 170's e04d4880… again (pgTAP 162 A11).
+  || 'scoring_system_league_use_internal=10b9b9123c62ae50f41a127a907b2ead scoring_systems_league_rules_guard_internal=9464bce068098165c39590bc49a19f11',
+  'A4 the six live prosrc md5s — 170 as written (stored literals; scoring_system_league_use_internal as 212 amended it, R1725)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
@@ -1232,10 +1234,17 @@ select pg_temp.mx('{set_league_status}', 'set_league_status', 'b1180000-0000-400
   $$ select public.set_league_status('b1180000-0000-4000-8000-000000000011', 'scheduled') $$,
   $$ select public.set_league_status('b1180000-0000-4000-8000-000000000011', 'scheduled') $$,
   'lifecycle_change', null);
-select pg_temp.mx('{soft_delete_league}', 'soft_delete_league', 'b1180000-0000-4000-8000-000000000012', '98118000-0000-4000-8000-000000000001',
-  $$ select public.soft_delete_league('b1180000-0000-4000-8000-000000000012') $$,
-  $$ select public.soft_delete_league('b1180000-0000-4000-8000-000000000012') $$,
-  'delete_league', null);
+-- RE-CUT BY 212 (F716): soft_delete_league is retired (no change path, no
+-- receipt — it left the census); the league is ARCHIVED and RESTORED by its
+-- commissioner, one receipt each, the second call of each the no-op by state.
+select pg_temp.mx('{archive_league_internal}', 'archive_league', 'b1180000-0000-4000-8000-000000000012', '98118000-0000-4000-8000-000000000001',
+  $$ select public.archive_league('b1180000-0000-4000-8000-000000000012') $$,
+  $$ select public.archive_league('b1180000-0000-4000-8000-000000000012') $$,
+  'archive_league', null, 'archiving an archived league');
+select pg_temp.mx('{restore_league_internal}', 'restore_league', 'b1180000-0000-4000-8000-000000000012', '98118000-0000-4000-8000-000000000001',
+  $$ select public.restore_league('b1180000-0000-4000-8000-000000000012') $$,
+  $$ select public.restore_league('b1180000-0000-4000-8000-000000000012') $$,
+  'restore_league', null, 'restoring a league that is not archived');
 
 -- ---------------------------------------------------------------------------
 -- D. THE DRAFT WORLD (168's sixteen): LD a scheduled snake draft, LA a live
@@ -1811,7 +1820,7 @@ select is(
                      ' ' order by c.fn)
    from _census c left join _allow a on a.fn = c.fn
    where c.writes is not null),
-  'add_placeholder_seat=receipt assign_manager=receipt claim_league_invite=allowlisted commish_change_setting_internal=receipt '
+  'add_placeholder_seat=receipt archive_league_internal=receipt assign_manager=receipt claim_league_invite=allowlisted commish_change_setting_internal=receipt '
   || 'commish_edit_bracket_internal=receipt commish_edit_faab_internal=receipt commish_edit_lineup_internal=receipt '
   || 'commish_edit_schedule_internal=receipt commish_force_or_reverse_trade_internal=receipt commish_matchup_override_internal=receipt '
   || 'commish_rename_team_internal=receipt commish_roster_override_internal=receipt commish_set_autopilot_internal=receipt '
@@ -1820,14 +1829,14 @@ select is(
   || 'draft_create_internal=receipt draft_end=receipt draft_force_pick=receipt draft_move_player=receipt draft_pause=receipt '
   || 'draft_place_bid=receipt draft_queue_replace=receipt draft_reassign_pick=receipt draft_reset=receipt draft_resume=receipt draft_reverse_won_bid=receipt draft_set_clock=receipt '
   || 'draft_set_order=receipt draft_start=receipt draft_start_internal=receipt draft_tick=receipt draft_undo=receipt '
-  || 'leave_league=allowlisted op_set_commissioner_internal=allowlisted remove_manager=receipt revoke_league_invite=receipt rotate_invite_code=receipt '
+  || 'leave_league=allowlisted op_set_commissioner_internal=allowlisted remove_manager=receipt restore_league_internal=receipt revoke_league_invite=receipt rotate_invite_code=receipt '
   || 'schedule_edit_matchup=receipt schedule_remix_confirm=receipt scoring_fork_template=receipt scoring_update_rules=receipt '
   || 'set_league_invite_slug=receipt set_league_status=receipt set_lineup_internal=receipt set_member_role=receipt '
-  || 'set_team_autodraft=receipt snapshot_league_scoring=allowlisted soft_delete_league=receipt trade_propose_internal=allowlisted '
+  || 'set_team_autodraft=receipt snapshot_league_scoring=allowlisted trade_propose_internal=allowlisted '
   || 'trade_respond_internal=allowlisted trade_vote_internal=allowlisted update_league_profile=receipt update_league_settings=receipt '
   || 'waiver_claim_cancel_internal=receipt waiver_claim_edit_internal=receipt waiver_claim_reorder_internal=receipt '
   || 'waiver_claim_submit_internal=receipt',
-  'C4 THE CENSUS (stored literal): 60 commissioner-gated writers — 53 reach the receipt, 7 are allowlisted (history: 59 / 6 before 208; 171 added the two draft-room manager verbs, F521; 174 took the commissioner arm off trade_propose / trade_respond — ruled 2026-09-30 — so both are allowlisted beside trade_vote; 192 added the commissioner note; re-pinned by 208: 60 writers, 7 allowlisted — the operator''s op_set_commissioner_internal, F750)');
+  'C4 THE CENSUS (stored literal): 61 commissioner-gated writers — 54 reach the receipt, 7 are allowlisted (re-pinned by 212 / F716: archive_league_internal and restore_league_internal join, the retired soft_delete_league leaves — it gates and writes nothing now; history: 60 / 7 before 212, 59 / 6 before 208; 171 added the two draft-room manager verbs, F521; 174 took the commissioner arm off trade_propose / trade_respond — ruled 2026-09-30 — so both are allowlisted beside trade_vote; 192 added the commissioner note; re-pinned by 208: 60 writers, 7 allowlisted — the operator''s op_set_commissioner_internal, F750)');
 
 -- C5: THE BACKSTOP CELL. A gated writer that reaches no receipt and is not
 -- on the allowlist is an OFFENDER, named here. ***The task probe target.***
@@ -1849,8 +1858,8 @@ select is((select count(*)::int from _allow where length(why) < 60), 0,
 -- C8: gated functions that write nothing are outside the census, named.
 select is(
   (select string_agg(c.fn, ' ' order by c.fn) from _census c where c.writes is null),
-  'commish_matchup_edit_lock draft_queue_for_team is_league_commish op_league_row_internal op_list_leagues_internal schedule_preview',
-  'C8 the six functions that match the gate shape and write no table (the edit-lock read, the commissioner''s Targets read — 178 / F524, the gate itself, the Remix preview, and 193''s two operator reads that look UP who the commissioner is — re-pinned additively, D521) are outside the census, by name');
+  'commish_matchup_edit_lock draft_queue_for_team is_league_commish op_league_row_internal op_list_leagues_internal schedule_preview scoring_system_label_lock_internal',
+  'C8 the seven functions that match the gate shape and write no table (the edit-lock read, the commissioner''s Targets read — 178 / F524, the gate itself, the Remix preview, 193''s two operator reads that look UP who the commissioner is — re-pinned additively, D521 — and 210''s scoring-label read, which asks whether the caller is the SITTING commissioner, F793 — re-pinned additively, D737) are outside the census, by name');
 
 -- C9 / C10: POSITIVE CONTROLS — the census catches a planted offender, and
 -- a helper named only in its comment and a string does not save it.
@@ -1925,8 +1934,8 @@ select is(
 --    writes none.
 -- ---------------------------------------------------------------------------
 select is(
-  (select count(*)::int from _mx), 59,
-  'M0 PREMISE: the matrix holds 59 calls — 15 setup, 21 draft room, 1 Remix, 21 in season, 1 bracket (174 retired the two trade-arm rows and the reverse row; 192 added the commissioner note)');
+  (select count(*)::int from _mx), 60,
+  'M0 PREMISE: the matrix holds 60 calls — 16 setup (212 swapped the soft delete for archive + restore), 21 draft room, 1 Remix, 21 in season, 1 bracket (174 retired the two trade-arm rows and the reverse row; 192 added the commissioner note)');
 -- M1: COVERAGE — the matrix exercises every receipt-reaching function the
 -- census found, and names nothing the census does not know.
 select is(
@@ -1934,7 +1943,7 @@ select is(
    where c.receipt and c.writes is not null
      and not exists (select 1 from _mx m where c.fn = any (m.census_fns))),
   '',
-  'M1 COVERAGE: every one of the 53 receipt-reaching commissioner writers is called by the matrix (a new verb with no matrix row reds here BY NAME)');
+  'M1 COVERAGE: every one of the 54 receipt-reaching commissioner writers is called by the matrix (a new verb with no matrix row reds here BY NAME)');
 select is(
   (select coalesce(string_agg(distinct f, ' ' order by f), '') from _mx m, unnest(m.census_fns) f
    where not exists (select 1 from _census c where c.fn = f and c.receipt)),

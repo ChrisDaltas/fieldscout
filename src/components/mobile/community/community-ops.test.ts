@@ -35,6 +35,7 @@ import {
   pickLatest,
   playerMeta,
   popularScore,
+  postHref,
   postedAgo,
   rankFilterOk,
   rankTypeChips,
@@ -707,6 +708,11 @@ describe('what the screen shows (#35, #27)', () => {
     closeCommunityDetail(false, nav, LATEST_HREF)
     expect(calls.at(-1)).toBe('goBack /app/explore/latest')
     expect(COMMUNITY_HREF).toBe('/app/explore')
+  })
+
+  it('someone else’s list opens on Community’s list page while Community is on, else the List view', () => {
+    expect(postHref('l 1', true)).toBe('/app/explore?list=l%201')
+    expect(postHref('l1', false)).toBe('/app/lists?list=l1')
   })
 })
 

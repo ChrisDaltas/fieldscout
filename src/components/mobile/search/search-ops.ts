@@ -13,8 +13,6 @@
  * - Posts are public lists for now (Community's start-or-sit and rankings
  *   aren't searchable yet).
  */
-import { communityDetailHref } from '@/components/mobile/community/community-ops'
-import { listHref } from '@/components/mobile/lists/lists-nav'
 import { preDraftFor } from '@/components/mobile/player/profile-ops'
 import type { Availability } from '@/components/leagues/players-page-ops'
 
@@ -189,14 +187,4 @@ export function ownerLabel(a: Availability, leagueStatus: string): OwnerLabel {
   if (a.kind === 'rostered') return a.mine ? { text: 'Your team', tone: 'mine' } : { text: a.teamName, tone: 'other' }
   if (a.kind === 'on_waivers') return { text: 'Waivers', tone: 'open' }
   return { text: 'Free agent', tone: 'open' }
-}
-
-// ---------------------------------------------------------------------------
-// Where a post opens
-// ---------------------------------------------------------------------------
-
-/** A list opens on Community's list page while Community is on (the
- *  handoff's door), else on the List view. */
-export function postHref(listId: string, communityOn: boolean): string {
-  return communityOn ? communityDetailHref(listId) : listHref(listId)
 }

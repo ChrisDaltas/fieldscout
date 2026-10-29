@@ -16,6 +16,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 
+import { useHoldPageDraft } from '@/components/mobile/player/profile-ui-store'
 import { useShowMovement } from '@/components/mobile/rankings/movement-pref'
 import { carryBoard, boardFor } from '@/components/mobile/rankings/new-ranking'
 import {
@@ -328,6 +329,10 @@ export function RankingEditor({
     onDirtyChange(dirty)
   }, [dirty, onDirtyChange])
   useEffect(() => () => onDirtyChange(false), [onDirtyChange])
+  // So does a player profile opened over the editor: while there are
+  // changes to publish it offers no way off this page (its team stays plain
+  // text), as leaving through it would skip the guard and lose them.
+  useHoldPageDraft(dirty)
   useEffect(() => {
     if (!dirty) return
     const onUnload = (e: BeforeUnloadEvent) => {

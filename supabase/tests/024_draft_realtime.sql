@@ -257,7 +257,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, settings, d
   ('b9000000-0000-4000-8000-0000000000b1', '94000000-0000-4000-8000-000000000003',
    'pgtap-rt-LS-foreign', 2026, 'scheduled', 8, '{}', null),
   ('b9000000-0000-4000-8000-0000000000c1', '94000000-0000-4000-8000-000000000003',
-   'pgtap-rt-LX-deleted', 2026, 'scheduled', 8, '{}', now());
+   'pgtap-rt-LX-deleted', 2026, 'scheduled', 8, '{}', null);   -- stamped below, after its draft (212)
 
 insert into teams (id, owner_id, name, league_id) values
   ('c9000000-0000-4000-8000-0000000000a1', '94000000-0000-4000-8000-000000000001',
@@ -278,6 +278,11 @@ insert into drafts (id, league_id, status, current_deadline) values
    'scheduled', null),
   ('d9000000-0000-4000-8000-0000000000c1', 'b9000000-0000-4000-8000-0000000000c1',
    'live', null);
+-- RE-CUT BY 212 (F716): a soft-deleted league is now an ARCHIVED one, and an
+-- archived league's rows refuse every write (league_archived_guard_internal),
+-- so the fixture builds the league's rows FIRST and stamps deleted_at LAST —
+-- the same end state the cells below read.
+update leagues set deleted_at = now() where id = 'b9000000-0000-4000-8000-0000000000c1';
 
 -- Post-reset race guard: make sure today's (and tomorrow's, for a run
 -- straddling midnight UTC) realtime.messages partitions exist — the

@@ -19,6 +19,11 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# The job token reads the repo and nothing else (M7 L.F2.8, F721): no step
+# writes to GitHub, so no write scope is granted.
+permissions:
+  contents: read
+
 jobs:
   check:
     name: types · lint · unit

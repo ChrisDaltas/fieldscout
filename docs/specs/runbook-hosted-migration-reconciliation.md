@@ -1,6 +1,6 @@
 # Runbook: hosted migration reconciliation
 
-> Execution steps for closing the gap between production (`xhqrdzllcsrvbbcygilv`)
+> Execution steps for closing the gap between production (the hosted project; its ref is in the Supabase dashboard, not in this public repo)
 > and `supabase/migrations/`. Audit, evidence and rationale live in
 > `hosted-migration-reconciliation.md` — this file is the ordered procedure.
 >

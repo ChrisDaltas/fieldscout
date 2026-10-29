@@ -203,8 +203,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
    'pgtap-lr-LT-nodraft', 2026, 'setup', 8, null, '{}'),
   ('b8000000-0000-4000-8000-0000000000d1', '95000000-0000-4000-8000-000000000009',
    'pgtap-lr-LDEL', 2026, 'setup', 8, null, '{}');
-update leagues set deleted_at = now()
-where id = 'b8000000-0000-4000-8000-0000000000d1';
+-- (LDEL is stamped deleted below, after its member row — 212.)
 -- LR: {QB:1, RB:1, bench:1} → 3 rounds (D91); LE48: {QB:1, bench:1} → 2.
 update leagues
 set roster_settings = '{"starting_slots": [
@@ -258,6 +257,12 @@ from generate_series(1, 3) i;
 insert into league_members (league_id, user_id, team_id, role) values
   ('b8000000-0000-4000-8000-0000000000d1', '95000000-0000-4000-8000-000000000009',
    null, 'commissioner');
+-- RE-CUT BY 212 (F716): a soft-deleted league is now an ARCHIVED one, and an
+-- archived league's rows refuse every write (league_archived_guard_internal),
+-- so the fixture builds the league's rows FIRST and stamps deleted_at LAST —
+-- the same end state the cells below read.
+update leagues set deleted_at = now()
+where id = 'b8000000-0000-4000-8000-0000000000d1';
 
 -- §C's fixture mock in LR: 7 of 8 picks already made; the FINAL pick is
 -- applied below through the amended internal (the completion-side bypass

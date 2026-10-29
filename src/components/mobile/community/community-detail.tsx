@@ -16,12 +16,13 @@ import {
   type CommunityScoring,
 } from '@/components/mobile/community/community-ops'
 import { ListActions } from '@/components/mobile/community/list-actions'
+import { ListAiAttribution } from '@/components/mobile/lists/list-ai-attribution'
 import { tierChipClass, viewSections, youTubeId, youTubeThumb } from '@/components/mobile/lists/lists-model'
 import { YouTubeBadge } from '@/components/mobile/lists/lists-parts'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { posTextClass } from '@/components/mobile/ui/m-pos-chip'
-import { M_PROJ_TEXT } from '@/components/players/projected-points'
+import { M_PROJ_TEXT, SEASON_PROJ_LABEL } from '@/components/players/projected-points'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useList, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
 import { useMobileCommunityListMeta } from '@/hooks/use-mobile-community-detail'
@@ -175,10 +176,10 @@ function asCommunityPlayer(row: ListPlayerWithPlayer): CommunityPlayer {
 /**
  * What the rows' projection is. The design draws this week's ("6.8"); the
  * app has only the season-long one for a whole list (`projected_pts_*`), so
- * the column says so (gap list §3 #29). Change this one label when weekly
- * projections arrive.
+ * the column says so (gap list §3 #29) — the same label as the phone Lists
+ * column (`SEASON_PROJ_LABEL`).
  */
-const PROJ_LABEL = 'Season proj'
+const PROJ_LABEL = SEASON_PROJ_LABEL
 
 function projectionFor(row: ListPlayerWithPlayer, scoring: CommunityScoring | null): number | null {
   if (!scoring) return null
@@ -380,6 +381,13 @@ function DetailBody({
           </ListTag>
         </div>
       ))}
+      {/* An AI expert's list says it was made by AI, as on the List view and
+          the share page (spec-ai-expert-personas UI requirement 4). */}
+      {list.ai_persona_id ? (
+        <div className="pt-4">
+          <ListAiAttribution personaId={list.ai_persona_id} />
+        </div>
+      ) : null}
     </>
   )
 }

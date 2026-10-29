@@ -3,6 +3,7 @@
  * No time, DOM or fetch here — callers pass `now` where a clock matters.
  */
 import type { ScoringFamily } from '@/components/draft/auction-player-table-ops'
+import { healthyIrBlockers } from '@/components/leagues/healthy-ir-ops'
 import {
   buildEditorModel,
   currentWeekOf,
@@ -11,12 +12,12 @@ import {
   placementFromStored,
   weekEditability,
 } from '@/components/leagues/lineup-editor-ops'
-import { lineupChecks, statusTag, type WeekGame } from '@/components/leagues/my-team-ops'
+import { lineupChecks, statusTag, wholeProjectedTotal, type ProjectedTotal, type WeekGame } from '@/components/leagues/my-team-ops'
 import { pendingCount, type MTradeOffer } from '@/components/mobile/messages/messages-ops'
 import type { ScheduleMatchup, ScheduleWeek } from '@/hooks/use-schedule'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { StandingsRow } from '@/lib/leagues/api/standings-service'
-import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
+import type { IrSlot, RosterSettings } from '@/lib/leagues/settings/league-settings'
 
 /**
  * The league Trending "See all" opens (m-home §3 `homeTrendAll`: League ›
@@ -158,10 +159,10 @@ export function teamWithRecord(name: string, record: string | null): string {
 }
 
 /** "Proj 83.44" — only when every starter has a stored projection (the
- *  matchup page's rule: a partial sum is never shown). */
-export function projText(total: { total: number; missing: number } | null, filled: number): string | null {
-  if (!total || filled === 0 || total.missing > 0) return null
-  return `Proj ${total.total.toFixed(2)}`
+ *  matchup page's rule, `wholeProjectedTotal`: a partial sum is never shown). */
+export function projText(total: ProjectedTotal | null, filled: number): string | null {
+  const whole = wholeProjectedTotal(total, filled)
+  return whole === null ? null : `Proj ${whole.toFixed(2)}`
 }
 
 /** A signed one-decimal delta with a real minus (U+2212), e.g. "+12.3" / "−4.0". */
@@ -249,12 +250,19 @@ export function ageText(iso: string, now: number): string {
  * Why a league card carries the red dot, in the order the label names them:
  *  - `trade`: a trade offer sent to the user's team is still waiting on
  *    their answer (`awaitingMe`, as the league Trades screen marks it);
+ *  - `ir_spot`: a player who isn't IR-eligible (a healthy one, say) is in
+ *    one of the user's IR spots, so their adds and waiver claims are blocked
+ *    — the Team tab's "You have an ineligible player in your IR spot."
+ *    notice (`healthyIrBlockers`, D593). Chris, 2026-10-27, item #14 ("Should
+ *    a Home league card's red dot also light up when a healthy player is
+ *    stuck in your IR spot? That now blocks adds and claims, so I'd say
+ *    yes."): "go with your recommendations on the rest";
  *  - `out` / `ir`: one of this week's starters is listed Out / on IR;
  *  - `bye`: one of this week's starters is on bye;
  *  - `empty`: a starting slot this week is empty.
  * Chat never lights it — the app keeps no "last read" mark.
  */
-export type HomeAlertReason = 'trade' | 'out' | 'ir' | 'bye' | 'empty'
+export type HomeAlertReason = 'trade' | 'ir_spot' | 'out' | 'ir' | 'bye' | 'empty'
 
 export interface HomeAlertInput {
   /** `leagues.status` — only a season being played can need you. */
@@ -265,6 +273,9 @@ export interface HomeAlertInput {
   /** This league's offers as the trades read returns them
    *  (`leagueTradeOffers`); undefined while unread, failed, or trades off. */
   offers: readonly Pick<MTradeOffer, 'awaitingMe'>[] | undefined
+  /** The user's roster and the league's IR spots (the Team tab's notice
+   *  reads the same two); undefined while either is unread. */
+  irSpots: { roster: readonly RosterPlayer[]; irSlots: readonly IrSlot[] } | undefined
   /** The user's roster, the week's stored `slot_map` (null = no row yet —
    *  every slot open, as the Team tab shows it), the league's slots and the
    *  week's NFL games; undefined while any of them is unread. */
@@ -281,8 +292,15 @@ export interface HomeAlertInput {
 /**
  * The reasons a league card's dot is on — empty when nothing needs you.
  * Every rule is the league screens' own:
- *  - the week is the current one (`currentWeekOf`, the Home card's and the
- *    Team tab's) and only while its lineup can still change
+ *  - the IR spot is the Team tab's notice exactly (`healthyIrBlockers` over
+ *    the same roster, spots and current week): it lights the dot whenever
+ *    the notice shows — his game under way or not, since adds stay blocked
+ *    either way (Chris 2026-10-21: "Nothing changes if the player is
+ *    locked.") — and not for a player still inside a Restricted IR stint
+ *    (no block). It doesn't wait on the lineup reads, the week's
+ *    editability or a playoff pairing: adds are blocked all the same;
+ *  - the lineup reasons read the current week (`currentWeekOf`, the Home
+ *    card's and the Team tab's) and only while its lineup can still change
  *    (`weekEditability` — a finished week has nothing to fix);
  *  - in the playoffs only a team still playing this week (a pairing with an
  *    opponent on the schedule) — a knocked-out team's lineup, or one on a
@@ -298,12 +316,16 @@ export interface HomeAlertInput {
  * A read that hasn't landed asserts nothing (no dot from it).
  */
 export function homeAlertReasons(input: HomeAlertInput): HomeAlertReason[] {
-  const { status, myTeamId, schedule, offers, lineup } = input
+  const { status, myTeamId, schedule, offers, irSpots, lineup } = input
   if (!seasonInPlay(status) || !myTeamId) return []
   const reasons: HomeAlertReason[] = []
   if (offers && pendingCount(offers) > 0) reasons.push('trade')
 
   const week = schedule ? currentWeekOf(schedule.weeks) : null
+  // With the schedule unread the week is unknown, and a Restricted occupant
+  // isn't counted (the Team tab's rule too) — only a certain block lights it.
+  if (irSpots && healthyIrBlockers(irSpots.roster, irSpots.irSlots, week).length > 0) reasons.push('ir_spot')
+
   if (!schedule || week === null || !lineup) return reasons
   if (weekEditability(schedule.weeks, week, week).state !== 'open') return reasons
   if (status === 'playoffs') {
@@ -335,6 +357,8 @@ export function homeAlertReasons(input: HomeAlertInput): HomeAlertReason[] {
 
 const ALERT_WORDS: Record<HomeAlertReason, string> = {
   trade: 'a trade offer is waiting for your answer',
+  // The Team tab notice's headline (HEALTHY_IR_HEADLINE), as a clause.
+  ir_spot: 'you have an ineligible player in your IR spot',
   out: 'a starter is out',
   ir: 'a starter is on IR',
   bye: 'a starter is on bye',

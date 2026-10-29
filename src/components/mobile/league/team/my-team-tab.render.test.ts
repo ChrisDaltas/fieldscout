@@ -215,8 +215,58 @@ describe('MyTeamTab (mobile League › Team)', () => {
     expect(html).toContain('Sunday Funday League')
     expect(html).toContain('Touchdown Tacos')
     expect(html).toContain('2-2 · 2nd · PF 2nd · PA 1st')
-    // Σ of the SAVED starters' projections (qb + rb; wr has none).
-    expect(html).toContain('35.74')
+  })
+
+  // One rule for a lineup's projected total on every phone surface — the
+  // Match card's (`lineupProjection`): a number only when every filled
+  // starter has a projection, else "–" (audit match-team-1).
+  describe('the team card’s projected total', () => {
+    const proj = (out: string) => /data-team-proj="true">([^<]*)</.exec(out)?.[1]
+    const values = (rows: Array<[string, number | null]>) => (qc: QueryClient) =>
+      qc.setQueryData(
+        leaguePlayerValueKeys.week(LEAGUE, 2099, 5),
+        rows.map(([player_id, projected_points]) => ({ player_id, projected_points, projected_missing: null, season_points: null, season_games: 0 })),
+      )
+
+    it('Σ of the SAVED starters’ projections when every one has a projection', () => {
+      expect(proj(render(SCHEDULE, detail, values([['qb', 19.71], ['rb', 16.03], ['wr', 10], ['bn', 5.1]])))).toBe('45.74')
+    })
+
+    it('a starter without a projection: "–", never the partial sum (it would sit over a check saying the same)', () => {
+      // qb + rb have one, wr has none: 35.74 would be a partial sum.
+      expect(proj(html)).toBe('–')
+      expect(html).not.toContain('35.74')
+    })
+
+    it('a stored NULL projection is a missing one, never a zero', () => {
+      expect(proj(render(SCHEDULE, detail, values([['qb', 19.71], ['rb', 16.03], ['wr', null]])))).toBe('–')
+    })
+
+    it('while the projections load, and after their read fails: "–", never "0.00"', () => {
+      const loading = (qc: QueryClient) => {
+        const q = qc.getQueryCache().find({ queryKey: leaguePlayerValueKeys.week(LEAGUE, 2099, 5) })!
+        q.setState({ data: undefined, dataUpdatedAt: 0, status: 'pending', fetchStatus: 'fetching' })
+      }
+      const failed = (qc: QueryClient) => {
+        const q = qc.getQueryCache().find({ queryKey: leaguePlayerValueKeys.week(LEAGUE, 2099, 5) })!
+        q.setState({ data: undefined, dataUpdatedAt: 0, status: 'error', error: new Error('values read failed'), errorUpdatedAt: 1, fetchStatus: 'idle' })
+      }
+      for (const out of [render(SCHEDULE, detail, loading), render(SCHEDULE, detail, failed)]) {
+        expect(proj(out)).toBe('–')
+        expect(out).not.toContain('0.00')
+      }
+    })
+
+    it('an empty lineup has nothing to project: "–"', () => {
+      expect(proj(render(SCHEDULE, detail, (qc) => qc.setQueryData(teamLineupKeys.week(ME, 5), { ...LINEUP, slot_map: {} })))).toBe('–')
+    })
+
+    it('a kept (dropped-after-he-played) starter is a filled seat — the Lineup check’s seats', () => {
+      const kept = (qc: QueryClient) => qc.setQueryData(teamLineupKeys.week(ME, 5), { ...LINEUP, slot_map: { ...LINEUP.slot_map, 'te:0': 'gone' } })
+      const all: Array<[string, number]> = [['qb', 19.71], ['rb', 16.03], ['wr', 10]]
+      expect(proj(render(SCHEDULE, detail, (qc) => (values(all)(qc), kept(qc))))).toBe('–')
+      expect(proj(render(SCHEDULE, detail, (qc) => (values([...all, ['gone', 4]])(qc), kept(qc))))).toBe('49.74')
+    })
   })
 
   it('offers only the quick actions the app can do', () => {
@@ -383,6 +433,17 @@ describe('MyTeamTab (mobile League › Team)', () => {
         qc.setQueryData(teamLineupKeys.week(THEM, 5), THEIR_LINEUP)
       })
       expect(out).toMatch(/data-check="proj" data-tone="neutral"[\s\S]*?Not every starter has a projection yet/)
+      // The team card above it agrees — no number over a check saying there is none.
+      expect(out).toContain('data-team-proj="true">–<')
+    })
+
+    it('the team card and the check show the same projected score', () => {
+      const out = render(VS_THEM, detail, (qc) => {
+        values([['wr', 10], ['tq', 20], ['tr', 15]])(qc)
+        qc.setQueryData(teamLineupKeys.week(THEM, 5), THEIR_LINEUP)
+      })
+      expect(out).toContain('data-team-proj="true">45.74<')
+      expect(out).toMatch(/data-check="proj"[\s\S]*?>45\.74</)
     })
 
     it('is not shown for a week whose games are over', () => {

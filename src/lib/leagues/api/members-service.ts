@@ -36,6 +36,7 @@ import { teamNameSchema } from '../team-name'
 
 import { optionalReason } from './commish-matchup-service'
 import type { ServiceResult } from './leagues-service'
+import { archivedLeagueResult } from './inseason-errors'
 
 type Supabase = SupabaseClient<Database>
 
@@ -46,6 +47,8 @@ function mapMemberRpcError(
   error: { code?: string; message: string },
   forbiddenMessage: string,
 ): ServiceResult {
+  const archived = archivedLeagueResult(error)
+  if (archived) return archived
   if (error.code === '42501') {
     return { status: 403, body: { error: forbiddenMessage } }
   }
@@ -54,11 +57,23 @@ function mapMemberRpcError(
   if (error.code === 'P0002') {
     return { status: 404, body: { error: 'League not found' } }
   }
+  // 212 (F716): leagues are archived, never deleted — leave_league's
+  // sole-member refusal (150) still names the retired delete in SQL; the
+  // member reads the door that replaced it (translated here, the D624
+  // precedent — the RPC text is pinned by older suites).
+  if (error.code === 'P0001' && /only manager — delete the league instead/.test(error.message)) {
+    return { status: 400, body: { error: LEAVE_SOLE_MEMBER_MESSAGE } }
+  }
   if (error.code === 'P0001' || error.code === '22023') {
     return { status: 400, body: { error: error.message } }
   }
   return { status: 500, body: { error: error.message } }
 }
+
+/** The sole member (the commissioner, with nobody to hand the league to)
+ *  cannot leave it; he archives it instead (212 / F716). */
+export const LEAVE_SOLE_MEMBER_MESSAGE =
+  'You’re this league’s only member, so you can’t leave it — archive the league instead (League settings › Danger zone).'
 
 // ---------------------------------------------------------------------------
 // POST /api/leagues/[id]/members — add a placeholder seat (commish)

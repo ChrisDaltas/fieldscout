@@ -9,6 +9,7 @@ import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createTypedAdminClient } from '@/lib/supabase/admin'
 import { lastPollCompletedAtReader } from '@/lib/sync/ingest-flags'
 import { planLivePoll, readCalendar } from '@/lib/sync/live-poll'
+import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
  * The `score-league-week` invoker (spec §14 "every 5–10s in game windows" /
@@ -39,7 +40,9 @@ import { planLivePoll, readCalendar } from '@/lib/sync/live-poll'
  *   * the last-poll seam bound to `system_flags` (122 — F263(e)/F217), so
  *     an orphaned queue row (a crash, then an identical re-poll) is released
  *     instead of held forever;
- *   * ALERTS on `lease_lost + gone > 0` (R873), a quarantined league-week
+ *   * ALERTS on `lease_lost + gone > 0` (R873; a league restore's lease
+ *     take-back is a known benign `lease_lost`, named in the alert — R1757),
+ *     a quarantined league-week
  *     (D292) and `nothing_writable` (F259(e)) — `console.error` with
  *     `league_id`; `all_leased` / `all_deferred` informational (R875/R872).
  *
@@ -57,9 +60,7 @@ export const maxDuration = 60
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

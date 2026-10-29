@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { runLeaguePlayerValues } from '@/lib/leagues/scoring/player-values-job'
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
  * League-scored player values for autopilot (M6A L.E1.20; migration 137;
@@ -24,9 +25,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 export const maxDuration = 60
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

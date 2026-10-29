@@ -16,8 +16,10 @@ import { featureFlags } from '@/lib/feature-flags'
 
 /**
  * One Home league card's red dot (ruling #14, 2026-10-15): on when something
- * in that league needs the user — a trade offer waiting on their answer, or
- * a problem in this week's starting lineup (`homeAlertReasons` decides).
+ * in that league needs the user — a trade offer waiting on their answer, a
+ * player who isn't IR-eligible left in their IR spot (adds and claims are
+ * blocked; Chris 2026-10-27, item #14), or a problem in this week's starting
+ * lineup (`homeAlertReasons` decides).
  *
  * Only a league whose season is being played reads anything (pre-draft,
  * drafting and finished cards never carry the dot), and nothing is read
@@ -27,7 +29,9 @@ import { featureFlags } from '@/lib/feature-flags'
  *  - the schedule (the card's week; the Team tab's ladder),
  *  - the league detail (the slots, the managers — the Team tab and
  *    the league Trades screen),
- *  - every roster (Home's Injury news reads the same one),
+ *  - every roster (Home's Injury news reads the same one) — the user's own
+ *    is also what the IR-spot check reads, with the league detail's IR
+ *    spots (no read of its own),
  *  - the user's stored lineup for the week (the Team tab's),
  *  - the week's NFL games (the Team tab's game line — one read per week,
  *    shared by every league),
@@ -75,6 +79,7 @@ export function useMobileHomeAlert(league: MyLeagueRow): HomeAlert {
         myTeamId,
         schedule: schedule.data,
         offers,
+        irSpots: roster && settings ? { roster, irSlots: settings.ir_slots } : undefined,
         lineup:
           roster && settings && stored !== undefined && gamesSettled
             ? { roster, slotMap: stored?.slot_map ?? null, settings, games: gameRows ?? [] }

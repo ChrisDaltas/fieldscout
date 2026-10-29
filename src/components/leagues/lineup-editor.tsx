@@ -91,6 +91,7 @@ import {
   STAT_COLUMNS,
   statusTag,
   toggleColumn,
+  wholeProjectedTotal,
   writeColumns,
   type AutosaveStatus,
   type LineupCheck,
@@ -136,6 +137,10 @@ export interface LineupStats {
   games: readonly WeekGame[]
   splits: ReadonlyArray<{ defense: string; position: string; rank: number }>
   proj: (playerId: string) => number | null
+  /** The projections read (`league_player_values`): `pending` until it
+   *  lands, `error` when it failed with nothing to show. Either way the
+   *  projected total reads "—" — never "0.0" — and only a failure says why. */
+  projections: 'pending' | 'error' | 'ready'
   points: (playerId: string) => { phase: string; points: number; pending: readonly string[] } | null
   snap: (playerId: string) => number | null
 }
@@ -149,6 +154,8 @@ export interface LineupOpponent {
   href: string
   myScore: number | null
   oppScore: number | null
+  /** Their stored starters' projections — null while their lineup isn't
+   *  loaded, or when it has no starters (nothing to project). */
   oppProjected: ProjectedTotal | null
 }
 
@@ -185,7 +192,7 @@ export interface LineupEditorProps {
   opponent?: LineupOpponent | { kind: 'bye' } | null
 }
 
-export const EMPTY_STATS: LineupStats = { games: [], splits: [], proj: () => null, points: () => null, snap: () => null }
+export const EMPTY_STATS: LineupStats = { games: [], splits: [], proj: () => null, projections: 'pending', points: () => null, snap: () => null }
 
 type Notice = { tone: HintTone | 'positive'; text: string }
 type Saved = { slot_map: Record<string, string>; action_id: string } & Parameters<typeof saveOutcomeCopy>[0]
@@ -305,17 +312,25 @@ export function LineupEditor({
   }
 
   const model = useMemo(() => buildEditorModel(shown, roster, settings), [shown, roster, settings])
-  const mine = useMemo(() => projectedTotal(model.starters.map((r) => r.player?.player_id ?? null), stats.proj), [model.starters, stats.proj])
+  // The projected total — one rule with the phone (`wholeProjectedTotal`):
+  // every filled seat (a kept starter's too) must have a projection, else
+  // "—". Never a partial sum; never "0.0" for an empty lineup, while the
+  // projections load, or after their read failed.
+  const mineIds = useMemo(() => model.starters.map((r) => r.player?.player_id ?? kept.get(r.slot.key) ?? null), [model.starters, kept])
+  const mine = useMemo(() => projectedTotal(mineIds, stats.proj), [mineIds, stats.proj])
+  const mineWhole = stats.projections === 'ready' ? wholeProjectedTotal(mine, mineIds.filter(Boolean).length) : null
+  const mineNote =
+    stats.projections === 'error' ? 'couldn’t load the projections' : stats.projections === 'ready' && mine.missing > 0 ? `${mine.missing} without a projection` : null
   const checks = useMemo(
     () =>
       lineupChecks({
         starters: model.starters,
         week,
         games: stats.games,
-        mine,
+        mine: mineWhole === null ? null : mine,
         opponent: opponent?.kind === 'opponent' && opponent.oppProjected ? { name: opponent.name, projected: opponent.oppProjected } : null,
       }),
-    [model.starters, week, stats.games, mine, opponent],
+    [model.starters, week, stats.games, mine, mineWhole, opponent],
   )
 
   const sensors = useSensors(
@@ -410,7 +425,7 @@ export function LineupEditor({
         data-lineup-editor={teamId}
         data-override-mode={overrideMode ? 'on' : 'off'}
       >
-        {opponent && <MatchupStrip week={week} opponent={opponent} mine={mine} />}
+        {opponent && <MatchupStrip week={week} opponent={opponent} mine={mineWhole} />}
         <LineupCheckCard checks={checks} />
 
         {editability.state === 'closed' && !overrideMode && (
@@ -506,13 +521,13 @@ export function LineupEditor({
                   <tr className="border-t border-n-4" data-projected-total>
                     <td className="px-[9px] py-2.5 text-[10px] font-semibold text-n-3" colSpan={2 + columns.length - 1}>
                       Projected total
-                      {mine.missing > 0 && (
-                        <span className="ml-1 font-medium text-n-6">
-                          · {mine.missing} without a projection
+                      {mineNote && (
+                        <span className="ml-1 font-medium text-n-6" data-projected-total-note>
+                          · {mineNote}
                         </span>
                       )}
                     </td>
-                    <td className={cn('fs-num px-[9px] py-2.5 text-right text-[12px] font-bold', PROJ_TEXT)}>{mine.total.toFixed(1)}</td>
+                    <td className={cn('fs-num px-[9px] py-2.5 text-right text-[12px] font-bold', PROJ_TEXT)}>{mineWhole === null ? '—' : mineWhole.toFixed(1)}</td>
                     <td />
                   </tr>
                 </tbody>
@@ -605,7 +620,8 @@ function CustomizeMenu({ columns, onToggle }: { columns: readonly StatColumnId[]
   )
 }
 
-function MatchupStrip({ week, opponent, mine }: { week: number; opponent: LineupOpponent | { kind: 'bye' }; mine: ProjectedTotal }) {
+/** `mine`: my whole projected total (`wholeProjectedTotal`), null = "—". */
+function MatchupStrip({ week, opponent, mine }: { week: number; opponent: LineupOpponent | { kind: 'bye' }; mine: number | null }) {
   if (opponent.kind === 'bye') {
     return (
       <Card data-matchup-strip="bye">
@@ -622,7 +638,7 @@ function MatchupStrip({ week, opponent, mine }: { week: number; opponent: Lineup
           <span className="fs-num text-[17px] font-bold tracking-[-0.02em] text-ink" data-strip-my-score>
             {formatPoints(opponent.myScore)}
           </span>
-          <span className={cn('fs-num text-[10px] font-medium', PROJ_TEXT)}>proj {mine.missing > 0 ? '—' : mine.total.toFixed(1)}</span>
+          <span className={cn('fs-num text-[10px] font-medium', PROJ_TEXT)}>proj {mine === null ? '—' : mine.toFixed(1)}</span>
         </span>
         <span className="text-[11px] font-semibold text-n-6">vs</span>
         <span className="flex items-baseline gap-1.5">

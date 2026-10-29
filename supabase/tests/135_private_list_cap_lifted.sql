@@ -83,9 +83,10 @@ select is(
     where owner_id = '87000000-0000-4000-8000-000000000001' and is_team and deleted_at is null),
   4, 'four live teams on one free account');
 
--- 5. The function keeps its SECURITY DEFINER + search_path pin.
+-- 5. The function keeps its SECURITY DEFINER + search_path pin (210, F719:
+--    the stricter '' — its names are qualified now; was public, pg_temp).
 select ok(
-  (select p.prosecdef and coalesce(p.proconfig, array[]::text[]) @> array['search_path=public, pg_temp']
+  (select p.prosecdef and coalesce(p.proconfig, array[]::text[]) @> array['search_path=""']
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'enforce_free_list_caps'),
   'enforce_free_list_caps stays SECURITY DEFINER with its search_path pin');

@@ -13,14 +13,15 @@ import {
   placementFromStored,
   weekEditability,
 } from '@/components/leagues/lineup-editor-ops'
-import { projectedTotal, starterIdsOf } from '@/components/leagues/my-team-ops'
+import { starterIdsOf } from '@/components/leagues/my-team-ops'
 import { STALE_LEAGUE_COPY } from '@/components/leagues/status-banners'
 import { problemCopy } from '@/components/leagues/team-page'
-import { DEADLINE_PASSED_TITLE, NOT_IN_SEASON_TRADE_COPY } from '@/components/leagues/trades-ops'
+import { tradesClosedReason } from '@/components/leagues/trades-ops'
 import { waiverSeatCopy } from '@/components/leagues/waiver-claims-ops'
 import { movesGate } from '@/components/players/player-card-league-ops'
 import { MobileLeagueHeader } from '@/components/mobile/league/league/league-header'
 import { transactionsHref } from '@/components/mobile/league/league/league-tab-ops'
+import { lineupProjection } from '@/components/mobile/league/match/match-ops'
 import { scheduleHref } from '@/components/mobile/league/schedule/schedule-ops'
 import { TradeBuilderOverlay } from '@/components/mobile/trades/trade-builder-overlay'
 import { MNotice } from '@/components/mobile/ui/m-form'
@@ -55,9 +56,10 @@ import { useRowStats } from './use-row-stats'
  * players" and the week navigator, the Bench, and the Swap player sheet.
  *
  * Every number is a server read — standings (record / rank / PF / PA ranks),
- * the stored lineup's projected total, the week's games, OPRK, the box read's
- * points. Moves go through the desktop editor's save path (`useLineupMoves`)
- * with its lock and eligibility rules. Quick actions: Schedule, Trade (the
+ * the stored lineup's projected total (the Match card's rule: "–" unless
+ * every filled starter has a projection), the week's games, OPRK, the box
+ * read's points. Moves go through the desktop editor's save path
+ * (`useLineupMoves`) with its lock and eligibility rules. Quick actions: Schedule, Trade (the
  * builder against this week's opponent; dimmed with its reason while trades
  * are closed) and Moves (the Transactions screen's "My moves"). Your pending
  * waiver claims (desktop team page) sit under the lineup. Not shown (no data
@@ -125,12 +127,19 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   // read below (same key, so one fetch).
   const [builder, setBuilder] = useState(false)
 
-  // The card's projected total: the SAVED starters (the server's arrangement).
+  // The card's projected total: the SAVED starters (the server's arrangement),
+  // a kept starter's seat counted as filled — the Lineup check's seats, by
+  // the Match card's rule (`lineupProjection`): "–" unless every filled
+  // starter has a projection, so never a partial sum, and never "0.00"
+  // while the projections load or after their read failed.
   const saved = useMemo(
     () => buildEditorModel(placementFromStored(lineup.data?.slot_map, roster), roster, detail.settings.roster_settings),
     [lineup.data, roster, detail.settings.roster_settings],
   )
-  const proj = projectedTotal(saved.starters.map((r) => r.player?.player_id ?? null), stats.proj)
+  const proj = lineupProjection(
+    saved.starters.map((r) => r.player?.player_id ?? kept.get(r.slot.key) ?? null),
+    stats.proj,
+  )
 
   // The Lineup check: the viewed week's opponent and their stored lineup.
   // The games and projections are the rows' own reads (same query keys).
@@ -164,7 +173,6 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
         opponent: checkOpponent,
       })
     : null
-  const anyProj = saved.starters.some((r) => r.player && stats.proj(r.player.player_id) !== null)
   const summary = standings.data ? summaryLine(standings.data.standings, teamId) : null
   // A failed standings read with nothing cached says so, with Try again —
   // never "No games played yet" (gap list §3 #14). A failed refetch over a
@@ -185,7 +193,7 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   }
 
   // Trades closed → the tile stays, dimmed, and says why (never a dead tap).
-  const tradeClosedWhy = !inSeason ? NOT_IN_SEASON_TRADE_COPY : tradesClosed ? DEADLINE_PASSED_TITLE : null
+  const tradeClosedWhy = tradesClosedReason({ leagueStatus: detail.league.status, deadlinePassed: tradesClosed })
   const actions: Array<{ key: string; icon: MIconName; label: string; href?: string; onClick?: () => void; closed?: boolean }> = [
     // Your team's schedule (gap list §4 item 107) — the Moves tile's "mine".
     { key: 'schedule', icon: 'sched', label: 'Schedule', href: scheduleHref(leagueId, teamId) },
@@ -235,7 +243,9 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
             </div>
             <div className="flex flex-none flex-col items-end">
               <span className="text-[11px] font-medium text-m-t3">Proj</span>
-              <span className="text-[15px] font-semibold tabular-nums">{anyProj ? proj.total.toFixed(2) : '–'}</span>
+              <span className="text-[15px] font-semibold tabular-nums" data-team-proj>
+                {proj ?? '–'}
+              </span>
             </div>
           </div>
           {/* Four columns as designed (80px tiles); News has no data, so its

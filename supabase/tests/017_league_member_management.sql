@@ -1191,9 +1191,11 @@ select ok(
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims',
   '{"sub": "98000000-0000-4000-8000-000000000001", "role": "authenticated", "email": "pgtap-mm1@fieldscout.local"}', true);
+-- RE-CUT BY 212 (F716): soft_delete_league is retired; L4 is ARCHIVED by its
+-- commissioner, which sets the same deleted_at every cell below reads.
 select lives_ok(
-  $$ select public.soft_delete_league((select l4 from _ids)) $$,
-  'L4 soft-deleted (the §15.1 commish soft delete)');
+  $$ select public.archive_league((select l4 from _ids)) $$,
+  'L4 archived (212 — was the §15.1 commish soft delete)');
 select ok(
   public.is_league_commish((select l4 from _ids)),
   'is_league_commish STILL returns true for the soft-deleted league — which is why each RPC needs its own explicit P0002 arm (the assertions below genuinely reach the deleted branch)');

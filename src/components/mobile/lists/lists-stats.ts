@@ -1,4 +1,5 @@
 import { STAT_CATALOG, type StatDef } from '@/components/lists/v2/list-stats'
+import { SEASON_PROJ_LABEL } from '@/components/players/projected-points'
 import type { FrameTotals, ListScoring, PlayerFrames, TimeFrame } from '@/hooks/use-mobile-lists-timeframe-stats'
 import type { ListUsage } from '@/hooks/use-mobile-lists-usage'
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
@@ -271,7 +272,16 @@ export const MOBILE_STATS: readonly MStat[] = [
       return ctx.posRank ? String(ctx.posRank) : DASH
     },
   },
-  scoredApp('proj', 'Proj', (entry, ctx, scoring) => projectionIn(entry, ctx.frames?.season, scoring)),
+  // The design's Proj is one game's; the app's is the season total (~300),
+  // and it ignores Week N / Last 3 / Season. Beside that control a bare
+  // "Proj" reads as this week's, so column and chip name the season with
+  // Community's label, SEASON_PROJ_LABEL (gap list §3 #29). Desktop lists
+  // have no time frame and keep their "Proj" beside the season-points
+  // columns.
+  {
+    ...scoredApp('proj', SEASON_PROJ_LABEL, (entry, ctx, scoring) => projectionIn(entry, ctx.frames?.season, scoring)),
+    label: SEASON_PROJ_LABEL,
+  },
   {
     id: 'pts',
     label: 'Pts',

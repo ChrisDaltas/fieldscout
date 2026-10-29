@@ -102,6 +102,8 @@ const SOURCE_PATHS = [
   // D486(10): the player page's core-stats read.
   'src/lib/players/**',
   'src/lib/nfl-teams.ts',
+  // M7 L.F2.8: the profiles column list the hardening wire suite reads by.
+  'src/lib/auth/profile-columns.ts',
   'src/lib/scoring/personal-scoring-system.ts',
   'src/utils/**',
   'src/types/database.ts',

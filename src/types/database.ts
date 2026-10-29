@@ -2308,6 +2308,7 @@ export type Database = {
       }
       leagues: {
         Row: {
+          archived_by: string | null
           avatar_url: string | null
           champion_team_id: string | null
           commissioner_note: string | null
@@ -2330,6 +2331,7 @@ export type Database = {
           playoff_start_week: number
           playoff_teams: number
           regular_season_weeks: number
+          restored_at: string | null
           roster_settings: Json
           scoring_rules_snapshot: Json | null
           scoring_system_id: string | null
@@ -2344,6 +2346,7 @@ export type Database = {
           waiver_type: string
         }
         Insert: {
+          archived_by?: string | null
           avatar_url?: string | null
           champion_team_id?: string | null
           commissioner_note?: string | null
@@ -2366,6 +2369,7 @@ export type Database = {
           playoff_start_week?: number
           playoff_teams?: number
           regular_season_weeks?: number
+          restored_at?: string | null
           roster_settings?: Json
           scoring_rules_snapshot?: Json | null
           scoring_system_id?: string | null
@@ -2380,6 +2384,7 @@ export type Database = {
           waiver_type?: string
         }
         Update: {
+          archived_by?: string | null
           avatar_url?: string | null
           champion_team_id?: string | null
           commissioner_note?: string | null
@@ -2402,6 +2407,7 @@ export type Database = {
           playoff_start_week?: number
           playoff_teams?: number
           regular_season_weeks?: number
+          restored_at?: string | null
           roster_settings?: Json
           scoring_rules_snapshot?: Json | null
           scoring_system_id?: string | null
@@ -2416,6 +2422,13 @@ export type Database = {
           waiver_type?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "leagues_archived_by_fkey"
+            columns: ["archived_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "leagues_champion_team_id_fkey"
             columns: ["champion_team_id"]
@@ -5531,10 +5544,19 @@ export type Database = {
           version: string
         }[]
       }
+      archive_league: {
+        Args: { p_league_id: string; p_reason?: string }
+        Returns: Json
+      }
+      archive_league_internal: {
+        Args: { p_at: string; p_league_id: string; p_reason: string }
+        Returns: Json
+      }
       assign_manager: {
         Args: { p_league_id: string; p_team_id: string; p_user_id: string }
         Returns: Json
       }
+      caller_is_server_internal: { Args: never; Returns: boolean }
       claim_ai_generation: {
         Args: { p_feature: string; p_limit: number; p_user_id: string }
         Returns: {
@@ -6373,6 +6395,8 @@ export type Database = {
         Returns: boolean
       }
       join_league_by_code: { Args: { p_code_or_slug: string }; Returns: Json }
+      league_archive_trade_reason_internal: { Args: never; Returns: string }
+      league_archive_who_internal: { Args: { p_user: string }; Returns: string }
       league_broadcast_payload: {
         Args: { l: Database["public"]["Tables"]["leagues"]["Row"] }
         Returns: Json
@@ -6389,6 +6413,14 @@ export type Database = {
       league_receipt_diff_internal: {
         Args: { p_depth?: number; p_new: Json; p_old: Json; p_prefix?: string }
         Returns: Json
+      }
+      league_restore_apply_internal: {
+        Args: { p_at: string; p_league_id: string }
+        Returns: number
+      }
+      league_restore_hold_internal: {
+        Args: { p_at: string; p_league_id: string }
+        Returns: number
       }
       league_roster_broadcast_payload: {
         Args: { r: Database["public"]["Tables"]["league_rosters"]["Row"] }
@@ -6615,6 +6647,15 @@ export type Database = {
         Args: { p_actor: string; p_list_id: string }
         Returns: undefined
       }
+      op_archived_league_prelude_internal: {
+        Args: {
+          p_action_id: string
+          p_league_id: string
+          p_reason: string
+          p_verb: string
+        }
+        Returns: Json
+      }
       op_cron_last_runs_internal: { Args: never; Returns: Json }
       op_job_check_internal: {
         Args: { p_job: string; p_kind: string }
@@ -6691,6 +6732,19 @@ export type Database = {
       }
       op_platform_state: { Args: never; Returns: Json }
       op_platform_state_internal: { Args: { p_at: string }; Returns: Json }
+      op_restore_league: {
+        Args: { p_action_id?: string; p_league_id: string; p_reason?: string }
+        Returns: Json
+      }
+      op_restore_league_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_league_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
       op_resume_job: {
         Args: {
           p_action_id?: string
@@ -6922,6 +6976,14 @@ export type Database = {
         Args: { p_list_id: string; p_positions: Json }
         Returns: undefined
       }
+      restore_league: {
+        Args: { p_league_id: string; p_reason?: string }
+        Returns: Json
+      }
+      restore_league_internal: {
+        Args: { p_at: string; p_league_id: string; p_reason: string }
+        Returns: Json
+      }
       revoke_league_invite: {
         Args: { p_invite_id: string; p_league_id: string }
         Returns: undefined
@@ -7067,6 +7129,10 @@ export type Database = {
       }
       scoring_rules_validate: { Args: { p_rules: Json }; Returns: undefined }
       scoring_stall_check: { Args: { p_now?: string }; Returns: Json }
+      scoring_system_label_lock_internal: {
+        Args: { p_scoring_system_id: string }
+        Returns: string
+      }
       scoring_system_league_use_internal: {
         Args: { p_scoring_system_id: string }
         Returns: string
@@ -7815,6 +7881,10 @@ export type PersonaSourceRanking =
   Database['public']['Tables']['persona_source_rankings']['Row']
 export type Player = Database['public']['Tables']['players']['Row']
 export type Profile = Database['public']['Tables']['profiles']['Row']
+/** The signed-in user's own profile as the app holds it (migration 210, F720):
+ *  `stripe_customer_id` is not readable through the API roles, and `is_admin`
+ *  comes from `is_platform_operator()`, not from the row. */
+export type ClientProfile = Omit<Profile, 'stripe_customer_id'>
 export type ScheduleAction = Database['public']['Tables']['schedule_actions']['Row']
 export type ScoringSystem = Database['public']['Tables']['scoring_systems']['Row']
 export type Tag = Database['public']['Tables']['tags']['Row']

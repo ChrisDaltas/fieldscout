@@ -51,6 +51,8 @@ export function mapInSeasonRpcError(
   error: RpcErrorLike,
   forbiddenMessage: string,
 ): ServiceResult {
+  const archived = archivedLeagueResult(error)
+  if (archived) return archived
   if (error.code === '42501') {
     return { status: 403, body: { error: forbiddenMessage } }
   }
@@ -71,4 +73,22 @@ export function mapInSeasonRpcError(
     return { status: 400, body: { error: error.message } }
   }
   return { status: 500, body: { error: error.message } }
+}
+
+/** The freeze's own words (212's `league_archived_guard_internal`, F716): a
+ *  member who still had the league open acts after it was archived. */
+export const LEAGUE_ARCHIVED_MESSAGE =
+  'This league is archived, so nothing in it can change. Its commissioner can restore it from Leagues › Archived leagues.'
+
+/** 212's freeze refusal — SQLSTATE 55000 with the freeze's sentence (the
+ *  archive verb's own mid-draft 55000 says something else and is not it). */
+export function isLeagueArchivedError(error: { code?: string | null; message?: string | null } | null | undefined): boolean {
+  return Boolean(error) && error!.code === '55000' && (error!.message ?? '').startsWith('This league is archived')
+}
+
+/** R1734 (PR #543): every league error mapper turns the freeze into a 409 in
+ *  plain words — never the 500 an unmapped SQLSTATE becomes. Null for any
+ *  other error. */
+export function archivedLeagueResult(error: { code?: string | null; message?: string | null } | null | undefined): ServiceResult | null {
+  return isLeagueArchivedError(error) ? { status: 409, body: { error: LEAGUE_ARCHIVED_MESSAGE } } : null
 }

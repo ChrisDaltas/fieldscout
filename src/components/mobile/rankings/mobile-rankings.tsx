@@ -12,6 +12,8 @@ import {
   activeWeekOf,
   parseRankingsParams,
   positionInUse,
+  rankEntryOf,
+  rankEntryState,
   rankPosOr,
   toRankingsSearch,
   type RankFrom,
@@ -139,6 +141,8 @@ export function MobileRankings({
 
   // Was the open overlay pushed by us (so Back can simply pop it)?
   const pushedOverlay = useRef(false)
+  // Is it a linked editor on the Mine entry we put under it (below)?
+  const linkRooted = useRef(false)
   useEffect(() => {
     if (!state.overlay) pushedOverlay.current = false
   }, [state.overlay])
@@ -153,11 +157,17 @@ export function MobileRankings({
     [pathname, initialEdit],
   )
 
+  // An overlay's entry carries a note of how Back from it goes, so arriving
+  // on it again later picks that up (`rankEntryOf`, the mount below). Set
+  // `pushedOverlay` / `linkRooted` before writing the entry they describe.
   const write = useCallback(
     (next: RankingsUrlState, mode: 'push' | 'replace') => {
       const url = hrefOf(next)
-      if (mode === 'push') window.history.pushState(null, '', url)
-      else window.history.replaceState(null, '', url)
+      const data = rankEntryState(
+        next.overlay ? { pushed: mode === 'push' || pushedOverlay.current, linkRooted: linkRooted.current } : null,
+      )
+      if (mode === 'push') window.history.pushState(data, '', url)
+      else window.history.replaceState(data, '', url)
     },
     [hrefOf],
   )
@@ -168,16 +178,27 @@ export function MobileRankings({
   // unpublished-changes guard below — instead of leaving the page with the
   // edits. The Mine entry is ours, not somewhere you came from, so the
   // editor's own Back steps over it (`linkRooted`).
+  //
+  // Arriving again on an overlay's entry this screen wrote (Back from a
+  // page a link opened — the player profile's team page — or a reload),
+  // the entry is already rooted: its note says how Back goes, and the entry
+  // is left alone (it may carry the player profile's mark to reopen).
   const mounted = useRef(false)
-  const linkRooted = useRef(false)
   useEffect(() => {
     if (mounted.current) return
     mounted.current = true
-    if (state.overlay?.kind !== 'edit') return
+    if (!state.overlay) return
+    const entry = rankEntryOf(window.history.state)
+    if (entry) {
+      pushedOverlay.current = entry.pushed
+      linkRooted.current = entry.linkRooted
+      return
+    }
+    if (state.overlay.kind !== 'edit') return
     write({ ...state, src: 'mine', overlay: null }, 'replace')
-    write({ ...state, src: 'mine' }, 'push')
     pushedOverlay.current = true
     linkRooted.current = true
+    write({ ...state, src: 'mine' }, 'push')
     // Mount only: this re-roots the entry the page loaded on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -203,8 +224,8 @@ export function MobileRankings({
       setStuck(null)
       return
     }
-    write({ ...state, overlay: stuck }, 'push')
     pushedOverlay.current = true
+    write({ ...state, overlay: stuck }, 'push')
     setPromptSeq((n) => n + 1)
   }, [stuck, urlEdit, state, write])
   useEffect(() => {

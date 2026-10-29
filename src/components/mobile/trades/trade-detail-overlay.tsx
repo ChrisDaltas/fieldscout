@@ -22,12 +22,14 @@ import {
   tradeSides,
   tradeStatusView,
 } from '@/components/leagues/trades-ops'
+import { leagueSize } from '@/components/mobile/home/home-ops'
 import { initials, leagueAvClass } from '@/components/mobile/shell/use-league-card'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { useAuth } from '@/hooks/use-auth'
 import { useCommishTrade } from '@/hooks/use-commish-trade'
+import { useLeagueScoringFamily } from '@/hooks/use-draft-pool'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useLeagues } from '@/hooks/use-leagues'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
@@ -87,7 +89,10 @@ export function TradeDetailOverlay({
   const { data: leagues } = useLeagues({ enabled: true })
   const leagueIndex = Math.max(0, (leagues ?? []).findIndex((l) => l.id === leagueId))
   const leagueRow = leagues?.find((l) => l.id === leagueId)
-  const format = `${leagueRow?.team_count ?? detail.teams.length}-team · ${detail.league.season}`
+  // The handoff's league tag is the league's size and scoring ("12-team
+  // standard", m-team §2.4) — the same words as the Switch league sheet.
+  const { family } = useLeagueScoringFamily(leagueId)
+  const format = leagueSize(leagueRow?.team_count ?? detail.teams.length, family)
 
   return (
     <MOverlay label="Trade offer" onClose={onClose}>

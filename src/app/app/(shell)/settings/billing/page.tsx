@@ -22,6 +22,8 @@ import { useToast } from '@/hooks/use-toast'
 /**
  * Pro subscription. The phone draws its own screen on the same data
  * (`MobileBillingSettings`, gap list §4 item 101); desktop is unchanged.
+ * Unreachable while the app offers no Pro: `layout.tsx` sends both layouts
+ * to Account settings until `PRO_UPSELL_ENABLED` is turned back on.
  */
 export default function BillingSettingsPage() {
   return <ByLayout desktop={<DesktopBillingSettings />} mobile={<MobileBillingSettings />} />

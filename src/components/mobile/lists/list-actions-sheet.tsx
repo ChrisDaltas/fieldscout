@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 
+import { toastMovedToTrash } from '@/components/lists/trash-door'
 import { offersDuplicate } from '@/components/mobile/community/community-ops'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
@@ -210,7 +211,7 @@ export function ListActionsSheet({
               onClick={then(() =>
                 remove.mutate(list.id, {
                   onSuccess: () => {
-                    toast({ title: `“${list.title}” moved to trash` })
+                    toastMovedToTrash(list.title)
                     onDeleted()
                   },
                   onError: (error) => toast({ title: 'Could not delete the list', description: error.message }),

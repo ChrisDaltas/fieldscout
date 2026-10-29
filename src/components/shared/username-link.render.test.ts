@@ -370,11 +370,11 @@ describe('phone screens open a person on the phone, never the desktop page (audi
   })
   it('the public person pages hand a signed-in phone to the phone screen (a shared link, a list owner)', () => {
     const page = (rel: string) => readFileSync(path.join(ROOT, 'src/app/u/[username]', rel), 'utf8')
-    expect(page('page.tsx')).toContain('<PhoneProfileHandoff to={phoneProfileHref(profile.username)} />')
-    expect(page('followers/page.tsx')).toContain("<PhoneProfileHandoff to={phoneFollowsHref(profile.username, 'followers')} />")
-    expect(page('following/page.tsx')).toContain("<PhoneProfileHandoff to={phoneFollowsHref(profile.username, 'following')} />")
+    expect(page('page.tsx')).toContain('<PhoneHandoff to={phoneProfileHref(profile.username)} />')
+    expect(page('followers/page.tsx')).toContain("<PhoneHandoff to={phoneFollowsHref(profile.username, 'followers')} />")
+    expect(page('following/page.tsx')).toContain("<PhoneHandoff to={phoneFollowsHref(profile.username, 'following')} />")
     // …only when signed in, and only on a device that gets the phone layout.
-    const handoff = readFileSync(path.join(ROOT, 'src/components/profile/phone-profile-handoff.tsx'), 'utf8')
+    const handoff = readFileSync(path.join(ROOT, 'src/components/shared/phone-handoff.tsx'), 'utf8')
     expect(handoff).toContain("if (signedIn && detectMode() === 'mobile') router.replace(to)")
   })
   it('the person link reads the layout (one place decides)', () => {

@@ -108,7 +108,9 @@ export const COMMISH_ACTION_WORDS: Readonly<Record<string, string>> = {
   edit_league_profile: 'changed the league’s name or picture',
   set_league_note: 'changed the commissioner note', // 192 (gap list #13)
   lifecycle_change: 'moved the league to its next stage',
-  delete_league: 'deleted the league',
+  delete_league: 'deleted the league', // history only — 212 retired the delete (F716)
+  archive_league: 'archived the league', // 212 (F716)
+  restore_league: 'restored the league', // 212 (F716)
 }
 
 /** A receipt whose type is newer than this file — plain words, never its code name. */
