@@ -22,6 +22,8 @@ import {
   gameLogTable,
   headerColors,
   initialCardIndex,
+  injuryDetail,
+  jerseyText,
   isLightHex,
   keyStatTrends,
   leagueOwnership,
@@ -135,6 +137,13 @@ describe('header', () => {
     expect(teamLine(player({ team: null, jersey_number: null }))).toBe('FA')
   })
 
+  it('jersey text: the number the team door is followed by; none for D/ST or no number', () => {
+    expect(jerseyText(player())).toBe('#7')
+    expect(jerseyText(player({ position: 'DEF', jersey_number: 0 }))).toBeNull()
+    expect(jerseyText(player({ jersey_number: null }))).toBeNull()
+    expect(jerseyText(player({ jersey_number: 0 }))).toBe('#0')
+  })
+
   it('bio line: present parts, Rookie in year one, D/ST wording', () => {
     const today = new Date('2026-10-15T12:00:00Z')
     expect(bioLine(player(), today)).toBe('Age 24 · 6\'0" · 220 lb · 4th season')
@@ -150,6 +159,22 @@ describe('header', () => {
     expect(statusPill('IR')?.label).toBe('IR')
     expect(statusPill('Active')).toBeNull()
     expect(statusPill(null)).toBeNull()
+  })
+
+  it("injury detail (pprofile-1): what is wrong, in Home's words, only while the pill shows", () => {
+    // Desktop's header and phone Home's injury row say it the same way.
+    expect(
+      injuryDetail(player({ status: 'Questionable', injury_body_part: 'Hamstring', practice_participation: 'Limited' })),
+    ).toBe('Hamstring · limited practice')
+    expect(
+      injuryDetail(player({ status: 'Out', injury_body_part: 'Ankle', injury_notes: 'Sprain', practice_participation: 'Full' })),
+    ).toBe('Ankle · Sprain · full practice')
+    expect(injuryDetail(player({ status: 'IR', injury_body_part: 'Knee - ACL', injury_notes: 'Surgery' }))).toBe('Knee - ACL · Surgery')
+    // A status with nothing on file says nothing (the pill still shows).
+    expect(injuryDetail(player({ status: 'Questionable' }))).toBeNull()
+    // No pill, no detail: healthy, or a feed status that is not an injury.
+    expect(injuryDetail(player({ status: null, injury_body_part: 'Ankle' }))).toBeNull()
+    expect(injuryDetail(player({ status: 'Active', injury_body_part: 'Ankle', practice_participation: 'Full' }))).toBeNull()
   })
 })
 

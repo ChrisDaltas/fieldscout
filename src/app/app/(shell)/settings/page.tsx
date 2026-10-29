@@ -26,7 +26,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { useUpdatePassword } from '@/hooks/use-update-password'
 import { cn } from '@/lib/utils'
-import type { Profile } from '@/types/database'
+import type { ClientProfile } from '@/types/database'
 
 /**
  * Account settings. The phone draws its own screen on the same data and
@@ -94,7 +94,7 @@ function SettingsSkeleton() {
  * display-name or full-name field to edit here, so the card has no form and
  * no save button — the avatar editor persists itself.
  */
-function ProfileCard({ profile }: { profile: Profile }) {
+function ProfileCard({ profile }: { profile: ClientProfile }) {
   return (
     <SettingsSection title="Profile">
       <div className="px-3.5 py-3">

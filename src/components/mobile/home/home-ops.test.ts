@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import { HEALTHY_IR_HEADLINE, currentWeekGamesOver, healthyIrBlockers, healthyIrHeadline } from '@/components/leagues/healthy-ir-ops'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
-import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
+import type { IrSlot, RosterSettings } from '@/lib/leagues/settings/league-settings'
 
 import {
   ageText,
@@ -189,6 +190,7 @@ describe('the league card red dot (ruling #14)', () => {
     myTeamId: 't1',
     schedule: { weeks: WEEKS, matchups: [{ week: 5, home_team_id: 't1', away_team_id: 't2' }] },
     offers: [],
+    irSpots: { roster: ROSTER, irSlots: SETTINGS.ir_slots },
     lineup: { roster: ROSTER, slotMap: FULL, settings: SETTINGS, games: GAMES, ...lineup },
     ...over,
   })
@@ -235,8 +237,9 @@ describe('the league card red dot (ruling #14)', () => {
     const roster = ROSTER.map((p) =>
       p.player_id === 'qb1' ? { ...p, status: 'Out' } : p.player_id === 'rb1' ? { ...p, status: 'IR' } : p,
     )
-    const reasons = homeAlertReasons(base({ offers: [{ awaitingMe: true }] }, { roster, slotMap: { 'qb:0': 'qb1', 'rb:0': 'rb1' } }))
-    expect(reasons).toEqual(['trade', 'out', 'ir', 'empty'])
+    const irSpots = { roster: [...roster, P('wr9', 'WR', { slot_key: 'ir1:0', ir_placed_week: 3 })], irSlots: SETTINGS.ir_slots }
+    const reasons = homeAlertReasons(base({ offers: [{ awaitingMe: true }], irSpots }, { roster, slotMap: { 'qb:0': 'qb1', 'rb:0': 'rb1' } }))
+    expect(reasons).toEqual(['trade', 'ir_spot', 'out', 'ir', 'empty'])
     expect(homeAlertLabel(['trade', 'out', 'bye'])).toBe(
       'Needs your attention: a trade offer is waiting for your answer, a starter is out and a starter is on bye',
     )
@@ -268,6 +271,88 @@ describe('the league card red dot (ruling #14)', () => {
     expect(homeAlertReasons(base({ offers: undefined }))).toEqual([])
     // The trade reason doesn't wait on the lineup reads.
     expect(homeAlertReasons(base({ schedule: undefined, lineup: undefined, offers: [{ awaitingMe: true }] }))).toEqual(['trade'])
+  })
+
+  describe('a player who is not IR-eligible in your IR spot (item #14, Chris 2026-10-27)', () => {
+    // He sits in the IR spot (`ir1:0`, placed in week 3) with this status.
+    const inSpot = (status: string, over: Partial<RosterPlayer> = {}) =>
+      P('ir9', 'WR', { status, slot_key: 'ir1:0', ir_placed_week: 3, ...over })
+    const spots = (player: RosterPlayer, irSlots: readonly IrSlot[] = SETTINGS.ir_slots) => ({ roster: [...ROSTER, player], irSlots })
+    const RESTRICTED: IrSlot[] = [{ key: 'ir1', label: 'DL', type: 'restricted', eligible_designations: ['OUT', 'IR'], min_weeks: 4 }]
+
+    it('a healthy player (or one whose tag the spot does not take) lights it — the same words as the Team tab notice', () => {
+      expect(homeAlertReasons(base({ irSpots: spots(inSpot('Active')) }))).toEqual(['ir_spot'])
+      expect(homeAlertReasons(base({ irSpots: spots(inSpot('')) }))).toEqual(['ir_spot'])
+      expect(homeAlertReasons(base({ irSpots: spots(inSpot('Questionable')) }))).toEqual(['ir_spot'])
+      expect(homeAlertReasons(base({ irSpots: spots(inSpot('Doubtful')) }))).toEqual(['ir_spot'])
+      expect(homeAlertLabel(['ir_spot'])).toBe('Needs your attention: you have an ineligible player in your IR spot')
+      // The notice's headline, as a clause.
+      expect(homeAlertLabel(['ir_spot'])).toBe(`Needs your attention: ${HEALTHY_IR_HEADLINE[0]!.toLowerCase()}${HEALTHY_IR_HEADLINE.slice(1, -1)}`)
+      expect(homeAlertLabel(['trade', 'ir_spot'])).toBe(
+        'Needs your attention: a trade offer is waiting for your answer and you have an ineligible player in your IR spot',
+      )
+    })
+
+    it('an IR-eligible player in the spot, or a healthy one on the bench, does not', () => {
+      expect(homeAlertReasons(base({ irSpots: spots(inSpot('Out')) }))).toEqual([])
+      expect(homeAlertReasons(base({ irSpots: spots(inSpot('IR')) }))).toEqual([])
+      expect(homeAlertReasons(base({ irSpots: spots(P('ir9', 'WR')) }))).toEqual([])
+    })
+
+    it('still lights while his game has him locked in the spot: adds stay blocked ("Nothing changes if the player is locked.")', () => {
+      const locked = inSpot('Active', { game_lock: { state: 'locked_until', until: '2026-10-14T04:00:00Z' } })
+      expect(homeAlertReasons(base({ irSpots: spots(locked) }))).toEqual(['ir_spot'])
+    })
+
+    it('not while a Restricted IR stint still holds him (no block) — lit once it runs out', () => {
+      // Week 5 is the current week.
+      expect(homeAlertReasons(base({ irSpots: spots(inSpot('Active', { ir_lock_until_week: 8 }), RESTRICTED) }))).toEqual([])
+      expect(homeAlertReasons(base({ irSpots: spots(inSpot('Active', { ir_lock_until_week: 5 }), RESTRICTED) }))).toEqual(['ir_spot'])
+      // With the week unknown (schedule unread) a Restricted occupant asserts nothing; an unrestricted one still does.
+      expect(homeAlertReasons(base({ schedule: undefined, irSpots: spots(inSpot('Active', { ir_lock_until_week: 5 }), RESTRICTED) }))).toEqual([])
+      expect(homeAlertReasons(base({ schedule: undefined, irSpots: spots(inSpot('Active')) }))).toEqual(['ir_spot'])
+    })
+
+    it('does not wait on the lineup reads, a finished week or a playoff pairing — adds are blocked all the same', () => {
+      const irSpots = spots(inSpot('Active'))
+      expect(homeAlertReasons(base({ irSpots, lineup: undefined }))).toEqual(['ir_spot'])
+      const over = [
+        { week: 5, status: 'correction_window' },
+        { week: 6, status: 'upcoming' },
+      ]
+      expect(homeAlertReasons(base({ irSpots, schedule: { weeks: over, matchups: [] } }, { slotMap: null }))).toEqual(['ir_spot'])
+      const knockedOut = { weeks: WEEKS, matchups: [{ week: 5, home_team_id: 't3', away_team_id: 't4' }] }
+      expect(homeAlertReasons(base({ status: 'playoffs', irSpots, schedule: knockedOut }, { slotMap: null }))).toEqual(['ir_spot'])
+    })
+
+    it('asserts nothing unread, outside a season being played, or with no team', () => {
+      expect(homeAlertReasons(base({ irSpots: undefined }))).toEqual([])
+      for (const status of ['setup', 'scheduled', 'drafting', 'complete']) {
+        expect(homeAlertReasons(base({ status, irSpots: spots(inSpot('Active')) })), status).toEqual([])
+      }
+      expect(homeAlertReasons(base({ myTeamId: null, irSpots: spots(inSpot('Active')) }))).toEqual([])
+    })
+
+    it('lights for exactly the teams the Team tab shows the notice to', () => {
+      const cases: Array<[RosterPlayer, readonly IrSlot[]]> = [
+        [inSpot('Active'), SETTINGS.ir_slots],
+        [inSpot('Out'), SETTINGS.ir_slots],
+        [inSpot('Doubtful'), SETTINGS.ir_slots],
+        [inSpot('Doubtful'), [{ key: 'ir1', type: 'unrestricted', eligible_designations: ['OUT', 'IR', 'Doubtful'] }]],
+        [inSpot('Active', { game_lock: { state: 'locked_until', until: '2026-10-14T04:00:00Z' } }), SETTINGS.ir_slots],
+        [inSpot('Active', { ir_lock_until_week: 6 }), RESTRICTED],
+        [inSpot('Active', { ir_lock_until_week: 4 }), RESTRICTED],
+        [inSpot('Active', { slot_key: 'ir2:0' }), SETTINGS.ir_slots],
+        [P('ir9', 'WR'), SETTINGS.ir_slots],
+      ]
+      for (const [player, irSlots] of cases) {
+        const roster = [...ROSTER, player]
+        // The Team tab's call (my-team-tab.tsx / team-page.tsx).
+        const notice = healthyIrHeadline(healthyIrBlockers(roster, irSlots, 5, currentWeekGamesOver(WEEKS, 5))) !== null
+        const dot = homeAlertReasons(base({ irSpots: { roster, irSlots } })).includes('ir_spot')
+        expect(dot, `${player.status} in ${player.slot_key ?? 'bench'} (${irSlots[0]!.type})`).toBe(notice)
+      }
+    })
   })
 
   it('in the playoffs only a team still playing this week', () => {

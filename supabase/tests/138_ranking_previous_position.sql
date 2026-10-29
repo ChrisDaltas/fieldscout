@@ -214,9 +214,10 @@ select is(
   (select previous_position from list_players where list_id = '99000000-0000-4000-8000-000000000001' and player_id = 'pgtap-prev-a'),
   2, 'the refused call changed nothing');
 
--- 7. SECURITY DEFINER with the 048 pin (pgTAP 004 checks every definer).
+-- 7. SECURITY DEFINER with its search_path pin (pgTAP 004 checks every
+--    definer; 210, F719: the stricter '' — names qualified; was 048's public, pg_temp).
 select ok(
-  (select p.prosecdef and coalesce(p.proconfig, array[]::text[]) @> array['search_path=public, pg_temp']
+  (select p.prosecdef and coalesce(p.proconfig, array[]::text[]) @> array['search_path=""']
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'reorder_list_players'),
   'reorder_list_players stays SECURITY DEFINER with its search_path pin');

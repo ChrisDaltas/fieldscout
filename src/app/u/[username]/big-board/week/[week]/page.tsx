@@ -7,7 +7,7 @@ import {
   PublicWeekStrip,
   type PublicBigBoardPlayer,
 } from '@/components/big-board/public-big-board'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { WEEKLY_BOARD_PATTERN } from '@/components/mobile/community/community-ops'
 import { createServerClient } from '@/lib/supabase/server'
 
 interface PageProps {
@@ -31,6 +31,38 @@ interface ListPlayerRow {
   player: PlayerJoin | PlayerJoin[] | null
 }
 
+type ServerSupabase = Awaited<ReturnType<typeof createServerClient>>
+
+async function resolveWeeklyListId(
+  supabase: ServerSupabase,
+  ownerId: string,
+  week: number,
+): Promise<{ list_id: string } | null> {
+  const { data: own, error: ownError } = await supabase
+    .from('big_board_weekly')
+    .select('list_id')
+    .eq('user_id', ownerId)
+    .eq('season', SEASON)
+    .eq('week_number', week)
+    .maybeSingle()
+  if (ownError) throw new Error(`weekly big board: ${ownError.message}`)
+  if (own) return own
+
+  // The pattern's week group pinned to this week (group 1 of the shared one).
+  const thisWeek = WEEKLY_BOARD_PATTERN.replace('([0-9]+)', String(week))
+  const { data: byslug, error: slugError } = await supabase
+    .from('lists')
+    .select('id')
+    .eq('owner_id', ownerId)
+    .is('deleted_at', null)
+    .filter('slug', 'match', thisWeek)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (slugError) throw new Error(`weekly big board: ${slugError.message}`)
+  return byslug ? { list_id: byslug.id } : null
+}
+
 async function loadWeeklyBigBoard(username: string, week: number) {
   // Profile lookup uses the regular anon client — profiles are publicly
   // readable.
@@ -42,17 +74,13 @@ async function loadWeeklyBigBoard(username: string, week: number) {
     .maybeSingle()
   if (!profile) return null
 
-  // big_board_weekly is owner-only by spec; the admin client lets the public
-  // page resolve which list backs Week N for this user. The list itself is
-  // publicly readable, so no admin escalation is needed once we have the id.
-  const admin = createAdminClient()
-  const { data: weekly } = await admin
-    .from('big_board_weekly')
-    .select('list_id')
-    .eq('user_id', profile.id)
-    .eq('season', SEASON)
-    .eq('week_number', week)
-    .maybeSingle()
+  // Which list backs Week N. `big_board_weekly` is owner-only, so the
+  // visitor's own client reads it: the owner sees his exact row. Anyone else
+  // finds the week by the board's permanent slug (`week-<n>-big-board-<ts>`,
+  // WEEKLY_BOARD_PATTERN — what a viewer can read), through `lists` RLS, so a
+  // private board stays invisible and nothing reveals that it exists. No
+  // service role (M7 L.F2.8, F722).
+  const weekly = await resolveWeeklyListId(supabase, profile.id, week)
 
   if (!weekly) {
     return { profile, list: null, players: [] as PublicBigBoardPlayer[] }

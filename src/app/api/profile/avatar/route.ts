@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { PROFILE_READABLE_COLUMNS } from '@/lib/auth/profile-columns'
 import { createServerClient } from '@/lib/supabase/server'
 
 const BUCKET = 'user-avatars'
@@ -72,7 +73,9 @@ export async function POST(request: Request) {
     .from('profiles')
     .update({ avatar_url, updated_at: new Date().toISOString() })
     .eq('id', user.id)
-    .select()
+    // Named columns: `select()` returns every column, and two of them are not
+    // readable through the user's client (migration 210, F720).
+    .select(PROFILE_READABLE_COLUMNS)
     .single()
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 })
@@ -94,7 +97,9 @@ export async function DELETE() {
     .from('profiles')
     .update({ avatar_url: null, updated_at: new Date().toISOString() })
     .eq('id', user.id)
-    .select()
+    // Named columns: `select()` returns every column, and two of them are not
+    // readable through the user's client (migration 210, F720).
+    .select(PROFILE_READABLE_COLUMNS)
     .single()
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 })

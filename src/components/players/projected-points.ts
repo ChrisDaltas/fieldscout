@@ -18,3 +18,12 @@ export const PROJ_TEXT = 'text-fs-blue-deep'
  * desktop ones `PROJ_TEXT`; neither class is written at a call site.
  */
 export const M_PROJ_TEXT = 'text-m-proj'
+
+/**
+ * The name of a season-long projection wherever it sits beside something
+ * weekly (gap list §3 #29): Community's list page, and the phone Lists
+ * column and chip, whose "Week N / Last 3 / Season" control would otherwise
+ * make a ~300-point season total read as this week's. Change this one label
+ * when weekly projections for a whole list arrive (gap list §2).
+ */
+export const SEASON_PROJ_LABEL = 'Season proj'

@@ -54,7 +54,8 @@
 -- Round 3 (R1755): (15) finalize's window hunk removed ⇒ J19 + J19b red;
 -- (16) the window shut one instant late (`<=`) ⇒ J19c + J19n red; (17) the window
 -- read off ANY league's latest restore ⇒ J19m + J19n red; (14) restore's
--- re-arm turned back into DO NOTHING ⇒ J16b red.
+-- re-arm turned back into DO NOTHING ⇒ J16b red. F858: (18) the label lock's
+-- `deleted_at IS NULL` restored ⇒ A11 + A12 + S4 + S5 red.
 -- World: u1 commissioner (of every league), u2 co-commissioner (LA), u3 / u5
 -- managers, u4 outsider, u6 a manager of LX only.
 -- ============================================================================
@@ -63,7 +64,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(109);
+select plan(112);
 
 -- ---------------------------------------------------------------------------
 -- A. Form
@@ -150,25 +151,28 @@ select is(
    where n.nspname = 'public' and pg_temp.un212(p.prosrc) <> p.prosrc),
   'draft_tick:1 finalize_matchups:5 mock_draft_expire:1 op_verb_prelude_internal:1 trade_tick:2',
   'A10 …and only those five bodies carry 212 lines (2 + 1 + 1 + 5 + 1)');
--- R1725's two REPLACED lines (marker `-- F716 / 212`): the full bodies are
--- pinned as 212's FILE TEXT, and undoing the one line gives 170 / 104 back.
+-- R1725's two REPLACED lines (marker `-- F716 / 212`) and F858's one (marker
+-- `-- 212 / F858`, 210's label lock): the full bodies are pinned as 212's
+-- FILE TEXT, and undoing the one line gives 170 / 104 / 210 back.
 create function pg_temp.un212r(p_src text) returns text language sql as $un$
-  select replace(replace(p_src,
+  select replace(replace(replace(p_src,
     '  JOIN public.leagues l ON l.scoring_system_id = s.id   -- F716 / 212 (R1725): an ARCHIVED league still plays by it (was `AND l.deleted_at IS NULL`)',
     '  JOIN public.leagues l ON l.scoring_system_id = s.id AND l.deleted_at IS NULL'),
     '           -- F716 / 212 (R1725): an ARCHIVED league still uses it (was `AND l.deleted_at IS NULL`)',
-    '           AND l.deleted_at IS NULL')
+    '           AND l.deleted_at IS NULL'),
+    '  JOIN public.leagues l ON l.scoring_system_id = s.id   -- 212 / F858 (R1725): an ARCHIVED league''s row stays label-locked (was `AND l.deleted_at IS NULL`)',
+    '  JOIN public.leagues l ON l.scoring_system_id = s.id AND l.deleted_at IS NULL')
 $un$;
 select is(
   (select string_agg(format('%s=%s/%s', p.proname, md5(p.prosrc), md5(pg_temp.un212r(p.prosrc))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname in ('scoring_system_league_use_internal', 'scoring_systems_rules_guard')),
-  'scoring_system_league_use_internal=10b9b9123c62ae50f41a127a907b2ead/e04d488051a3a637c5f6d87312284254 scoring_systems_rules_guard=07fb3088ab838f1f783f8187ace84316/009f9c68b41f1ff6fb58dfcc3d7725b1',
-  'A11 R1725 (D137, 170 / 104): each body is 212''s FILE TEXT, and with its ONE replaced line undone it is its newest definer''s FILE TEXT (stored md5 literals)');
+   where n.nspname = 'public' and p.proname in ('scoring_system_league_use_internal', 'scoring_systems_rules_guard', 'scoring_system_label_lock_internal')),
+  'scoring_system_label_lock_internal=66865bfdeace30ec7e24f1f0ab8a9622/d37789bc566c01242012747d36fa34b0 scoring_system_league_use_internal=10b9b9123c62ae50f41a127a907b2ead/e04d488051a3a637c5f6d87312284254 scoring_systems_rules_guard=07fb3088ab838f1f783f8187ace84316/009f9c68b41f1ff6fb58dfcc3d7725b1',
+  'A11 R1725 / F858 (D137, 170 / 104 / 210): each body is 212''s FILE TEXT, and with its ONE replaced line undone it is its newest definer''s FILE TEXT (stored md5 literals)');
 select ok(
   (select bool_and(regexp_replace(p.prosrc, '--[^\n]*', '', 'g') !~ 'deleted_at IS NULL') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname in ('scoring_system_league_use_internal', 'scoring_systems_rules_guard')),
-  'A12 …and neither filters out an archived league any more');
+   where n.nspname = 'public' and p.proname in ('scoring_system_league_use_internal', 'scoring_systems_rules_guard', 'scoring_system_label_lock_internal')),
+  'A12 …and none of the three filters out an archived league any more');
 
 -- ---------------------------------------------------------------------------
 -- World
@@ -231,6 +235,7 @@ from (values
   ('b1620000-0000-4000-8000-000000000033', 'FQ', 'in_season', null),                       -- finalize reads no queue (R1755)
   ('b1620000-0000-4000-8000-000000000034', 'FM', 'in_season', null),                       -- shares FW's player; FW's restore never holds it (R1755)
   ('b1620000-0000-4000-8000-000000000091', 'LR', 'setup', null),                           -- its own scoring system (R1725)
+  ('b1620000-0000-4000-8000-000000000093', 'LN', 'setup', null),                           -- plays by a MANAGER's system: the label lock (F858)
   ('b1620000-0000-4000-8000-000000000092', 'LO', 'in_season', null)                        -- the operator's restore (F851)
 ) v(id, nm, st, nx);
 -- The draft leagues' instant: an hour ago (the auto-start arm reads now()).
@@ -361,6 +366,12 @@ insert into scoring_systems (id, name, owner_id, is_template, rules)
 values ('51620000-0000-4000-8000-000000000001', 'pgtap-x162-LR scoring', '99162000-0000-4000-8000-000000000001', false,
         (select rules from scoring_systems where is_template and name = 'ESPN Standard'));
 update leagues set scoring_system_id = '51620000-0000-4000-8000-000000000001' where id = pg_temp.lg('LR');
+-- LN: plays by a scoring system owned by u3 — a MANAGER, not a commissioner
+-- (F858: 210's label lock).
+insert into scoring_systems (id, name, owner_id, is_template, rules)
+values ('51620000-0000-4000-8000-000000000002', 'pgtap-x162-LN scoring', '99162000-0000-4000-8000-000000000003', false,
+        (select rules from scoring_systems where is_template and name = 'ESPN Standard'));
+update leagues set scoring_system_id = '51620000-0000-4000-8000-000000000002' where id = pg_temp.lg('LN');
 -- LX: an archived league whose manager u6 deletes his account (§X).
 insert into league_chat (league_id, user_id, message, context, is_system)
 values (pg_temp.lg('LX'), '99162000-0000-4000-8000-000000000006', 'bye', 'league', false);
@@ -780,6 +791,23 @@ select alike(pg_temp.err($$ update scoring_systems set rules = (select rules fro
 reset role;
 select is((select rules = (select rules from scoring_systems where is_template and name = 'ESPN Standard') from scoring_systems where id = '51620000-0000-4000-8000-000000000001'),
   true, 'S2 …and nothing moved');
+-- F858: the label lock (210) holds for an ARCHIVED league exactly as for a
+-- live one — the owner (a manager, not a commissioner) cannot rename the row.
+set local role authenticated;
+select pg_temp.as_user(3);
+select is(pg_temp.err($$ update scoring_systems set name = 'renamed live' where id = '51620000-0000-4000-8000-000000000002' $$),
+  '42501: This scoring system belongs to the league "pgtap-x162-LN". Only its commissioner or a co-commissioner can change its name or description.',
+  'S3 F858 live control: the non-commissioner owner''s direct rename is refused while the league is live (210)');
+reset role;
+select pg_temp.as_user(1);
+insert into r162 select 'S4a', archive_league_internal(pg_temp.lg('LN'), null, '2026-10-29 09:00:00+00');
+set local role authenticated;
+select pg_temp.as_user(3);
+select is(pg_temp.err($$ update scoring_systems set name = 'renamed archived' where id = '51620000-0000-4000-8000-000000000002' $$),
+  '42501: This scoring system belongs to the league "pgtap-x162-LN". Only its commissioner or a co-commissioner can change its name or description.',
+  'S4 F858: archived, the same direct rename is refused the same way — the label lock no longer skips an archived league');
+reset role;
+select is((select name from scoring_systems where id = '51620000-0000-4000-8000-000000000002'), 'pgtap-x162-LN scoring', 'S5 …and the name never moved');
 
 -- ---------------------------------------------------------------------------
 -- O. F851 — the operator restores; R1733 — the archived wording

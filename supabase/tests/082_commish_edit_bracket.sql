@@ -87,8 +87,11 @@ select is((select (prosrc like '%round_hand_picked%')::text || ':' || (prosrc li
   'A6 the sync carries the stand-down hunk AND still carries R839''s refusal and 118''s DELETE (one hunk added, nothing removed)');
 select is((select prosrc like '%''hand_picked_action_id'', m.pairing_set_by_action_id%' from pg_proc where proname = 'playoff_bracket_state_internal'), true,
   'A7 the state carries hand_picked_action_id on each week entry');
-select is((select md5(prosrc) from pg_proc where proname = 'league_playoff_bracket'), 'f1ee89320e303eb67314cad303549b0e',
-  'A8 league_playoff_bracket (the member read) is BYTE-IDENTICAL to its pre-134 self (stored literal)');
+-- RE-CUT BY 210 (M7 L.F2.8, F719): the gate's one condition changed (a caller
+-- with no uid is refused unless it is the server); literal = 210's FILE body
+-- as applied (pre-210: f1ee8932…). 134 still adds nothing to the member read.
+select is((select md5(prosrc) from pg_proc where proname = 'league_playoff_bracket'), 'cdd4994743abf90248dd9380cdaa3b43',
+  'A8 league_playoff_bracket (the member read) is 210''s body — byte-identical apart from 210''s gate re-cut; 134 left it alone (stored literal)');
 select is((select count(*)::int from pg_proc where proname = 'commish_edit_schedule_internal' and prosrc like '%Hand-picking playoff matchups is a planned commissioner feature%'), 1,
   'A9 130''s bracket refusal in commish_edit_schedule is UNTOUCHED (078 F3b stays as the contrast — the regular-season verb still refuses a bracket row by name)');
 

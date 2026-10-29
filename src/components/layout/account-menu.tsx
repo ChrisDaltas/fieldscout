@@ -15,6 +15,7 @@ import { Icon } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/hooks/use-auth'
 import { featureFlags } from '@/lib/feature-flags'
+import { PRO_UPSELL_ENABLED } from '@/lib/pro-upsell'
 import { cn } from '@/lib/utils'
 
 interface AccountMenuProps {
@@ -158,12 +159,8 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
             </Link>
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem asChild>
-          <Link href="/app/styleguide">
-            <Icon name="layers" size={14} />
-            Style guide
-          </Link>
-        </DropdownMenuItem>
+        {/* No "Style guide" here: /app/styleguide is an internal page,
+            reached by its URL only (its own header says so; item #23). */}
         <DropdownMenuItem asChild>
           <Link href="/app/settings">
             <Icon name="setup" size={14} />
@@ -171,7 +168,8 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        {!profile.is_pro && (
+        {PRO_UPSELL_ENABLED && !profile.is_pro && (
+          // Off while Pro is on hold (`PRO_UPSELL_ENABLED`, free-only launch).
           // Pro moment — accent blue, never lime.
           <DropdownMenuItem asChild>
             <Link href="/app/settings/billing" className="font-bold text-accent focus:text-accent">

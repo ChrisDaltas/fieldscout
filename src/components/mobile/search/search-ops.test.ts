@@ -8,7 +8,6 @@ import {
   managerSub,
   matchManagers,
   ownerLabel,
-  postHref,
   readRecentSearches,
   readState,
   sectionCap,
@@ -164,12 +163,5 @@ describe('a player’s place in the league', () => {
     expect(ownerLabel({ kind: 'free_agent' }, 'drafting').text).toBe('Pre-draft')
     // Mid-draft, a picked player is on his team.
     expect(ownerLabel(theirs, 'drafting').text).toBe('Gridiron Gurus')
-  })
-})
-
-describe('where a post opens', () => {
-  it('Community’s list page while Community is on, else the List view', () => {
-    expect(postHref('l 1', true)).toBe('/app/explore?list=l%201')
-    expect(postHref('l1', false)).toBe('/app/lists?list=l1')
   })
 })

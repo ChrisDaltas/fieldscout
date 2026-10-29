@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { ingestPersonaContent } from '@/lib/personas/ingest'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
  * Daily persona content ingestion (spec-ai-content-engine.md, Slice B).
@@ -17,9 +18,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 export const maxDuration = 300
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

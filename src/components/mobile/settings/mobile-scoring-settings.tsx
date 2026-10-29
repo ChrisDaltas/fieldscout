@@ -8,6 +8,7 @@ import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { M_TEXT_FIELD, MStepper } from '@/components/mobile/ui/m-form'
 import { MobileScreen, MPageBar } from '@/components/mobile/ui/mobile-header'
 import { useScoringEditor } from '@/hooks/use-scoring-editor'
+import { PRO_UPSELL_ENABLED } from '@/lib/pro-upsell'
 import { SCORING_PRESETS } from '@/lib/scoring/default'
 import {
   PRO_SCORING_UPSELL,
@@ -103,12 +104,15 @@ export function MobileScoringSettings() {
           {!canCustomize && (
             <ScoutAiCard heading={PRO_SCORING_UPSELL.heading} label="Pro">
               <p>{PRO_SCORING_UPSELL.body}</p>
-              <Link
-                href="/app/settings/billing"
-                className="mt-3 flex h-10 w-fit items-center rounded-pill bg-accent px-[18px] text-[14px] font-semibold text-white active:bg-accent-strong"
-              >
-                Upgrade to Pro
-              </Link>
+              {/* No Upgrade while the app offers no Pro (`PRO_UPSELL_ENABLED`). */}
+              {PRO_UPSELL_ENABLED && (
+                <Link
+                  href="/app/settings/billing"
+                  className="mt-3 flex h-10 w-fit items-center rounded-pill bg-accent px-[18px] text-[14px] font-semibold text-white active:bg-accent-strong"
+                >
+                  Upgrade to Pro
+                </Link>
+              )}
             </ScoutAiCard>
           )}
 

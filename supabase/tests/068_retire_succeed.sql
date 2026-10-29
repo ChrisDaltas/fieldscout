@@ -144,15 +144,18 @@ select ok(
    where n.nspname = 'public' and p.proname in ('league_standings_internal', 'week_results_pending_internal')),
   'A7 the two replaced internals stay PLAIN, search_path='''', REVOKEd from every client role (117/118''s posture re-asserted)');
 -- The two DEFINER wrappers are 118's, byte for byte (stored literals from
--- 118 as applied — a 120 that touched either reds here).
+-- 118 as applied — a 120 that touched either reds here). RE-CUT BY 210
+-- (M7 L.F2.8, F719): one gate condition changed in each — a caller with no
+-- uid is refused unless it is the server; the literals are 210's FILE bodies
+-- as applied (118's were ab1e6ff4… / 96e70a95…). Still nothing about lineage.
 select is(
   md5((select p.prosrc from pg_proc p where p.oid = 'public.league_standings(uuid)'::regprocedure)),
-  'ab1e6ff42b77ea37ab194b50627453e8',
-  'A8 league_standings(uuid) is 118''s body (md5 literal) — the lineage lives in the internal only');
+  'c5070e59b0a6e09d25606e1c0a2b9c02',
+  'A8 league_standings(uuid) is 210''s body (md5 literal; 118''s gate re-cut by 210) — the lineage lives in the internal only');
 select is(
   md5((select p.prosrc from pg_proc p where p.oid = 'public.league_standings_projected(uuid)'::regprocedure)),
-  '96e70a95be6aad7cce6f8042dea7b8e8',
-  'A9 league_standings_projected(uuid) is 118''s body (md5 literal)');
+  '6761c5ef0ed946145b75d677c754adb3',
+  'A9 league_standings_projected(uuid) is 210''s body (md5 literal; 118''s gate re-cut by 210)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.prosrc like '%CYCLE id SET is_cycle USING path%'),

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useMemo } from 'react'
 
 import { ListThumbnail } from '@/components/lists/list-thumbnail'
+import { postHref } from '@/components/mobile/community/community-ops'
 import { MPosChip } from '@/components/mobile/ui/m-pos-chip'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useLists } from '@/hooks/use-lists'
@@ -101,7 +102,10 @@ export function HomeAiExperts() {
     ...(boards.data ?? []).map((b) => ({
       id: `board-${b.id}`,
       title: b.title,
-      href: `/u/${b.owner.username}/lists/${b.slug}`,
+      // Where the same board opens from search, a profile or a shared link
+      // (audit lists-2): Community's list page while Community is on, else
+      // the List view — never the desktop share page.
+      href: postHref(b.id, featureFlags.community),
       meta: `${b.player_count} players`,
       date: b.updated_at,
       positionFilter: b.position_filter,

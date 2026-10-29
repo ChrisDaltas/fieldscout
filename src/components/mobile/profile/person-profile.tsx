@@ -1,9 +1,9 @@
 'use client'
 
 import { FollowButton } from '@/components/explore/follow-button'
+import { postHref } from '@/components/mobile/community/community-ops'
 import { personAvatarClass, personListSub, personProfileParent } from '@/components/mobile/profile/person-profile-ops'
 import { CredCardView, PreviewBody, PreviewRow, StatCard } from '@/components/mobile/profile/profile-parts'
-import { postHref } from '@/components/mobile/search/search-ops'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { M_ICON } from '@/components/mobile/ui/m-icon'
 import { MobileScreen, RoundNavButton } from '@/components/mobile/ui/mobile-header'

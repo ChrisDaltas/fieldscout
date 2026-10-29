@@ -19,8 +19,9 @@ import { featureFlags } from '@/lib/feature-flags'
  * My stats — how the user's profile performs (package screen 09). The shell
  * PageHeader owns the page title; edit/share actions live there. Content:
  * profile header, real stat tiles (cred / tier / followers / following),
- * cred progress bar, accuracy placeholders, ranking history — in the v7
- * Profile language (grey tiles, plain sections, thin pill bars).
+ * cred progress bar, ranking history — in the v7 Profile language (grey
+ * tiles, plain sections, thin pill bars). v7's Ranking accuracy is left out
+ * until grading exists (see ProfileStats).
  */
 export function MyStatsPage() {
   const { profile, isLoading } = useAuth()

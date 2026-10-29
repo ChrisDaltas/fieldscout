@@ -5556,6 +5556,7 @@ export type Database = {
         Args: { p_league_id: string; p_team_id: string; p_user_id: string }
         Returns: Json
       }
+      caller_is_server_internal: { Args: never; Returns: boolean }
       claim_ai_generation: {
         Args: { p_feature: string; p_limit: number; p_user_id: string }
         Returns: {
@@ -7128,6 +7129,10 @@ export type Database = {
       }
       scoring_rules_validate: { Args: { p_rules: Json }; Returns: undefined }
       scoring_stall_check: { Args: { p_now?: string }; Returns: Json }
+      scoring_system_label_lock_internal: {
+        Args: { p_scoring_system_id: string }
+        Returns: string
+      }
       scoring_system_league_use_internal: {
         Args: { p_scoring_system_id: string }
         Returns: string
@@ -7876,6 +7881,10 @@ export type PersonaSourceRanking =
   Database['public']['Tables']['persona_source_rankings']['Row']
 export type Player = Database['public']['Tables']['players']['Row']
 export type Profile = Database['public']['Tables']['profiles']['Row']
+/** The signed-in user's own profile as the app holds it (migration 210, F720):
+ *  `stripe_customer_id` is not readable through the API roles, and `is_admin`
+ *  comes from `is_platform_operator()`, not from the row. */
+export type ClientProfile = Omit<Profile, 'stripe_customer_id'>
 export type ScheduleAction = Database['public']['Tables']['schedule_actions']['Row']
 export type ScoringSystem = Database['public']['Tables']['scoring_systems']['Row']
 export type Tag = Database['public']['Tables']['tags']['Row']

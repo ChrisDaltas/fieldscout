@@ -15,6 +15,7 @@ import type { DepthChartPlayer } from '@/hooks/use-mobile-pprofile-depth-chart'
 import type { ProfileBoxColumn, ProfileStatLine } from '@/hooks/use-mobile-pprofile-stat-lines'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
+import { injuryNote } from '@/components/mobile/home/home-ops'
 import { SCORING_OPTIONS } from '@/components/mobile/lists/lists-stats'
 import { gameState, isLiveStatus } from '@/components/mobile/players/players-ops'
 import type { ListScoring } from '@/hooks/use-mobile-lists-timeframe-stats'
@@ -112,11 +113,27 @@ export function statusPill(status: string | null): { label: string; tone: 'warn'
   return status ? (STATUS_PILLS[status] ?? null) : null
 }
 
+/** What is wrong, shown in the header beside the pill (audit pprofile-1):
+ *  "Hamstring · limited practice" — phone Home's injury wording
+ *  (`injuryNote`), read from the stored injury fields. Only while the pill
+ *  shows: an Active player's leftover body part says nothing. */
+export function injuryDetail(
+  player: Pick<PlayerStatsPlayer, 'status' | 'injury_body_part' | 'injury_notes' | 'practice_participation'>,
+): string | null {
+  return statusPill(player.status) ? injuryNote(player) : null
+}
+
+/** "#36" — none for a D/ST or a player without a number on file. */
+export function jerseyText(player: Pick<PlayerStatsPlayer, 'position' | 'jersey_number'>): string | null {
+  if (isDefense(player.position) || player.jersey_number == null) return null
+  return `#${player.jersey_number}`
+}
+
 /** "ATL · #36"; D/ST shows the team only; no team reads "FA". */
 export function teamLine(player: Pick<PlayerStatsPlayer, 'team' | 'position' | 'jersey_number'>): string {
   const team = player.team ?? 'FA'
-  if (isDefense(player.position) || player.jersey_number == null) return team
-  return `${team} · #${player.jersey_number}`
+  const jersey = jerseyText(player)
+  return jersey ? `${team} · ${jersey}` : team
 }
 
 /** "Rookie" in his first season, else "7th season" (`experience_years`

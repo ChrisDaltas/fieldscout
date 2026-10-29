@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import type { ListScoring, TimeFrame } from '@/hooks/use-mobile-lists-timeframe-stats'
+import { useListDisplayStore } from '@/stores/list-display-store'
 
 /**
  * FieldScout Mobile — Lists session state: each list's time frame (Week N /
@@ -67,4 +68,21 @@ export function useListNotes(listId: string): [boolean, (on: boolean) => void] {
   const shown = useListsSessionStore((state) => state.notesByList[listId] ?? false)
   const setNotes = useListsSessionStore((state) => state.setNotes)
   return [shown, (on: boolean) => setNotes(listId, on)]
+}
+
+/**
+ * A new list's view choices, carried to it once it's made: New list's step 2
+ * keeps its stat columns, time frame and scoring under a stand-in key
+ * (`newListKey`) until Save gives the list its id, and its List view should
+ * open as the editor left it.
+ */
+export function carryListSession(fromKey: string, toId: string): void {
+  const display = useListDisplayStore.getState()
+  const cols = display.byList[fromKey]?.cols
+  if (cols) display.setCols(toId, cols)
+  const session = useListsSessionStore.getState()
+  const tf = session.tfByList[fromKey]
+  if (tf) session.setTf(toId, tf)
+  const scoring = session.scoringByList[fromKey]
+  if (scoring) session.setScoring(toId, scoring)
 }

@@ -96,7 +96,10 @@
 --   1d. R1725 — an ARCHIVED league still counts as a user of its scoring
 --      system: `scoring_system_league_use_internal` (170) and 104's rules
 --      guard drop `deleted_at IS NULL`, so an archived league's custom
---      scoring stays behind the receipted editor and the validator.
+--      scoring stays behind the receipted editor and the validator. F858
+--      (212 merged after 210): 210's `scoring_system_label_lock_internal`
+--      drops it too, so an archived league's scoring row keeps its name /
+--      description lock against a non-commissioner owner, as a live one does.
 --
 --   2. THE FREEZE — `league_archived_guard_internal()`, a BEFORE INSERT /
 --      UPDATE / DELETE ROW trigger on every table that holds a league's
@@ -153,10 +156,11 @@
 --   op_verb_prelude_internal            184:573-617    1 hunk  (+1 / -0)   R1733
 --   scoring_system_league_use_internal  170:2480-2497  1 hunk  (+1 / -1)   R1725 — a REPLACED line, marked `-- F716 / 212`
 --   scoring_systems_rules_guard         104:391-468    1 hunk  (+1 / -1)   R1725 — likewise (their md5 pins are re-cut)
+--   scoring_system_label_lock_internal  210:659-678    1 hunk  (+1 / -1)   F858 — likewise, marked `-- 212 / F858`
 --   soft_delete_league                  169:1929-1973  replaced whole (retired — not a hunk)
--- 210 (PR #541, unmerged when this was written) adds
--- scoring_system_label_lock_internal with the same `deleted_at IS NULL`
--- filter: WHOEVER MERGES SECOND drops it under D137 against 210 (F858).
+-- 210 (PR #541) merged first and added scoring_system_label_lock_internal
+-- with the same `deleted_at IS NULL` filter; 212 merges second and drops it
+-- under D137 against 210's file text (F858, closed here).
 --
 -- MIGRATION CHECKLIST (tasks-M* §4.4):
 --   * Two columns: `archived_by` (nullable, FK ON DELETE SET NULL, a CHECK
@@ -2597,3 +2601,29 @@ END;
 $$;
 REVOKE EXECUTE ON FUNCTION public.scoring_systems_rules_guard()
   FROM PUBLIC, anon, authenticated, service_role;
+
+-- F858 (R1725 extended): 210's label lock — its newest definer is 210's FILE
+-- TEXT (`CREATE FUNCTION` there, `CREATE OR REPLACE` here; D137).
+-- scoring_system_label_lock_internal — 210_security_hardening_followups.sql:659-678 FILE TEXT (D137), 1 hunk (+1 / -1).
+CREATE OR REPLACE FUNCTION public.scoring_system_label_lock_internal(p_scoring_system_id UUID)
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  -- The name of a live league that plays by this scoring system and of
+  -- which the caller is NOT a commissioner or co-commissioner
+  -- (is_league_commish) — asked ONLY about the caller's own row (the in-body
+  -- gate: owner_id = auth.uid()); for anyone else's row the answer is NULL,
+  -- so nothing about another user's system is told.
+  SELECT l.name
+  FROM public.scoring_systems s
+  JOIN public.leagues l ON l.scoring_system_id = s.id   -- 212 / F858 (R1725): an ARCHIVED league's row stays label-locked (was `AND l.deleted_at IS NULL`)
+  WHERE s.id = p_scoring_system_id AND s.owner_id = (SELECT auth.uid())
+    AND NOT public.is_league_commish(l.id)
+  ORDER BY l.created_at, l.id
+  LIMIT 1
+$$;
+REVOKE EXECUTE ON FUNCTION public.scoring_system_label_lock_internal(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.scoring_system_label_lock_internal(UUID) TO authenticated;

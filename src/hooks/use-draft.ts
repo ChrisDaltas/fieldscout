@@ -607,6 +607,10 @@ export function useActiveDraft(leagueId: string | undefined) {
   }
 }
 
+/** The league's finished real draft: its id, and when it actually ran
+ *  (the phone Menu's Draft results date). */
+export type CompletedRealDraft = Pick<Draft, 'id' | 'started_at' | 'completed_at'>
+
 /**
  * The league's completed REAL draft, newest first (L.B3.5 — the
  * `/draft/recap` route's no-param resolution: §16.1 serves "real & mock",
@@ -620,11 +624,11 @@ export function useCompletedRealDraft(leagueId: string | undefined) {
   return useQuery({
     queryKey: ['completed-real-draft', leagueId ?? 'none'] as const,
     enabled: Boolean(leagueId),
-    queryFn: async (): Promise<{ id: string } | null> => {
+    queryFn: async (): Promise<CompletedRealDraft | null> => {
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('drafts')
-        .select('id')
+        .select('id, started_at, completed_at')
         .eq('league_id', leagueId!)
         .eq('is_mock', false)
         .eq('status', 'complete')
@@ -739,7 +743,7 @@ export function useMakePick(leagueId: string | null, draftId: string) {
  * members' surface), not this hook.
  */
 export function useToggleAutodraft(leagueId: string) {
-  const invalidate = useInvalidateLeagueDetail(leagueId)
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (on: boolean) =>
       sendLeagueAction<{ team_id: string; is_autodraft: boolean; changed: boolean }>(
@@ -747,7 +751,16 @@ export function useToggleAutodraft(leagueId: string) {
         jsonInit('POST', { on }),
       ),
     // is_autodraft lives on league_members — the league detail feeds it.
-    onSettled: invalidate,
+    // A landed toggle RETURNS the re-read, so React Query holds the mutation
+    // pending until the fresh detail is in the cache: the switch keeps
+    // showing the value it sent until the server's own value replaces it,
+    // instead of snapping back to the old one for the length of the refetch
+    // (the Auto-pick bounce). A refusal does not wait — the switch falls back
+    // with its toast at once, and the re-read still resyncs it.
+    onSettled: (_data, error) => {
+      const reread = queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+      return error ? undefined : reread
+    },
   })
 }
 

@@ -1,10 +1,10 @@
 import { create } from 'zustand'
-import type { Profile } from '@/types/database'
+import type { ClientProfile } from '@/types/database'
 
 interface AuthStore {
-  profile: Profile | null
-  setProfile: (profile: Profile | null) => void
-  updateProfile: (updates: Partial<Profile>) => void
+  profile: ClientProfile | null
+  setProfile: (profile: ClientProfile | null) => void
+  updateProfile: (updates: Partial<ClientProfile>) => void
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
