@@ -153,7 +153,11 @@ select is_empty(
         -- 210 (L.F2.8, F720) — profiles SELECT is column-level for the client
         -- roles: every column but stripe_customer_id / is_admin. pgTAP 160 D1–D2 pins the set.
                                                      ('profiles', 'anon', 'SELECT'),
-                                                     ('profiles', 'authenticated', 'SELECT'))
+                                                     ('profiles', 'authenticated', 'SELECT'),
+        -- 213 (Community C2) — no client UPDATE on list_comments: removal is
+        -- remove_list_comment() only. pgTAP 163 A3 / U1–U9 pin it.
+                                                     ('list_comments', 'anon', 'UPDATE'),
+                                                     ('list_comments', 'authenticated', 'UPDATE'))
       order by 1, 2, 3 $$,
   'C3 every one of the SEVEN non-TRUNCATE privileges is still held by all three API roles on EVERY public table — the revoke removed nothing else (175 / F555: bar the audit log INSERT for anon / authenticated, named)'
 );

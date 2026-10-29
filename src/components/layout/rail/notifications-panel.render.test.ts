@@ -89,6 +89,8 @@ describe('notifications — the filter strip', () => {
     expect(notificationIcon('league_draft')).toBe('list')
     expect(notificationIcon('player_injury')).toBe('info-circle')
     expect(notificationIcon('direct_message')).toBe('comments')
+    // 213: a new comment on your list — the comments glyph, not the list one.
+    expect(notificationIcon('list_comment')).toBe('comments')
     expect(notificationIcon('something_else')).toBe('notification')
     expect(notificationSource(null, new Map())).toBe('Field Scout')
     expect(notificationSource('L1', new Map([['L1', 'Sunday League']]))).toBe('Sunday League')

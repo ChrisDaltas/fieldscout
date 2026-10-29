@@ -27,6 +27,8 @@ describe('mobile Notifications row doors (m-home §3, m-dock §2.10)', () => {
 
   it('every other row keeps the shared target', () => {
     expect(mobileNotificationHref(n('list_updated', { list_id: 'x' }))).toBe('/app/lists/x')
+    // 213: someone commented on your list → that list.
+    expect(mobileNotificationHref(n('list_comment', { list_id: 'x', actor_id: 'u2' }))).toBe('/app/lists/x')
     expect(mobileNotificationHref(n('league_member', { league_id: 'L1' }))).toBe('/app/leagues/L1')
     // Gap list #13 (192): a commissioner-note change → the League tab, where the note is pinned on top.
     expect(mobileNotificationHref(n('league_commissioner_note', { league_id: 'L1', actor_id: 'u1' }))).toBe('/app/leagues/L1')

@@ -10,6 +10,8 @@ describe('mobile Notifications row look (m-home §2B)', () => {
     expect(notificationVisual({ type: 'league_waiver_claim', data: { status: 'won' } as never })).toEqual({ path: NOTIF_PATH.plus, tone: 'green' })
     expect(notificationVisual({ type: 'league_waiver_claim', data: { status: 'lost' } as never })).toEqual({ path: NOTIF_PATH.alert, tone: 'red' })
     expect(notificationVisual({ type: 'list_updated', data: null })).toEqual({ path: NOTIF_PATH.lists, tone: 'purple' })
+    // 213: a comment on your list — the speech bubble, list-activity purple.
+    expect(notificationVisual({ type: 'list_comment', data: null })).toEqual({ path: NOTIF_PATH.comment, tone: 'purple' })
     expect(notificationVisual({ type: 'stat_correction_result', data: null }).tone).toBe('orange')
     expect(notificationVisual({ type: 'something_new', data: null }).tone).toBe('neutral')
     // Gap list #13 (192): a commissioner-note change — the note glyph, blue.

@@ -8,7 +8,10 @@ import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { UserAvatar } from '@/components/ui/user-avatar'
-import { useAddComment, useComments } from '@/hooks/use-comments'
+import { useCommentCooldown } from '@/hooks/use-comment-cooldown'
+import { CommentRequestError, useAddComment, useComments } from '@/hooks/use-comments'
+import { toast } from '@/hooks/use-toast'
+import { commentWaitCopy } from '@/lib/rate-limit/comment-limit'
 import { MAX_COMMENT_LEN } from '@/types/schemas/lists'
 
 import { formatRelative } from './list-stats'
@@ -37,6 +40,13 @@ import { formatRelative } from './list-stats'
  * is `lists.comments_enabled`, which this tab previously ignored: the app panel
  * showed a working-looking composer on a list whose owner had turned comments
  * off, and the POST would have been refused. Both callers now pass the truth.
+ *
+ * ## The comment limit (migration 213 — 5 a minute)
+ *
+ * Once the poster has used his five, `Post` is held with "You can comment
+ * again in 20s", counting down; if the server refuses first, its wait is held
+ * instead. A refused or failed post shows in the ink toast and the typed text
+ * stays in the field.
  */
 
 interface CommentsTabProps {
@@ -57,14 +67,25 @@ export function ListCommentsTab({
   const [text, setText] = React.useState('')
   const comments = useComments(listId)
   const addComment = useAddComment(listId)
+  const cooldown = useCommentCooldown({ active: commentsEnabled && signedIn })
+  const holding = cooldown.waitSeconds > 0
 
   const post = () => {
     const body = text.trim()
-    if (!body || addComment.isPending) return
+    if (!body || addComment.isPending || holding) return
     addComment.mutate(
       { body },
       {
-        onSuccess: () => setText(''),
+        onSuccess: (created) => {
+          setText('')
+          cooldown.notePosted(created.created_at)
+        },
+        onError: (error) => {
+          if (error instanceof CommentRequestError && error.retryAfterSeconds !== null) {
+            cooldown.noteRefused(error.retryAfterSeconds)
+          }
+          toast({ title: 'That comment wasn’t posted', description: error.message, variant: 'destructive' })
+        },
       },
     )
   }
@@ -107,16 +128,16 @@ export function ListCommentsTab({
             variant="blue"
             size="md"
             onClick={post}
-            disabled={!text.trim() || addComment.isPending}
+            disabled={!text.trim() || addComment.isPending || holding}
           >
             <Icon name="send" size={12} /> Post
           </Button>
         </div>
       )}
 
-      {addComment.isError && (
-        <p className="text-[11px] font-medium text-negative-strong">
-          Could not post that comment. {addComment.error.message}
+      {holding && commentsEnabled && signedIn && (
+        <p aria-live="polite" className="-mt-1 pl-8 text-[10px] font-medium text-n-6" data-comment-wait>
+          {commentWaitCopy(cooldown.waitSeconds)}
         </p>
       )}
 

@@ -64,7 +64,9 @@ export function notificationHref(n: Pick<NotificationItem, 'type' | 'data'>): st
     if (typeof data?.league_id === 'string' && data.league_id !== '') return `/app/leagues/${data.league_id}`
     return null
   }
-  // List activity (the pre-existing arm).
+  // List activity (the pre-existing arm): a list you saved was updated
+  // (`list_updated`, 077) or someone commented on your list (`list_comment`,
+  // 213 — the alert goes to the list's owner, so this is his own list).
   if (typeof data?.list_id === 'string' && data.list_id !== '') {
     return `/app/lists/${data.list_id}`
   }

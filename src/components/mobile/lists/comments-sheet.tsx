@@ -6,7 +6,10 @@ import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { UsernameLink } from '@/components/shared/username-link'
 import { UserAvatar } from '@/components/ui/user-avatar'
-import { useAddComment, useComments } from '@/hooks/use-comments'
+import { useCommentCooldown } from '@/hooks/use-comment-cooldown'
+import { CommentRequestError, useAddComment, useComments } from '@/hooks/use-comments'
+import { toast } from '@/hooks/use-toast'
+import { commentWaitCopy } from '@/lib/rate-limit/comment-limit'
 import { MAX_COMMENT_LEN } from '@/types/schemas/lists'
 
 import { updatedLabel } from './lists-model'
@@ -15,6 +18,11 @@ import { updatedLabel } from './lists-model'
  * FieldScout Mobile — a list's comments (an app feature the design lacks,
  * reached from the List view's options). Same hooks as the desktop Comments
  * tab; the composer is pinned to the bottom of the sheet.
+ *
+ * The comment limit (migration 213 — 5 a minute): once the poster has used
+ * his five, Post is held with "You can comment again in 20s", counting down;
+ * if the server refuses first, its wait is held instead. A refused or failed
+ * post shows in the ink toast and the typed text stays in the box.
  */
 export function CommentsSheet({
   open,
@@ -33,12 +41,28 @@ export function CommentsSheet({
   const [text, setText] = React.useState('')
   const comments = useComments(open ? listId : undefined)
   const add = useAddComment(listId)
+  const cooldown = useCommentCooldown({ active: open && enabled })
+  const holding = cooldown.waitSeconds > 0
   const total = comments.data?.pagination.total ?? 0
 
   const post = () => {
     const body = text.trim()
-    if (!body || add.isPending) return
-    add.mutate({ body }, { onSuccess: () => setText('') })
+    if (!body || add.isPending || holding) return
+    add.mutate(
+      { body },
+      {
+        onSuccess: (created) => {
+          setText('')
+          cooldown.notePosted(created.created_at)
+        },
+        onError: (error) => {
+          if (error instanceof CommentRequestError && error.retryAfterSeconds !== null) {
+            cooldown.noteRefused(error.retryAfterSeconds)
+          }
+          toast({ title: 'That comment wasn’t posted', description: error.message, variant: 'destructive' })
+        },
+      },
+    )
   }
 
   return (
@@ -73,16 +97,16 @@ export function CommentsSheet({
               <button
                 type="button"
                 onClick={post}
-                disabled={!text.trim() || add.isPending}
+                disabled={!text.trim() || add.isPending || holding}
                 aria-label="Post comment"
                 className="flex size-10 flex-none items-center justify-center rounded-full bg-accent text-white disabled:bg-m-b3s disabled:text-m-t3"
               >
                 <MIcon name="sendUp" size={16} stroke={2} />
               </button>
             </div>
-            {add.isError && (
-              <p className="text-[12px] font-medium text-m-red">
-                Could not post that comment. {add.error.message}
+            {holding && (
+              <p aria-live="polite" className="pl-9 text-[12px] font-medium text-m-t3" data-comment-wait>
+                {commentWaitCopy(cooldown.waitSeconds)}
               </p>
             )}
           </div>

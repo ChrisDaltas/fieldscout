@@ -55,6 +55,8 @@ export function notificationKind(type: string): { label: string; tone: Notificat
   if (type.includes('rescored') || type.includes('correction')) return { label: 'Scoring', tone: 'caution' }
   if (type.includes('invite')) return { label: 'Invite', tone: 'accent' }
   if (type.includes('vote')) return { label: 'Vote', tone: 'accent' }
+  // 213 (Community C2): someone commented on your list.
+  if (type === 'list_comment') return { label: 'Comment', tone: 'accent' }
   if (type.includes('message') || type.includes('comment') || type.includes('chat')) return { label: 'Message', tone: 'accent' }
   if (type.startsWith('list')) return { label: 'Lists', tone: 'neutral' }
   if (type.startsWith('league')) return { label: 'League', tone: 'neutral' }

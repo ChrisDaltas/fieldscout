@@ -33,6 +33,12 @@ describe('notificationHref', () => {
     ).toBe('/app/lists/list-9')
   })
 
+  it('213: a new comment on your list links to that list', () => {
+    expect(
+      notificationHref({ type: 'list_comment', data: { list_id: 'list-9', actor_id: 'u2' } }),
+    ).toBe('/app/lists/list-9')
+  })
+
   it('is inert when a league_invite carries no token (defensive)', () => {
     expect(
       notificationHref({ type: 'league_invite', data: { league_id: 'lg-1', event: 'invited' } }),

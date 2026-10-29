@@ -171,6 +171,10 @@ export function useExploreFeed(tab: ExploreFeedTab, tagId: string | null) {
         .select(select)
         .eq('is_private', false)
         .is('deleted_at', null)
+        // The comment count is live comments only. 213's read rule hides
+        // removed ones from every reader; this filter says so before it is
+        // pushed too (measured: the embed count honours it).
+        .is('comments.deleted_at', null)
         .limit(FEED_LIMIT)
 
       if (tagId) query = query.eq('tag_filter.tag_id', tagId)

@@ -22,10 +22,36 @@ interface CommentsResponse {
   pagination: { page: number; pageSize: number; total: number; hasMore: boolean }
 }
 
+/**
+ * A failed comments request: the server's own words, its HTTP status and —
+ * for 213's comment limit (a 429) — how long to wait, from the body's
+ * `retry_after_seconds` or the `Retry-After` header.
+ */
+export class CommentRequestError extends Error {
+  readonly status: number
+  readonly retryAfterSeconds: number | null
+
+  constructor(message: string, status: number, retryAfterSeconds: number | null) {
+    super(message)
+    this.name = 'CommentRequestError'
+    this.status = status
+    this.retryAfterSeconds = retryAfterSeconds
+  }
+}
+
+function retryAfterOf(res: Response, body: { retry_after_seconds?: unknown }): number | null {
+  if (res.status !== 429) return null
+  const fromBody = Number(body.retry_after_seconds)
+  if (Number.isFinite(fromBody) && fromBody >= 1) return Math.ceil(fromBody)
+  const fromHeader = Number(res.headers.get('Retry-After'))
+  return Number.isFinite(fromHeader) && fromHeader >= 1 ? Math.ceil(fromHeader) : null
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error ?? `Request failed with ${res.status}`)
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown; retry_after_seconds?: unknown }
+    const message = typeof body.error === 'string' && body.error ? body.error : `Request failed with ${res.status}`
+    throw new CommentRequestError(message, res.status, retryAfterOf(res, body))
   }
   return (await res.json()) as T
 }
