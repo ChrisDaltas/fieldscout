@@ -104,14 +104,20 @@
 -- PART 4 — `remove_list_comment` (213, C2's operator permission) re-created
 --   from 213 — the NEWEST and only definition (grep -l remove_list_comment
 --   supabase/migrations → 213 only; 210 and 212 define none of this file's
---   objects) — with ONE addition: when the caller is a platform operator,
---   every open report on that comment is stamped reviewed by him at the
---   removal's instant, in the same transaction (plan correction 12: Remove
---   "marks the report reviewed, with who and when"). The operator's audit
---   row (213) carries `metadata.reports_reviewed` (the count), and his answer
---   gains `reports_reviewed`. Everything else — the gate, the refusals and
---   their words, the author / list-owner answers (pgTAP 163 R7 golden), the
---   audit row's before / after — is 213's, byte for byte.
+--   objects) — with ONE addition: when the removal is made AS an admin
+--   (C2's operator permission, removed_as 'operator': the comment is neither
+--   his nor on his list), every open report on that comment is stamped
+--   reviewed by him at the removal's instant, in the same transaction (plan
+--   correction 12: Remove "marks the report reviewed, with who and when").
+--   That operator's audit row (213) carries `metadata.reports_reviewed` (the
+--   count), and his answer gains `reports_reviewed`. A removal made as the
+--   comment's author or the list's owner stamps nothing — an admin's
+--   included — so the person reported is never recorded as the reviewer of
+--   the reports against him, and every stamp has its audit row; those
+--   reports stay open for Mark reviewed. Everything else — the gate, the
+--   refusals and their words, the author / list-owner answers (pgTAP 163 R7
+--   golden; 164 M1 / M2 / M4 / M4b), the audit row's before / after — is
+--   213's, byte for byte, for every caller.
 --
 -- MIGRATION CHECKLIST (tasks-M* §4.4):
 --   * D137 — newest definitions: remove_list_comment 213 (only definer);
@@ -474,7 +480,6 @@ DECLARE
   v_as       TEXT;
   v_at       TIMESTAMPTZ := now();
   v_rows     INTEGER;
-  v_operator BOOLEAN;
   v_reviewed INTEGER := 0;
 BEGIN
   IF v_uid IS NULL THEN
@@ -491,12 +496,11 @@ BEGIN
   END IF;
 
   SELECT l.owner_id INTO v_owner FROM public.lists l WHERE l.id = p_list_id;
-  v_operator := public.is_platform_operator();
 
   v_as := CASE
     WHEN v_author = v_uid THEN 'author'
     WHEN v_owner = v_uid THEN 'list_owner'
-    WHEN v_operator THEN 'operator'
+    WHEN public.is_platform_operator() THEN 'operator'
   END;
   IF v_as IS NULL THEN
     RAISE EXCEPTION 'You can only remove your own comments, or comments on your own list.' USING ERRCODE = '42501';
@@ -512,22 +516,25 @@ BEGIN
     RAISE EXCEPTION 'That comment isn''t there — it may already have been removed.' USING ERRCODE = 'P0002';
   END IF;
 
-  -- 214 (C9): an admin's removal is his review of every open report on that
-  -- comment — stamped with who and when, in this same transaction (plan
-  -- correction 12). The author's and a non-admin list owner's removals stamp
-  -- none (only an admin reviews reports).
-  IF v_operator THEN
+  -- 214 (C9): a removal made AS an admin (C2's operator permission — the
+  -- comment is neither his nor on his list) is his review of every open
+  -- report on that comment, stamped with who and when in this same
+  -- transaction, and logged just below (plan correction 12). A removal made
+  -- as the comment's author or the list's owner stamps none — even when that
+  -- person is an admin — so the person reported is never recorded as the one
+  -- who reviewed the reports against him, and no stamp is ever written
+  -- without its operator-audit row. Those reports stay open for Mark
+  -- reviewed (which logs every review).
+  IF v_as = 'operator' THEN
     UPDATE public.content_reports r
        SET reviewed_at = v_at, reviewed_by = v_uid
      WHERE r.target_type = 'comment' AND r.target_id = p_comment_id AND r.reviewed_at IS NULL;
     GET DIAGNOSTICS v_reviewed = ROW_COUNT;
-  END IF;
 
-  -- An operator's removal is an operator change: one platform_operator_actions
-  -- row (182's doctrine), however it was reached — Admin › Reports or a plain
-  -- call, reported or not. Ids and the instant only; never the comment's text.
-  -- The author's and the list owner's own removals write none.
-  IF v_as = 'operator' THEN
+    -- An operator's removal is an operator change: one platform_operator_actions
+    -- row (182's doctrine), however it was reached — Admin › Reports or a plain
+    -- call, reported or not. Ids and the instant only; never the comment's text.
+    -- The author's and the list owner's own removals write none (213).
     PERFORM public.log_operator_action_internal(
       pg_catalog.gen_random_uuid(), v_uid, 'remove_list_comment', 'platform', NULL, NULL,
       pg_catalog.jsonb_build_object('comment_id', p_comment_id, 'list_id', p_list_id,
@@ -535,9 +542,7 @@ BEGIN
       pg_catalog.jsonb_build_object('comment_id', p_comment_id, 'list_id', p_list_id,
                                     'author_id', v_author, 'deleted_at', v_at),
       pg_catalog.jsonb_build_object('reports_reviewed', v_reviewed));
-  END IF;
 
-  IF v_operator THEN
     RETURN pg_catalog.jsonb_build_object(
       'comment_id', p_comment_id, 'list_id', p_list_id, 'removed_at', v_at, 'removed_as', v_as,
       'reports_reviewed', v_reviewed);
@@ -556,5 +561,6 @@ COMMENT ON FUNCTION public.remove_list_comment(UUID, UUID) IS
   'or a platform operator. Raises P0002 when there is no such live comment and 42501 when it is not the '
   'caller''s to remove; never answers done for nothing. The only way a comment changes (client UPDATE is revoked). '
   'An operator''s removal writes one platform_operator_actions row (verb remove_list_comment; ids only, no text). '
-  '214 (C9): when the caller is a platform operator, every open report on the comment is stamped reviewed by him '
-  'at the removal''s instant (answer and audit metadata: reports_reviewed).';
+  '214 (C9): an operator''s removal (removed_as operator) also stamps every open report on the comment reviewed by '
+  'him at the removal''s instant (answer and audit metadata: reports_reviewed); a removal as author or list owner '
+  'stamps none, an admin''s included.';

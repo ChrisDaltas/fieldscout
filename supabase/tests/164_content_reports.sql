@@ -43,12 +43,15 @@
 --       operator audit gets one row (ids, no note); a second review is
 --       already_reviewed and keeps the first stamp; nobody — server included —
 --       can edit a report, un-review it or re-stamp it; the stamp is a pair.
---   §M  REMOVE — an admin's remove_list_comment stamps every OPEN report on
---       that comment with him and the removal's instant (an already-reviewed
---       one keeps its stamp), answers reports_reviewed and records it in the
---       audit row's metadata; the author's and a non-admin list owner's
---       removals stamp none (213's answer, golden); an admin removing a
---       comment on his own list stamps too (and writes no audit row, 213).
+--   §M  REMOVE — a removal made AS an admin (removed_as 'operator') stamps
+--       every OPEN report on that comment with him and the removal's instant
+--       (an already-reviewed one keeps its stamp), answers reports_reviewed
+--       and records it in the audit row's metadata; a removal made as the
+--       comment's author or the list's owner stamps none and answers 213's
+--       words (golden) — the author's, a non-admin owner's, and an admin's
+--       own: on his own list, or of his own reported comment (so the person
+--       reported is never the reviewer of the reports against him), with no
+--       audit row (213).
 --   §K  KEPT — a list its owner hard-deletes (still possible from a client
 --       today) takes its comments with it, but every report about it and its
 --       comments stays, unchanged: the record outlives what it reports.
@@ -57,19 +60,22 @@
 -- repeat check removed ⇒ D1 red (23505); (3) the reporter left in the admin
 -- loop ⇒ N4 + D4 + N7 red; (4) the operator gate in
 -- mark_content_report_reviewed removed ⇒ R1 + R2 red; (5) the operator's
--- report stamp in remove_list_comment removed ⇒ M3–M7 red.
+-- report stamp in remove_list_comment removed ⇒ M3 + M5–M7 red; (6) the stamp
+-- gated on "the caller is an admin" instead of "removed as an admin" ⇒ M5 +
+-- M7 red.
 -- World: u1 owns L1 (public), L2 (private), L3 (public, comments off), L4
 -- (public, soft-deleted), L5 (private, shared with league G1), L6 (private,
 -- shared with G2), L7 (private, in G1 but not shared) and the flood lists
 -- L10–L20, and posted question Q1. u2 comments; u3 reports and is in G1; u4
--- and u6 are platform operators (u4 owns L8); u5 reports; u7 floods.
+-- and u6 are platform operators (u4 owns L8 and wrote comment b1 on L1); u5
+-- reports; u7 floods.
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(84);
+select plan(85);
 
 create or replace function pg_temp.err(p_sql text) returns text language plpgsql as $$
 begin
@@ -230,7 +236,8 @@ insert into list_comments (id, list_id, author_id, body, deleted_at) values
   ('c1640000-0000-4000-8000-0000000000a5', 'a1640000-0000-4000-8000-000000000004', '99164000-0000-4000-8000-000000000002', 'x164 on deleted', null),
   ('c1640000-0000-4000-8000-0000000000a7', 'a1640000-0000-4000-8000-000000000001', '99164000-0000-4000-8000-000000000002', 'x164 h', null),
   ('c1640000-0000-4000-8000-0000000000a8', 'a1640000-0000-4000-8000-000000000001', '99164000-0000-4000-8000-000000000005', 'x164 i', null),
-  ('c1640000-0000-4000-8000-0000000000a9', 'a1640000-0000-4000-8000-000000000008', '99164000-0000-4000-8000-000000000002', 'x164 j', null);
+  ('c1640000-0000-4000-8000-0000000000a9', 'a1640000-0000-4000-8000-000000000008', '99164000-0000-4000-8000-000000000002', 'x164 j', null),
+  ('c1640000-0000-4000-8000-0000000000b1', 'a1640000-0000-4000-8000-000000000001', '99164000-0000-4000-8000-000000000004', 'x164 k', null);
 
 insert into players (id, full_name, position) values
   ('x164-p1', 'X164 One', 'WR'), ('x164-p2', 'X164 Two', 'WR');
@@ -580,12 +587,14 @@ select is(pg_temp.err($$update content_reports set reviewed_at = now() where id 
 select set_config('request.jwt.claims', '{"sub": "99164000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
 set local role authenticated;
 insert into _answers select 'M0a', report_content('comment', 'c1640000-0000-4000-8000-0000000000a1', 'spam');
+insert into _answers select 'M0f', report_content('comment', 'c1640000-0000-4000-8000-0000000000b1', 'abusive');
 reset role;
 select set_config('request.jwt.claims', '{"sub": "99164000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
 set local role authenticated;
 insert into _answers select 'M0b', report_content('comment', 'c1640000-0000-4000-8000-0000000000a7');
 insert into _answers select 'M0c', report_content('comment', 'c1640000-0000-4000-8000-0000000000a8');
 insert into _answers select 'M0d', report_content('comment', 'c1640000-0000-4000-8000-0000000000a9');
+insert into _answers select 'M0g', report_content('comment', 'c1640000-0000-4000-8000-0000000000b1');
 reset role;
 -- u6 reviews u5's report on comment a1 before anyone removes it.
 select set_config('request.jwt.claims', '{"sub": "99164000-0000-4000-8000-000000000006", "role": "authenticated"}', true);
@@ -611,8 +620,11 @@ select is(pg_temp.val($$select remove_list_comment('a1640000-0000-4000-8000-0000
   '{"list_id": "a1640000-0000-4000-8000-000000000001", "comment_id": "c1640000-0000-4000-8000-0000000000a1", "removed_as": "operator", "reports_reviewed": 1}',
   'M3 an admin removes a comment reported twice: one report was already reviewed, so ONE is stamped now (golden)');
 select is(pg_temp.val($$select remove_list_comment('a1640000-0000-4000-8000-000000000008', 'c1640000-0000-4000-8000-0000000000a9') - 'removed_at'$$),
-  '{"list_id": "a1640000-0000-4000-8000-000000000008", "comment_id": "c1640000-0000-4000-8000-0000000000a9", "removed_as": "list_owner", "reports_reviewed": 1}',
-  'M4 an admin removing a reported comment on his OWN list stamps its report too (golden)');
+  '{"list_id": "a1640000-0000-4000-8000-000000000008", "comment_id": "c1640000-0000-4000-8000-0000000000a9", "removed_as": "list_owner"}',
+  'M4 an admin removing a reported comment on his OWN list removes it as its owner: 213''s answer, golden (no reports_reviewed — not an admin review)');
+select is(pg_temp.val($$select remove_list_comment('a1640000-0000-4000-8000-000000000001', 'c1640000-0000-4000-8000-0000000000b1') - 'removed_at'$$),
+  '{"list_id": "a1640000-0000-4000-8000-000000000001", "comment_id": "c1640000-0000-4000-8000-0000000000b1", "removed_as": "author"}',
+  'M4b an admin removing his OWN reported comment removes it as its author: 213''s answer, golden (no reports_reviewed)');
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is(
@@ -622,24 +634,27 @@ select is(
    from content_reports r join list_comments c on c.id = r.target_id
    where r.target_type = 'comment'
      and r.target_id in ('c1640000-0000-4000-8000-0000000000a1', 'c1640000-0000-4000-8000-0000000000a7',
-                         'c1640000-0000-4000-8000-0000000000a8', 'c1640000-0000-4000-8000-0000000000a9')),
+                         'c1640000-0000-4000-8000-0000000000a8', 'c1640000-0000-4000-8000-0000000000a9',
+                         'c1640000-0000-4000-8000-0000000000b1')),
   '99164000-0000-4000-8000-000000000003|99164000-0000-4000-8000-000000000004|at-removal || '
   || '99164000-0000-4000-8000-000000000005|99164000-0000-4000-8000-000000000006|at-removal || '
   || '99164000-0000-4000-8000-000000000003|open|- || '
   || '99164000-0000-4000-8000-000000000003|open|- || '
-  || '99164000-0000-4000-8000-000000000003|99164000-0000-4000-8000-000000000004|at-removal',
-  'M5 the stamps: u4''s removals stamped the open reports with him at the removal''s instant; u6''s earlier review kept its stamp; the author''s and the list owner''s removals stamped none');
+  || '99164000-0000-4000-8000-000000000003|open|- || '
+  || '99164000-0000-4000-8000-000000000003|open|- || '
+  || '99164000-0000-4000-8000-000000000005|open|-',
+  'M5 the stamps: u4''s removal as an admin stamped the open report with him at the removal''s instant; u6''s earlier review kept its stamp; removals as author or list owner stamped none — u4''s on his own list and of his own comment included (he is never the reviewer of reports against him)');
 select is(
   (select string_agg(format('%s|%s', a.after ->> 'comment_id', a.metadata), ' || ' order by a.after ->> 'comment_id')
    from platform_operator_actions a where a.verb = 'remove_list_comment'
      and a.after ->> 'list_id' in ('a1640000-0000-4000-8000-000000000001', 'a1640000-0000-4000-8000-000000000008')),
   'c1640000-0000-4000-8000-0000000000a1|{"reports_reviewed": 1}',
-  'M6 the operator removal''s audit row records the reports it reviewed; the admin''s own-list removal writes none (213)');
+  'M6 the operator removal''s audit row records the reports it reviewed; the admin''s removals as list owner and as author write none (213) — and stamped none, so no stamp lacks its row');
 select is(
   (select count(*)::int from content_reports
    where reviewed_at is null and reporter_id in (select ('99164000-0000-4000-8000-00000000000' || i)::uuid from generate_series(1, 7) i)
      and not (target_type = 'list' and reporter_id = '99164000-0000-4000-8000-000000000007')),
-  9, 'M7 every other report is still open — the seed, u3''s shared-list, question and two removed-by-others comments, u1''s, u5''s and u6''s list reports');
+  12, 'M7 every other report is still open — the seed, u3''s shared-list, question and three comments removed as author / owner (a7, a8, a9), u3''s and u5''s on the admin''s own comment (b1), u1''s as owner (a3), u5''s and u6''s list reports');
 
 -- ---------------------------------------------------------------------------
 -- The bell after all of it: still one unread at most per admin.
@@ -657,8 +672,8 @@ select is(pg_temp.bell(), 'u1=0/0 u2=0/0 u3=0/0 u4=1/3 u5=0/0 u6=1/2 u7=0/0',
 -- K. A report outlives what it reports
 -- ---------------------------------------------------------------------------
 create temp table _kept as select * from content_reports where list_id = 'a1640000-0000-4000-8000-000000000001';
-select is((select count(*)::int from _kept), 7,
-  'K0 premise: seven reports are about list L1 or its comments (u3''s, u5''s and u6''s on the list; four on three of its comments)');
+select is((select count(*)::int from _kept), 9,
+  'K0 premise: nine reports are about list L1 or its comments (u3''s, u5''s and u6''s on the list; six on four of its comments)');
 select set_config('request.jwt.claims', '{"sub": "99164000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 set local role authenticated;
 select is(pg_temp.val($$with x as (delete from lists where id = 'a1640000-0000-4000-8000-000000000001' returning 1) select count(*) from x$$),
@@ -673,7 +688,7 @@ select is(
   (select count(*)::int from content_reports c join _kept k using (id)
    where (c.reporter_id, c.target_type, c.target_id, c.list_id, c.reason, c.note, c.created_at, c.reviewed_at, c.reviewed_by)
          is not distinct from (k.reporter_id, k.target_type, k.target_id, k.list_id, k.reason, k.note, k.created_at, k.reviewed_at, k.reviewed_by)),
-  7, 'K3 …and all seven reports about them are still there, byte-unchanged (no cascade)');
+  9, 'K3 …and all nine reports about them are still there, byte-unchanged (no cascade)');
 
 select * from finish();
 rollback;
