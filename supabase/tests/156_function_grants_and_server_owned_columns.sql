@@ -133,7 +133,8 @@ select is(
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "92060000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 
-with u as (update profiles set bio = 'g3 bio', avatar_url = 'https://example.com/a.png'
+-- (215: a picture must come from FieldScout — /avatars/… is one of the allowed sources)
+with u as (update profiles set bio = 'g3 bio', avatar_url = '/avatars/g3.png'
                 where id = '92060000-0000-4000-8000-000000000001' returning 1)
 select is(count(*)::int, 1, 'C1 an own-profile edit (bio, avatar) lands — RETURNING count 1') from u;
 with u as (update profiles set bio = 'g3 bio 2', cred_score = cred_score, follower_count = follower_count
