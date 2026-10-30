@@ -74,9 +74,13 @@ export function PublicListCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-[13px] font-bold tracking-[-0.01em] text-ink">
+              {/* The keyboard ring is drawn on the stretched hit area — the
+                  whole card — not on the title: the h3's truncate clips
+                  anything drawn outside the text, which hid the ring. The
+                  ::after is placed against the card, outside that clip. */}
               <Link
                 href={href}
-                className="after:absolute after:inset-0 after:rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="outline-none after:absolute after:inset-0 after:rounded-2xl focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-accent"
               >
                 {title}
               </Link>
