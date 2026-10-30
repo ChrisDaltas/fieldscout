@@ -77,6 +77,16 @@ function LikeButton({ item }: { item: ExploreFeedItem }) {
   // so (plan C3, F12): never a like that silently snaps back.
   const [liked, setLiked] = useState(item.is_liked)
   const [delta, setDelta] = useState(0)
+  // A like made elsewhere — the list's own page (plan C5) writes `is_liked`
+  // into the feed — re-seeds the button from the feed's state. Adjusted in
+  // render, never by remounting (a `key`), so a like from this row keeps
+  // keyboard focus on the button.
+  const [seenLiked, setSeenLiked] = useState(item.is_liked)
+  if (item.is_liked !== seenLiked) {
+    setSeenLiked(item.is_liked)
+    setLiked(item.is_liked)
+    setDelta(0)
+  }
   const count = Math.max(0, item.like_count + delta)
 
   return (
@@ -84,8 +94,12 @@ function LikeButton({ item }: { item: ExploreFeedItem }) {
       type="button"
       aria-label={liked ? `Unlike ${item.title}` : `Like ${item.title}`}
       aria-pressed={liked}
-      disabled={toggleLike.isPending}
+      // One toggle at a time (the server flips whatever it holds), held by
+      // a guard rather than `disabled`: a focused button that turns
+      // disabled loses keyboard focus, as a remount would.
+      aria-disabled={toggleLike.isPending}
       onClick={() => {
+        if (toggleLike.isPending) return
         const next = !liked
         setLiked(next)
         setDelta(next ? 1 : -1)
@@ -171,9 +185,7 @@ function FeedRow({ item }: { item: ExploreFeedItem }) {
           is display-only, so clicks there fall through to the row link. */}
       <div className="pointer-events-none relative z-10 flex shrink-0 items-center gap-4">
         <span className="pointer-events-auto">
-          {/* Keyed by the liked state the feed holds, so a like made on the
-              list's own page (plan C5) re-seeds the row's button. */}
-          <LikeButton key={String(item.is_liked)} item={item} />
+          <LikeButton item={item} />
         </span>
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-n-6">
           <Icon name="comments" size={12} />
