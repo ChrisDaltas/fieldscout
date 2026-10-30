@@ -41,7 +41,9 @@ import {
   InlineError,
   LIcon,
   PillButton,
+  PINNED_UNDER_SLIM_BAR,
   ScoringControl,
+  SlimBar,
   TimeFrameControl,
   VideoCard,
   coverClass,
@@ -350,83 +352,6 @@ function CoverButton({
 }
 
 // =============================================================================
-// The slim bar (gap list #25)
-// =============================================================================
-
-/** Where the pinned column names stick: just under the slim bar (the safe
- *  area plus its 48px row, hairline included). */
-const PINNED_UNDER_BAR = 'top-[calc(env(safe-area-inset-top)+48px)]'
-
-/**
- * Back · the title · ⋯ · Edit, once the cover has scrolled off (#25). The
- * design has no such bar, so it extends the editor's header: a 48px b0 row
- * with a hairline under it, 36px round Back and ⋯, a 32px Edit pill.
- *
- * It hangs from a zero-height sticky anchor at the top of the screen, so it
- * covers the page without taking room in it: nothing below moves when it
- * fades in. Hidden, it is `inert` — out of the tab order and the screen
- * reader's view — while staying laid out, so its edge can be measured.
- */
-function SlimBar({
-  barRef,
-  shown,
-  title,
-  onBack,
-  onOptions,
-  onEdit,
-}: {
-  barRef: React.RefObject<HTMLDivElement | null>
-  shown: boolean
-  title: string
-  onBack: () => void
-  onOptions: () => void
-  /** Absent when the viewer can't edit (as the cover's Edit). */
-  onEdit?: () => void
-}) {
-  return (
-    <div className="sticky top-0 z-20 h-0" data-list-slim-bar>
-      <div
-        ref={barRef}
-        inert={shown ? undefined : true}
-        className={cn(
-          'absolute inset-x-0 top-0 bg-m-b0 pt-[env(safe-area-inset-top)] transition-[opacity,visibility] duration-150 ease-out',
-          shown ? 'visible opacity-100' : 'invisible opacity-0',
-        )}
-      >
-        <div className="flex h-12 items-center gap-1 border-b border-m-b2 pl-2 pr-3">
-          <button
-            type="button"
-            aria-label="Back"
-            onClick={onBack}
-            className="flex size-9 flex-none items-center justify-center rounded-full text-m-t1 active:bg-m-b2"
-          >
-            <MIcon name="back" size={16} stroke={2} />
-          </button>
-          <span className="min-w-0 flex-1 truncate pl-0.5 text-[16px] font-semibold text-m-t1">{title}</span>
-          <button
-            type="button"
-            aria-label="List options"
-            onClick={onOptions}
-            className="flex size-9 flex-none items-center justify-center rounded-full text-m-t1 active:bg-m-b2"
-          >
-            <LIcon name="dots" size={16} stroke={2.6} />
-          </button>
-          {onEdit && (
-            <button
-              type="button"
-              onClick={onEdit}
-              className="ml-1 flex h-8 flex-none items-center whitespace-nowrap rounded-pill bg-m-b2 px-3.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2h"
-            >
-              Edit
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// =============================================================================
 // "Players · n" + the table (lr-lists §2.7 items 3–4)
 // =============================================================================
 
@@ -567,7 +492,7 @@ function PlayersTable({
               it in a strip of their own that follows its sideways scroll —
               and drives it when the swipe starts on the names. */}
           {hasStats && (
-            <div className={cn('sticky z-10 bg-m-b0', PINNED_UNDER_BAR)} data-list-column-names>
+            <div className={cn('sticky z-10 bg-m-b0', PINNED_UNDER_SLIM_BAR)} data-list-column-names>
               <div
                 ref={headRef}
                 onScroll={() => sideways.scrolled('head')}

@@ -9,7 +9,8 @@ import { featureFlags } from '@/lib/feature-flags'
  * 2026 go-live scope (CLAUDE.md → Active Builds): a deployed build ships
  * Lists + Stats/player research + AI stat lists only. Everything else is
  * built but not reskinned, so it must be unreachable — hidden from nav *and*
- * 404 on a direct URL.
+ * redirected away on a direct URL (a redirect, never a 404: see the gated
+ * route layouts below).
  *
  * This pins both halves of that contract. Vitest runs with NODE_ENV="test"
  * and no NEXT_PUBLIC_FLAG_* set, which is exactly the deployed-build default
