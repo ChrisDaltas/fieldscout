@@ -2,7 +2,7 @@
 
 import { useInfiniteQuery } from '@tanstack/react-query'
 
-import { WEEKLY_BOARD_PATTERN, type OlderSpec } from '@/components/mobile/community/community-ops'
+import { WEEKLY_BOARD_PATTERN, listsOnlyQuery, type OlderSpec } from '@/components/mobile/community/community-ops'
 import { INJURY_STATUSES } from '@/components/mobile/home/home-ops'
 import {
   POOL_SELECT,
@@ -96,22 +96,38 @@ export function searchPatterns(q: string): { text: string; handle: string } {
 
 type Builder = ReturnType<typeof publicListsQuery>
 
+/** The filter methods `pastPoolCursor` uses — any `from('lists')` read. */
+export interface CursorQuery<Q> {
+  is(column: 'updated_at', value: null): Q
+  lt(column: 'id', value: string): Q
+  or(filters: string): Q
+}
+
+/**
+ * The rows after `after` in the pool's order (last update, then the id, both
+ * newest first; no update time sorts last) — where a read past the pool
+ * starts. The caller orders the read the same way. Also the desktop feed's
+ * Popular, past its candidates (`use-explore-feed.ts`).
+ */
+export function pastPoolCursor<Q extends CursorQuery<Q>>(query: Q, after: PoolCursor): Q {
+  return after.updatedAt === null
+    ? query.is('updated_at', null).lt('id', after.id)
+    : query.or(
+        `updated_at.lt.${quoted(after.updatedAt)},and(updated_at.eq.${quoted(after.updatedAt)},id.lt.${after.id}),updated_at.is.null`,
+      )
+}
+
 /** `query` narrowed to the spec's matches past `after`, one page of them. */
 export function applyOlder(query: Builder, spec: OlderSpec, after: PoolCursor): Builder {
   let b = query
 
   // Past the cursor, in the pool's order (no update time sorts last).
-  b =
-    after.updatedAt === null
-      ? b.is('updated_at', null).lt('id', after.id)
-      : b.or(
-          `updated_at.lt.${quoted(after.updatedAt)},and(updated_at.eq.${quoted(after.updatedAt)},id.lt.${after.id}),updated_at.is.null`,
-        )
+  b = pastPoolCursor(b, after)
 
   // A ranking or a list (`classifyCommunityList`), and the type chip.
   const weekly = quoted(WEEKLY_BOARD_PATTERN)
   if (spec.kind === 'list') {
-    b = b.not('is_big_board', 'is', true).not('slug', 'match', WEEKLY_BOARD_PATTERN).is('ai_persona_id', null)
+    b = listsOnlyQuery(b)
   } else if (spec.rankType === 'weekly') {
     b = b.not('is_big_board', 'is', true).filter('slug', 'match', WEEKLY_BOARD_PATTERN)
   } else if (spec.rankType === 'season') {

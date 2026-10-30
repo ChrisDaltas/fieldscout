@@ -152,6 +152,41 @@ export function classifyCommunityList(list: {
 }
 
 /**
+ * The filter methods `listsOnlyQuery` and `shownInCommunityQuery` use — a
+ * `from('lists')` read on the browser or the server client has all three, so
+ * the one rule serves both.
+ */
+export interface CommunityListsQuery<Q> {
+  gt(column: 'player_count', value: number): Q
+  not(column: 'is_big_board' | 'slug', operator: 'is' | 'match', value: boolean | string): Q
+  is(column: 'ai_persona_id', value: null): Q
+}
+
+/**
+ * Lists only, no rankings — `classifyCommunityList`'s 'list', asked of the
+ * server: not the season board, not a weekly board (by its slug, the same
+ * WEEKLY_BOARD_PATTERN), not an AI expert's board. `is_big_board` may be
+ * null on old rows, so "not true" rather than "false".
+ */
+export function listsOnlyQuery<Q extends CommunityListsQuery<Q>>(query: Q): Q {
+  return query.not('is_big_board', 'is', true).not('slug', 'match', WEEKLY_BOARD_PATTERN).is('ai_persona_id', null)
+}
+
+/**
+ * What a public-lists read shows in Community (plan C3; readiness B2, S9):
+ * always a list with players in it — every account starts with an empty
+ * public "My Big Board" — and, while rankings are switched off (`ranks`,
+ * from `ranksOn()`), lists only. Filtered in the query, never after it, so a
+ * page of N rows is N rows that show. The desktop feed and community search
+ * read through it; the phone's pool reads every list with players and drops
+ * rankings on the client by the same split (`classifyCommunityList`).
+ */
+export function shownInCommunityQuery<Q extends CommunityListsQuery<Q>>(query: Q, ranks: boolean): Q {
+  const withPlayers = query.gt('player_count', 0)
+  return ranks ? withPlayers : listsOnlyQuery(withPlayers)
+}
+
+/**
  * Does this list offer Duplicate? A plain list does — a list copy, phone and
  * desktop. A ranking never does (Chris, 2026-10-19: Duplicate is removed from
  * rankings everywhere): the season board, a weekly board or an AI expert's
@@ -646,8 +681,12 @@ export function hottestLikedOutside(
 }
 
 /** Everything on For you other than "Latest": highest `popularScore` first;
- *  ties go to the more recently updated, then the id (a stable order). */
-export function sortPopular(items: readonly CommunityItem[], now: number): CommunityItem[] {
+ *  ties go to the more recently updated, then the id (a stable order). The
+ *  desktop feed's Popular sorts its rows with it too (plan C3). */
+export function sortPopular<T extends Pick<CommunityItem, 'id' | 'likeCount' | 'recentLikes' | 'updatedAt'>>(
+  items: readonly T[],
+  now: number,
+): T[] {
   const scored = items.map((item) => ({ item, score: popularScore(item, now), updated: Date.parse(item.updatedAt) || 0 }))
   scored.sort(
     (a, b) =>

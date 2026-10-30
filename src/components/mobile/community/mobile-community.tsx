@@ -54,6 +54,7 @@ import {
   useMobileCommunityFeed,
 } from '@/hooks/use-mobile-community-feed'
 import { featureFlags } from '@/lib/feature-flags'
+import { ranksOn } from '@/lib/rankings/ranks-on'
 import { cn } from '@/lib/utils'
 
 /**
@@ -170,7 +171,7 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
     },
     rk,
     // Rankings follow their own switch (launch scope), not just the tab bar.
-    ranksOn: featureFlags.weeklyRanks,
+    ranksOn: ranksOn(),
     // "Rankings this week": season rankings and this week's boards (#27).
     currentWeek,
     now,
@@ -180,7 +181,7 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
   // Past the pool (gap list §3 #30): the same filters, on the server, for
   // the older lists. A search is sent once typing settles; until then it
   // shows as loading (never what was read for the last one).
-  const specs = olderSpecs({ tab, topic, q, rk, ranksOn: featureFlags.weeklyRanks, followingIds })
+  const specs = olderSpecs({ tab, topic, q, rk, ranksOn: ranksOn(), followingIds })
   const olderRanks = useCommunityOlder(specs.rank, olderFrom, debouncedQ === q)
   const olderLists = useCommunityOlder(specs.list, olderFrom, debouncedQ === q)
   const rankRead = olderRead(specs.rank, olderFrom, olderRanks)
@@ -202,7 +203,7 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
     : `Couldn’t load the ${ranksReading && listsReading ? 'lists and rankings' : ranksReading ? 'rankings' : 'lists'}.`
   // What For you can show — the lists a Trending tag may filter to.
   const forYouShown = useMemo(
-    () => [...items, ...(feed.data?.popularExtra ?? [])].filter((i) => featureFlags.weeklyRanks || i.kind !== 'rank'),
+    () => [...items, ...(feed.data?.popularExtra ?? [])].filter((i) => ranksOn() || i.kind !== 'rank'),
     [items, feed.data],
   )
   const topRef = useRef<HTMLDivElement>(null)
@@ -601,7 +602,7 @@ function FeedSkeleton() {
  *  empty — Start or sit and Rankings follow their own switches. */
 function tabSwitchedOn(t: { value: string }): boolean {
   if (t.value === 'poll') return featureFlags.startOrSit
-  if (t.value === 'rank') return featureFlags.weeklyRanks
+  if (t.value === 'rank') return ranksOn()
   return true
 }
 

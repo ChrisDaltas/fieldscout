@@ -16,7 +16,7 @@ import { useCommunityStore } from '@/components/mobile/community/community-store
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MobileScreen, RoundNavButton } from '@/components/mobile/ui/mobile-header'
 import { useCommunityLatest } from '@/hooks/use-community-latest'
-import { featureFlags } from '@/lib/feature-flags'
+import { ranksOn } from '@/lib/rankings/ranks-on'
 
 /**
  * FieldScout Mobile — the Latest page (`/app/explore/latest`; For you's
@@ -46,8 +46,8 @@ function LatestScreen() {
   const setDetailFromFeed = useCommunityStore((s) => s.setDetailFromFeed)
 
   const feed = useCommunityLatest()
-  const ranksOn = featureFlags.weeklyRanks
-  const items = useMemo(() => latestPageItems(feed.data?.pages ?? [], ranksOn), [feed.data, ranksOn])
+  const ranks = ranksOn()
+  const items = useMemo(() => latestPageItems(feed.data?.pages ?? [], ranks), [feed.data, ranks])
   // "Now" for the posted times is when the pages were read.
   const now = feed.dataUpdatedAt
 
@@ -94,7 +94,7 @@ function LatestScreen() {
           )
         ) : items.length === 0 && !feed.hasNextPage ? (
           <EmptyBlock
-            message={ranksOn ? 'No lists or rankings yet' : 'No lists yet'}
+            message={ranks ? 'No lists or rankings yet' : 'No lists yet'}
             action="Create a list"
             onAction={() => router.push(CREATE_LIST_HREF)}
           />

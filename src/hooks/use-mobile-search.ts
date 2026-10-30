@@ -3,6 +3,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
+import { communitySearchHref } from '@/lib/community/community-search'
 
 /**
  * The phone's full-screen search reads (gap list §3 #1): players from
@@ -51,7 +52,6 @@ export function communityTerm(term: string): string {
 export function useMobileSearch(term: string) {
   const people = communityTerm(term)
   const params = new URLSearchParams({ q: term, limit: String(MOBILE_SEARCH_PAGE) })
-  const communityParams = new URLSearchParams({ q: people, limit: String(MOBILE_SEARCH_PAGE) })
 
   const players = useQuery({
     queryKey: mobileSearchKeys.players(term),
@@ -71,7 +71,7 @@ export function useMobileSearch(term: string) {
     placeholderData: keepPreviousData,
     staleTime: 60 * 1000,
     queryFn: async (): Promise<{ users: SearchUser[]; lists: SearchList[] }> => {
-      const body = await getJson<{ users?: unknown; lists?: unknown }>(`/api/search/community?${communityParams}`, 'Community search')
+      const body = await getJson<{ users?: unknown; lists?: unknown }>(communitySearchHref(people, MOBILE_SEARCH_PAGE), 'Community search')
       if (!Array.isArray(body.users) || !Array.isArray(body.lists)) throw new Error('Community search: unexpected answer')
       return { users: body.users as SearchUser[], lists: body.lists as SearchList[] }
     },

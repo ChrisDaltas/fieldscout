@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
 import { useFollowingIds, useToggleFollow } from '@/hooks/use-follows'
+import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
 interface FollowButtonProps {
@@ -17,6 +18,16 @@ interface FollowButtonProps {
    * mode). Default: the desktop v7 button.
    */
   look?: 'desktop' | 'phone'
+}
+
+/** A follow or unfollow that didn't go through: the error toast (an alert
+ *  glyph on the ink toast, never a red fill). */
+export function toastFollowFailed(wasFollowing: boolean) {
+  toast({
+    title: wasFollowing ? 'Couldn’t unfollow' : 'Couldn’t follow',
+    description: 'Try again in a moment.',
+    variant: 'destructive',
+  })
 }
 
 /**
@@ -45,7 +56,9 @@ export function FollowButton({ userId, className, look = 'desktop' }: FollowButt
       router.push('/login')
       return
     }
-    toggle.mutate({ targetId: userId, isFollowing })
+    // The toggle is optimistic and puts the button back if it fails — so a
+    // failure says so, rather than silently snapping back (plan C3, F12).
+    toggle.mutate({ targetId: userId, isFollowing }, { onError: () => toastFollowFailed(isFollowing) })
   }
 
   if (look === 'phone') {
