@@ -22,7 +22,7 @@ import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { CommunityAuthor, CommunityItem, CommunityVideo } from '@/hooks/use-mobile-community-feed'
-import { featureFlags } from '@/lib/feature-flags'
+import { ranksOn } from '@/lib/rankings/ranks-on'
 import { cn } from '@/lib/utils'
 
 /**
@@ -65,7 +65,7 @@ function CardLink({
   from = COMMUNITY_HREF,
   ...rest
 }: { item: CommunityItem; from?: string } & Omit<ComponentPropsWithoutRef<'a'>, 'href' | 'onClick'>) {
-  const rankings = featureFlags.weeklyRanks ? expertRankingHref(item) : null
+  const rankings = ranksOn() ? expertRankingHref(item) : null
   if (rankings) return <Link href={rankings} {...rest} />
   return <a href={communityDetailHref(item.id, from)} onClick={(e) => openDetail(e, item.id, from)} {...rest} />
 }

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CREATE_LIST_HREF, CREATE_RANKING_HREF } from '@/components/mobile/community/community-ops'
 import { MIcon, M_ICON } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
-import { featureFlags } from '@/lib/feature-flags'
+import { ranksOn } from '@/lib/rankings/ranks-on'
 import { cn } from '@/lib/utils'
 
 /**
@@ -38,7 +38,7 @@ export function CreateSheet({ open, onOpenChange }: { open: boolean; onOpenChang
   }
 
   const options: CreateOption[] = [
-    ...(featureFlags.weeklyRanks
+    ...(ranksOn()
       ? [
           {
             label: 'Ranking',

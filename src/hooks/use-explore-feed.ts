@@ -1,24 +1,64 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, type InfiniteData } from '@tanstack/react-query'
 
-import { isNumbered } from '@/lib/lists/ranking-mode'
-import { createBrowserClient } from '@/lib/supabase/client'
+import {
+  classifyCommunityList,
+  hottestLikedOutside,
+  shownInCommunityQuery,
+  sortPopular,
+} from '@/components/mobile/community/community-ops'
 import { userProfileHref } from '@/components/shared/username-link-ops'
+import { pastPoolCursor } from '@/hooks/use-community-older'
+import {
+  COMMUNITY_POOL_SIZE,
+  LIKED_EXTRA_SIZE,
+  readRecentLikes,
+  type PoolCursor,
+} from '@/hooks/use-mobile-community-feed'
+import { ranksOn } from '@/lib/rankings/ranks-on'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { firstEmbed } from '@/utils/supabase-embed'
 
-// Community feed (package screen 08). No dedicated feed API exists yet, so
-// this hook reads public lists directly through the browser Supabase client —
-// same pattern (and RLS surface) as use-persona-boards. Trending = most
-// liked, Newest = most recent, Following = lists by people the viewer
-// follows (real `follows` rows).
+/**
+ * The desktop Community feed (package screen 08). No dedicated feed API
+ * exists, so this reads public lists through the browser Supabase client —
+ * the same rows and RLS surface as the phone's Community
+ * (`use-mobile-community-feed.ts`), and the same rules (plan C3):
+ *
+ *  - **What shows** (`shownInCommunityQuery`): a list with players in it —
+ *    never anyone's empty "My Big Board" — and, while rankings are switched
+ *    off (`ranksOn()`), lists only: no big boards, weekly boards or AI
+ *    experts' boards, the phone's own split (`classifyCommunityList`).
+ *    Filtered in the query, so a page of rows is a page of rows that show.
+ *  - **The badge**: "Ranking" only for what `classifyCommunityList` calls a
+ *    ranking — not every list whose numbers are on.
+ *  - **Popular** is ordered like the phone's For you (ruling #35, "popular +
+ *    recent": `sortPopular`), over the same candidates — the most recently
+ *    updated lists, plus the lists liked lately that those left out (a like
+ *    doesn't update a list). Past the candidates come the older lists, in
+ *    update order, so Popular reaches every list too.
+ *  - **Newest** is newest posted first; **Following** is Newest from the
+ *    people you follow.
+ *  - **Paged**: EXPLORE_PAGE_SIZE rows a page, "Load more" reads the next.
+ *    Each read asks for one row more than it shows, so a next page is
+ *    offered only when there is one — never a silent stop at the first page,
+ *    and never a "Load more" that loads nothing.
+ *
+ * A failed read throws (the feed says "Couldn't load"), the viewer's own
+ * likes included — never a feed that quietly shows every list unliked.
+ */
 
-export type ExploreFeedTab = 'trending' | 'newest' | 'following'
+export type ExploreFeedTab = 'popular' | 'newest' | 'following'
+
+/** Rows a page shows. */
+export const EXPLORE_PAGE_SIZE = 30
 
 export interface ExploreFeedItem {
   id: string
   title: string
   slug: string
-  /** Numbered (`isNumbered(ranking_mode)`) → "Ranking" badge, else "List". */
+  /** `classifyCommunityList` says ranking → "Ranking" badge, else "List". */
   is_ranking: boolean
   /** Persona-authored content keeps its AI badge treatment. */
   is_ai: boolean
@@ -60,15 +100,16 @@ interface EmbeddedPersona {
   avatar_url: string | null
 }
 
-interface FeedRowShape {
+export interface FeedRowShape {
   id: string
   title: string
   slug: string
-  ranking_mode: string
+  is_big_board: boolean | null
   ai_persona_id: string | null
   like_count: number | null
   player_count: number | null
   created_at: string | null
+  updated_at: string | null
   owner: EmbeddedProfile | EmbeddedProfile[] | null
   persona: EmbeddedPersona | EmbeddedPersona[] | null
   comments: { count: number }[] | null
@@ -77,32 +118,59 @@ interface FeedRowShape {
     | null
 }
 
-function first<T>(value: T | T[] | null | undefined): T | null {
-  if (value == null) return null
-  return Array.isArray(value) ? (value[0] ?? null) : value
-}
-
-const FEED_SELECT = `id, title, slug, ranking_mode, ai_persona_id, like_count, player_count, created_at,
+/** Every column here has been on production for months — none a migration
+ *  not yet pushed adds. */
+export const FEED_SELECT = `id, title, slug, is_big_board, ai_persona_id, like_count, player_count, created_at, updated_at,
   owner:profiles!lists_owner_id_fkey(id, username, avatar_url),
   persona:ai_personas!lists_ai_persona_id_fkey(username, display_name, avatar_url),
   comments:list_comments(count),
   tag_links:list_tags(tag:tags(name, slug))`
 
-const FEED_LIMIT = 30
+/**
+ * Where a page starts.
+ *  - `start`: the first page of any tab.
+ *  - `offset`: Newest / Following, from this row of the newest-first order.
+ *  - `ranked`: Popular, the candidates still to show (already in Popular's
+ *    order), then — when the candidates didn't hold every list — the older
+ *    lists (`older`).
+ *  - `older`: Popular past its candidates, after this row in update order,
+ *    leaving out the lists the candidates already showed (`exclude`: the
+ *    lists liked lately that came from past the newest ones).
+ */
+export type ExploreFeedPageParam =
+  | { at: 'start' }
+  | { at: 'offset'; from: number }
+  | { at: 'ranked'; rest: FeedRowShape[]; older: OlderFrom | null }
+  | ({ at: 'older' } & OlderFrom)
 
-function mapRows(rows: FeedRowShape[], likedIds: Set<string>): ExploreFeedItem[] {
+interface OlderFrom {
+  after: PoolCursor
+  exclude: string[]
+}
+
+export interface ExploreFeedPage {
+  items: ExploreFeedItem[]
+  /** Where the next page starts; null when this one was the last. */
+  next: ExploreFeedPageParam | null
+}
+
+export const EXPLORE_FEED_START: ExploreFeedPageParam = { at: 'start' }
+
+export function mapFeedRows(rows: FeedRowShape[], likedIds: ReadonlySet<string>): ExploreFeedItem[] {
   return rows.flatMap((row) => {
-    const owner = first(row.owner)
+    const owner = firstEmbed(row.owner)
     if (!owner) return []
-    const persona = row.ai_persona_id ? first(row.persona) : null
+    const persona = row.ai_persona_id ? firstEmbed(row.persona) : null
 
     return [
       {
         id: row.id,
         title: row.title,
         slug: row.slug,
-        // Numbered = a ranking; tiers without numbers (191) and plain lists are lists.
-        is_ranking: isNumbered(row.ranking_mode),
+        // A ranking is a ranking product — the season board, a weekly board,
+        // an AI expert's board — never a list just because it is numbered
+        // (nearly every list is, by default). The phone's split.
+        is_ranking: classifyCommunityList(row).kind === 'rank',
         is_ai: Boolean(persona),
         like_count: row.like_count ?? 0,
         comment_count: row.comments?.[0]?.count ?? 0,
@@ -125,10 +193,52 @@ function mapRows(rows: FeedRowShape[], likedIds: Set<string>): ExploreFeedItem[]
           : userProfileHref(owner.username),
         author_id: persona ? null : owner.id,
         is_liked: likedIds.has(row.id),
-        tag: first(row.tag_links?.[0]?.tag ?? null),
+        tag: firstEmbed(row.tag_links?.[0]?.tag ?? null),
       },
     ]
   })
+}
+
+/** Popular's order (the phone's For you, `sortPopular`): rows → rows. */
+export function popularOrder(
+  rows: readonly FeedRowShape[],
+  recentLikes: ReadonlyMap<string, readonly number[]>,
+  now: number,
+): FeedRowShape[] {
+  return sortPopular(
+    rows.map((row) => ({
+      id: row.id,
+      likeCount: row.like_count ?? 0,
+      recentLikes: [...(recentLikes.get(row.id) ?? [])],
+      updatedAt: row.updated_at ?? row.created_at ?? '',
+      row,
+    })),
+    now,
+  ).map((scored) => scored.row)
+}
+
+/** The pages in order, each list once — Newest's pages are read by offset,
+ *  so a list posted between two reads can push a row already shown onto the
+ *  next page. */
+export function exploreFeedItems(pages: readonly ExploreFeedPage[]): ExploreFeedItem[] {
+  const seen = new Set<string>()
+  return pages.flatMap((page) => page.items).filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)))
+}
+
+/** The like toggle's authoritative count, written into every loaded page. */
+export function withLikeCount(
+  data: InfiniteData<ExploreFeedPage, ExploreFeedPageParam> | undefined,
+  listId: string,
+  likeCount: number,
+): InfiniteData<ExploreFeedPage, ExploreFeedPageParam> | undefined {
+  if (!data) return data
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      items: page.items.map((item) => (item.id === listId ? { ...item, like_count: likeCount } : item)),
+    })),
+  }
 }
 
 export const exploreFeedKeys = {
@@ -137,80 +247,177 @@ export const exploreFeedKeys = {
     ['explore-feed', tab, tagId ?? 'all'] as const,
 }
 
+type Supabase = ReturnType<typeof createBrowserClient>
+
+function asRows(data: unknown): FeedRowShape[] {
+  return (data ?? []) as unknown as FeedRowShape[]
+}
+
+function cursorOf(row: FeedRowShape): PoolCursor {
+  return { updatedAt: row.updated_at, id: row.id }
+}
+
+/** Which of these lists the viewer has liked. A failed read throws. */
+async function likedAmong(supabase: Supabase, userId: string | null, rows: FeedRowShape[]): Promise<Set<string>> {
+  const liked = new Set<string>()
+  if (!userId || rows.length === 0) return liked
+  const { data, error } = await supabase
+    .from('list_likes')
+    .select('list_id')
+    .eq('user_id', userId)
+    .in(
+      'list_id',
+      rows.map((r) => r.id),
+    )
+  if (error) throw error
+  for (const like of data ?? []) liked.add(like.list_id as string)
+  return liked
+}
+
+/** One page of the feed: `tab`, the topic chip (`tagId`), from `param`. */
+export async function readExploreFeedPage(
+  tab: ExploreFeedTab,
+  tagId: string | null,
+  param: ExploreFeedPageParam,
+  now: number = Date.now(),
+): Promise<ExploreFeedPage> {
+  const supabase = createBrowserClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const userId = user?.id ?? null
+  const ranks = ranksOn()
+
+  /** The public lists the feed shows, before the tab's order and size. */
+  const lists = () => {
+    // The tag chip filter needs an inner join alias distinct from the
+    // display embed, so untagged lists still surface on "All".
+    const select = tagId ? `${FEED_SELECT},\n  tag_filter:list_tags!inner(tag_id)` : FEED_SELECT
+    let query = supabase
+      .from('lists')
+      .select(select)
+      .eq('is_private', false)
+      .is('deleted_at', null)
+      // The comment count is live comments only. 213's read rule hides
+      // removed ones from every reader; this filter says so before it is
+      // pushed too (measured: the embed count honours it).
+      .is('comments.deleted_at', null)
+    query = shownInCommunityQuery(query, ranks)
+    if (tagId) query = query.eq('tag_filter.tag_id', tagId)
+    return query
+  }
+
+  /** A page of rows already in order; `next` decided by the caller. */
+  const page = async (rows: FeedRowShape[], next: ExploreFeedPageParam | null): Promise<ExploreFeedPage> => ({
+    items: mapFeedRows(rows, await likedAmong(supabase, userId, rows)),
+    next,
+  })
+
+  if (tab === 'popular') {
+    if (param.at === 'ranked') {
+      const rest = param.rest.slice(EXPLORE_PAGE_SIZE)
+      const older = param.older
+      return page(
+        param.rest.slice(0, EXPLORE_PAGE_SIZE),
+        rest.length > 0 ? { at: 'ranked', rest, older } : older ? { at: 'older', ...older } : null,
+      )
+    }
+
+    if (param.at === 'older') {
+      let query = pastPoolCursor(lists(), param.after)
+      if (param.exclude.length > 0) query = query.not('id', 'in', `(${param.exclude.join(',')})`)
+      const { data, error } = await query
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(EXPLORE_PAGE_SIZE + 1)
+      if (error) throw error
+      const rows = asRows(data)
+      const shown = rows.slice(0, EXPLORE_PAGE_SIZE)
+      const last = shown[shown.length - 1]
+      return page(
+        shown,
+        rows.length > EXPLORE_PAGE_SIZE && last
+          ? { at: 'older', after: cursorOf(last), exclude: param.exclude }
+          : null,
+      )
+    }
+
+    // The first page: the candidates For you weighs — the most recently
+    // updated lists, and the lists liked lately that those left out — in
+    // its order.
+    const [pool, recentLikes] = await Promise.all([
+      lists()
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(COMMUNITY_POOL_SIZE),
+      readRecentLikes(supabase, now),
+    ])
+    if (pool.error) throw pool.error
+    const poolRows = asRows(pool.data)
+    const extraIds = hottestLikedOutside(recentLikes, new Set(poolRows.map((r) => r.id)), now, LIKED_EXTRA_SIZE)
+    let extraRows: FeedRowShape[] = []
+    if (extraIds.length > 0) {
+      // Through the same filters: a like on a list that doesn't show simply
+      // doesn't come back.
+      const extra = await lists().in('id', extraIds)
+      if (extra.error) throw extra.error
+      extraRows = asRows(extra.data)
+    }
+    // A full read may not hold every list: the older ones follow.
+    const last = poolRows[poolRows.length - 1]
+    const older: OlderFrom | null =
+      poolRows.length >= COMMUNITY_POOL_SIZE && last
+        ? { after: cursorOf(last), exclude: extraRows.map((r) => r.id) }
+        : null
+    const ranked = popularOrder([...poolRows, ...extraRows], recentLikes, now)
+    const rest = ranked.slice(EXPLORE_PAGE_SIZE)
+    return page(
+      ranked.slice(0, EXPLORE_PAGE_SIZE),
+      rest.length > 0 ? { at: 'ranked', rest, older } : older ? { at: 'older', ...older } : null,
+    )
+  }
+
+  // Newest, and Following (Newest from the people you follow).
+  let ownerIds: string[] | null = null
+  if (tab === 'following') {
+    if (!userId) return { items: [], next: null }
+    const { data: follows, error: followsError } = await supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', userId)
+    if (followsError) throw followsError
+    ownerIds = (follows ?? []).map((f) => f.following_id as string)
+    if (ownerIds.length === 0) return { items: [], next: null }
+  }
+  let query = lists()
+  if (ownerIds) query = query.in('owner_id', ownerIds)
+  const from = param.at === 'offset' ? param.from : 0
+  const { data, error } = await query
+    .order('created_at', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: false })
+    // One row past the page: there is a next page only if it came back.
+    .range(from, from + EXPLORE_PAGE_SIZE)
+  if (error) throw error
+  const rows = asRows(data)
+  return page(
+    rows.slice(0, EXPLORE_PAGE_SIZE),
+    rows.length > EXPLORE_PAGE_SIZE ? { at: 'offset', from: from + EXPLORE_PAGE_SIZE } : null,
+  )
+}
+
+/** The feed, a page at a time (`fetchNextPage` reads the next). */
 export function useExploreFeed(tab: ExploreFeedTab, tagId: string | null) {
-  return useQuery({
+  return useInfiniteQuery<
+    ExploreFeedPage,
+    Error,
+    InfiniteData<ExploreFeedPage, ExploreFeedPageParam>,
+    ReturnType<typeof exploreFeedKeys.feed>,
+    ExploreFeedPageParam
+  >({
     queryKey: exploreFeedKeys.feed(tab, tagId),
     staleTime: 60 * 1000,
-    queryFn: async (): Promise<ExploreFeedItem[]> => {
-      const supabase = createBrowserClient()
-
-      // Following reads the viewer's real follows; empty follows → empty feed.
-      let ownerIds: string[] | null = null
-      if (tab === 'following') {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-        if (!user) return []
-        const { data: follows, error: followsError } = await supabase
-          .from('follows')
-          .select('following_id')
-          .eq('follower_id', user.id)
-        if (followsError) throw followsError
-        ownerIds = (follows ?? []).map((f) => f.following_id)
-        if (ownerIds.length === 0) return []
-      }
-
-      // The tag chip filter needs an inner join alias distinct from the
-      // display embed, so untagged lists still surface on "All".
-      const select = tagId
-        ? `${FEED_SELECT},\n  tag_filter:list_tags!inner(tag_id)`
-        : FEED_SELECT
-
-      let query = supabase
-        .from('lists')
-        .select(select)
-        .eq('is_private', false)
-        .is('deleted_at', null)
-        // The comment count is live comments only. 213's read rule hides
-        // removed ones from every reader; this filter says so before it is
-        // pushed too (measured: the embed count honours it).
-        .is('comments.deleted_at', null)
-        .limit(FEED_LIMIT)
-
-      if (tagId) query = query.eq('tag_filter.tag_id', tagId)
-      if (ownerIds) query = query.in('owner_id', ownerIds)
-
-      query =
-        tab === 'trending'
-          ? query
-              .order('like_count', { ascending: false })
-              .order('updated_at', { ascending: false })
-          : query.order('created_at', { ascending: false })
-
-      const { data, error } = await query
-      if (error) throw error
-
-      const rows = (data ?? []) as unknown as FeedRowShape[]
-
-      // Seed the viewer's per-list liked state so already-liked lists render
-      // liked (and the first click toggles the right direction).
-      const likedIds = new Set<string>()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (user && rows.length > 0) {
-        const { data: likes } = await supabase
-          .from('list_likes')
-          .select('list_id')
-          .eq('user_id', user.id)
-          .in(
-            'list_id',
-            rows.map((r) => r.id),
-          )
-        for (const like of likes ?? []) likedIds.add(like.list_id as string)
-      }
-
-      return mapRows(rows, likedIds)
-    },
+    initialPageParam: EXPLORE_FEED_START,
+    queryFn: ({ pageParam }) => readExploreFeedPage(tab, tagId, pageParam),
+    getNextPageParam: (last) => last.next ?? undefined,
   })
 }

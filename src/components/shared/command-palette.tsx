@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/command'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
+import { communitySearchHref } from '@/lib/community/community-search'
 import { featureFlags } from '@/lib/feature-flags'
 import { useLayoutModeValue } from '@/hooks/use-layout-mode'
 import { openPlayer } from '@/hooks/use-open-player'
@@ -175,7 +176,7 @@ export function CommandPalette() {
     })
       .then((r) => r.json())
       .then((data: { results?: PlayerHit[] }) => setPlayers(data.results ?? []))
-    const communityReq = fetch(`/api/search/community?${params}`, {
+    const communityReq = fetch(communitySearchHref(debounced, 8), {
       signal: controller.signal,
     })
       .then((r) => r.json())

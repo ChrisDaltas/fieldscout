@@ -28,6 +28,7 @@ import {
   formatFollows,
   hottestLikedOutside,
   latestPageItems,
+  listsOnlyQuery,
   normQuery,
   nflSeasonOf,
   olderSpecs,
@@ -44,6 +45,7 @@ import {
   recentUpdates,
   scoringFormatOf,
   scoringLabel,
+  shownInCommunityQuery,
   sortPopular,
   topLine,
   topicAwaitingServer,
@@ -112,6 +114,57 @@ describe('rankings vs lists', () => {
       week: null,
     })
     expect(classifyCommunityList({ is_big_board: null, slug: 'weekly-sleepers', ai_persona_id: null }).kind).toBe('list')
+  })
+
+  describe('the same split, asked of the server (plan C3)', () => {
+    type Row = { is_big_board: boolean | null; slug: string; ai_persona_id: string | null; player_count: number }
+    /** Records the filters, then reads them back the way Postgres would. */
+    function recorder() {
+      const ops: [string, unknown[]][] = []
+      const q = {
+        gt: (...a: unknown[]) => (ops.push(['gt', a]), q),
+        not: (...a: unknown[]) => (ops.push(['not', a]), q),
+        is: (...a: unknown[]) => (ops.push(['is', a]), q),
+      }
+      const keeps = (row: Row) =>
+        ops.every(([name, [col, a, b]]) => {
+          const value = row[col as keyof Row]
+          if (name === 'gt') return typeof value === 'number' && value > (a as number)
+          if (name === 'is') return value === a
+          // not: `is true` → IS NOT TRUE (null passes); `match` → no regex match.
+          if (a === 'is') return value !== b
+          return !new RegExp(b as string).test(String(value))
+        })
+      return { q, ops, keeps }
+    }
+    const ROWS: Row[] = [
+      { is_big_board: true, slug: 'big-board', ai_persona_id: null, player_count: 300 },
+      { is_big_board: true, slug: 'big-board', ai_persona_id: null, player_count: 0 },
+      { is_big_board: false, slug: 'week-3-big-board-1783537316215', ai_persona_id: null, player_count: 40 },
+      { is_big_board: false, slug: 'week-12-big-board', ai_persona_id: null, player_count: 40 },
+      { is_big_board: false, slug: 'wike-mright-ai-qb', ai_persona_id: 'p1', player_count: 25 },
+      { is_big_board: false, slug: 'rb-targets', ai_persona_id: null, player_count: 12 },
+      { is_big_board: null, slug: 'weekly-sleepers', ai_persona_id: null, player_count: 8 },
+      { is_big_board: false, slug: 'untitled', ai_persona_id: null, player_count: 0 },
+    ]
+
+    it('lists only: exactly what classifyCommunityList calls a list', () => {
+      const { q, keeps } = recorder()
+      listsOnlyQuery(q)
+      for (const row of ROWS) expect(keeps(row), row.slug).toBe(classifyCommunityList(row).kind === 'list')
+    })
+
+    it('rankings off: lists with players; rankings on: anything with players — never an empty board', () => {
+      const off = recorder()
+      shownInCommunityQuery(off.q, false)
+      const on = recorder()
+      shownInCommunityQuery(on.q, true)
+      for (const row of ROWS) {
+        expect(off.keeps(row), row.slug).toBe(row.player_count > 0 && classifyCommunityList(row).kind === 'list')
+        expect(on.keeps(row), row.slug).toBe(row.player_count > 0)
+      }
+      expect(on.ops).toEqual([['gt', ['player_count', 0]]])
+    })
   })
 
   it('scoring from points per reception, or an AI expert default', () => {
