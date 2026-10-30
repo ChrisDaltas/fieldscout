@@ -14,7 +14,7 @@ import { detectMode } from '@/hooks/use-layout-mode'
  * public page).
  *
  *  - A person (`/u/[username]`, its Followers / Following) → their phone
- *    profile (`phoneProfileHref` / `phoneFollowsHref`, audit profile-1).
+ *    profile (`appProfileHref` / `appFollowsHref`, audit profile-1).
  *  - A shared list (`/u/[username]/lists/[listSlug]`) → its phone screen
  *    (audit lists-2): your own on the List view with Edit (`listHref`);
  *    someone else's where every phone link to it goes (`inAppListHref`) —
@@ -22,7 +22,9 @@ import { detectMode } from '@/hooks/use-layout-mode'
  *
  * Everyone else stays: search engines and signed-out visitors (the page is
  * server-rendered for them, and the app would ask them to sign in), and
- * desktop. Renders nothing.
+ * desktop. (While Community is on, a signed-in visitor to someone else's
+ * profile or list is redirected into the app on the server first, on either
+ * layout — plans C5 and C6 — so this covers the rest.) Renders nothing.
  */
 export function PhoneHandoff({ to }: { to: string }) {
   const { user } = useAuth()

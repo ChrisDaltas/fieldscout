@@ -16,7 +16,7 @@ import { teamAvatarClass } from '@/components/mobile/ui/avatar-colors'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { posLabel } from '@/components/mobile/ui/m-pos-chip'
-import { phoneProfileHref } from '@/components/shared/username-link-ops'
+import { appProfileHref } from '@/components/shared/username-link-ops'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/hooks/use-auth'
 import { useLeague } from '@/hooks/use-league'
@@ -487,7 +487,7 @@ function ManagerRow({ manager, league, onOpen }: { manager: SearchManager; leagu
 function PersonRow({ user, onOpen }: { user: SearchUser; onOpen: (label: string) => void }) {
   const handle = `@${user.username}`
   return (
-    <Link href={phoneProfileHref(user.username)} onClick={() => onOpen(handle)} className="flex items-center gap-[10px] border-b border-m-b2 py-2">
+    <Link href={appProfileHref(user.username)} onClick={() => onOpen(handle)} className="flex items-center gap-[10px] border-b border-m-b2 py-2">
       <AuthorAvatar author={{ profileId: user.id, username: user.username, avatarUrl: user.avatar_url, followers: user.follower_count, isPersona: false }} size={34} />
       <span className="flex min-w-0 flex-1 flex-col gap-px">
         <span className="text-[14px] font-semibold text-m-t1">{handle}</span>

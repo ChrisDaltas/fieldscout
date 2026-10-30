@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import type { ReactNode } from 'react'
 
+import { userProfileHref, type PersonFollowsKind } from '@/components/shared/username-link-ops'
 import { Badge } from '@/components/ui/badge'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { computeCredRank } from '@/lib/cred-tiers'
@@ -16,12 +18,25 @@ interface ProfileHeaderProps {
   followerCount: number
   followingCount: number
   isOwn: boolean
+  /**
+   * The header's buttons, right of the name (v7 Profile: "Edit profile" /
+   * "Share" on your own, Follow and Share on someone else's). They wrap
+   * under the name when the row is narrow.
+   */
+  actions?: ReactNode
+  /** Where the followers / following counts open. Default: the public
+   *  pages (`/u/<name>/followers`); the in-app profile passes its own. */
+  followsHref?: (kind: PersonFollowsKind) => string
 }
 
 /**
  * Profile header (v7 Profile) — no card: a 65px round avatar beside the
  * 26px handle + tier badge (and Pro, once the app offers Pro again), and an 11px grey meta line with linked
- * follower/following counts in tabular numerals.
+ * follower/following counts in tabular numerals; the page's buttons (Follow,
+ * Share, Edit profile) sit at the row's end, as v7 draws them.
+ *
+ * One header for every desktop profile: the public /u/[username] page, the
+ * profile inside the app (`DesktopPersonProfile`, plan C6) and My stats.
  *
  * The handle is the only name a person renders under — FieldScout stores no
  * other name for them (ruling 2026-08-05).
@@ -39,6 +54,8 @@ export function ProfileHeader({
   followerCount,
   followingCount,
   isOwn,
+  actions,
+  followsHref = (kind) => `${userProfileHref(username)}/${kind}`,
 }: ProfileHeaderProps) {
   const rank = computeCredRank(credScore)
   const Heading = isOwn ? ('h2' as const) : ('h1' as const)
@@ -72,15 +89,15 @@ export function ProfileHeader({
 
         <p className="flex flex-wrap items-center gap-x-1.5 text-[11px] font-semibold text-n-3">
           <Link
-            href={`/u/${username}/followers`}
+            href={followsHref('followers')}
             className="transition-colors hover:text-ink hover:underline"
           >
             <span className="fs-num">{followerCount.toLocaleString()}</span>{' '}
-            followers
+            {followerCount === 1 ? 'follower' : 'followers'}
           </Link>
           <span aria-hidden>·</span>
           <Link
-            href={`/u/${username}/following`}
+            href={followsHref('following')}
             className="transition-colors hover:text-ink hover:underline"
           >
             <span className="fs-num">{followingCount.toLocaleString()}</span>{' '}
@@ -103,6 +120,8 @@ export function ProfileHeader({
           </p>
         )}
       </div>
+
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-[5px]">{actions}</div>}
     </header>
   )
 }

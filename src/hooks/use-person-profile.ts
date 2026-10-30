@@ -18,6 +18,8 @@ export interface PersonProfile {
 export interface PersonList {
   id: string
   title: string
+  description: string | null
+  position_filter: string | null
   ranking_mode: string | null
   player_count: number | null
   like_count: number | null
@@ -26,7 +28,13 @@ export interface PersonList {
 
 export interface PersonProfileData {
   profile: PersonProfile
+  /** The newest public lists — at most `PERSON_LISTS_LIMIT`. */
   lists: PersonList[]
+  /** How many public lists they have in all (an exact count — more than
+   *  `lists` holds once they pass the limit), for the desktop profile's
+   *  "Public lists" tile. `null` only if the count didn't come back — never
+   *  replaced by the rows on hand, which stop at the limit. */
+  listCount: number | null
 }
 
 /** The public page's list read, row for row (`/u/[username]`): public,
@@ -34,11 +42,13 @@ export interface PersonProfileData {
 export const PERSON_LISTS_LIMIT = 20
 
 /**
- * A person's profile for their phone screen (`/app/u/[username]`): the same
- * reads the public page makes on the server — the profile (profiles are
- * public, `001`) and their public lists. `null` = nobody has that username
- * (said so on screen), never a guessed empty profile; a failed read throws,
- * so the screen says it couldn't load instead of showing an empty one.
+ * A person's profile inside the app (`/app/u/[username]` — the phone screen,
+ * and the desktop profile while Community is on): the same reads the public
+ * page makes on the server — the profile (profiles are public, `001`) and
+ * their public lists, with an exact count of them. `null` = nobody has that
+ * username (said so on screen), never a guessed empty profile; a failed read
+ * throws, so the screen says it couldn't load instead of showing an empty
+ * one.
  *
  * Keyed under `followKeys.all`, so following or unfollowing refreshes the
  * follower count on screen.
@@ -56,9 +66,13 @@ export function usePersonProfile(username: string) {
       if (error) throw error
       if (!profile) return null
 
-      const { data: lists, error: listsError } = await supabase
+      // The count is exact, so a person with more lists than the page shows
+      // is never told they have exactly `PERSON_LISTS_LIMIT`.
+      const { data: lists, error: listsError, count } = await supabase
         .from('lists')
-        .select('id, title, ranking_mode, player_count, like_count, updated_at')
+        .select('id, title, description, position_filter, ranking_mode, player_count, like_count, updated_at', {
+          count: 'exact',
+        })
         .eq('owner_id', profile.id)
         .eq('is_private', false)
         .eq('is_big_board', false)
@@ -78,6 +92,7 @@ export function usePersonProfile(username: string) {
           following_count: profile.following_count ?? 0,
         },
         lists: (lists ?? []) as PersonList[],
+        listCount: count ?? null,
       }
     },
   })

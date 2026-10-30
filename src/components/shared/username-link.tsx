@@ -33,9 +33,11 @@ interface UsernameLinkProps {
  * user profile they clicked on."*). The ONE person link in the app: every
  * rendered username that is not inside a text input, a toast, or another
  * link's hit area goes through here, so the URL has one spelling
- * (`userProfileHref`). In the phone layout it opens the person's phone
- * screen inside the app instead (`useProfileHref` → `/app/u/…`), so a
- * phone never lands on the desktop page with no dock and no Back.
+ * (`userProfileHref`). Inside the app it opens the person's profile inside
+ * the app instead (`useProfileHref` → `/app/u/…`): always in the phone
+ * layout, so a phone never lands on the desktop page with no dock and no
+ * Back, and on desktop while Community is on (plan C6), so the profile — with
+ * Follow — opens in the app shell. Pages outside the app keep `/u/…`.
  *
  * The treatment is the house inline-link convention (`TeamNameLink`,
  * `list-comments-tab.tsx`): the underline is reserved at rest with

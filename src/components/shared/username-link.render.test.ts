@@ -315,10 +315,10 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string; line
   { file: 'src/app/u/[username]/page.tsx', contains: 'Public lists @{profile.username} publishes', why: 'the profile page’s own empty state' },
   { file: 'src/app/u/[username]/followers/page.tsx', contains: 'Followers of @${username}', why: 'page metadata' },
   { file: 'src/app/u/[username]/followers/page.tsx', contains: '← @{profile.username}', why: 'already inside the back link to the profile' },
-  { file: 'src/app/u/[username]/followers/page.tsx', contains: 'When scouts follow @{profile.username}', why: 'the empty state under the back link to the same profile' },
   { file: 'src/app/u/[username]/following/page.tsx', contains: '`@${username} is following', why: 'page metadata' },
   { file: 'src/app/u/[username]/following/page.tsx', contains: '← @{profile.username}', why: 'already inside the back link to the profile' },
-  { file: 'src/app/u/[username]/following/page.tsx', contains: 'Scouts @{profile.username} follows', why: 'the empty state under the back link to the same profile' },
+  { file: 'src/components/profile/person-follows-list.tsx', contains: 'When scouts follow @{username}', why: 'the Followers empty state (public page and in-app desktop), under the back link / header @handle that opens the same profile' },
+  { file: 'src/components/profile/person-follows-list.tsx', contains: 'Scouts @{username} follows', why: 'the Following empty state (public page and in-app desktop), under the back link / header @handle that opens the same profile' },
   { file: 'src/app/u/[username]/lists/[listSlug]/page.tsx', contains: 'const handle = `@${profile.username}`', why: 'page metadata' },
   { file: 'src/app/u/[username]/big-board/page.tsx', contains: 'const handle = `@${data.profile.username}`', why: 'metadata, and the page header title string (big board is flag-gated at launch — F551)', lines: 2 },
   { file: 'src/app/u/[username]/big-board/week/[week]/page.tsx', contains: 'const handle = `@${data.profile.username}`', why: 'metadata, and the page header title string (big board is flag-gated at launch — F551)', lines: 2 },
@@ -326,7 +326,7 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string; line
   { file: 'src/components/mobile/community/community-cards.tsx', contains: '@{item.author.username}', why: 'FieldScout Mobile Community card bylines (ranking row, updated-by row, list card, Latest shelf card): each card is one link that opens the list, so the handle sits inside it; the list detail’s author is a UsernameLink', lines: 4 },
   { file: 'src/components/mobile/community/community-detail.tsx', contains: 'const handle = `@${username}`', why: 'an AI persona’s handle — its page is /personas/… (linked when that flag is on), not a person’s profile' },
   { file: 'src/components/mobile/community/community-ops.ts', contains: '`@${item.author.username}`', why: 'the Community search text — matched against the query, never rendered' },
-  { file: 'src/components/mobile/search/mobile-search.tsx', contains: 'const handle = `@${user.username}`', why: 'phone search People row: the whole row is the link to that person’s profile (phoneProfileHref), so the handle sits inside it' },
+  { file: 'src/components/mobile/search/mobile-search.tsx', contains: 'const handle = `@${user.username}`', why: 'phone search People row: the whole row is the link to that person’s profile (appProfileHref), so the handle sits inside it' },
   { file: 'src/components/mobile/search/mobile-search.tsx', contains: 'const handle = `@${manager.username}`', why: 'phone search People row for a league manager: the row opens their team (gap list §3 #1 — "finds managers (opens their team)"), so the handle sits inside that link' },
   { file: 'src/components/mobile/search/mobile-search.tsx', contains: '`@${list.owner_username}`', why: 'phone search Posts row byline: the row is one link that opens the list (as the Community cards), so the handle sits inside it' },
   { file: 'src/components/mobile/search/search-ops.ts', contains: '`@${m.username} ${managerSub(m.teamName)}`', why: 'the search match text for a league manager — matched against the query, never rendered' },
@@ -349,7 +349,7 @@ function sourceFiles(dir: string): string[] {
  * Audit profile-1: in the phone layout a person opens on their PHONE screen
  * inside the app (`/app/u/…` — dock, Back, light/dark), never the desktop
  * public page. `UsernameLink` picks that by layout (`useProfileHref`); a
- * phone screen that builds a person link itself must use `phoneProfileHref`.
+ * phone screen that builds a person link itself must use `appProfileHref`.
  * So no file under src/components/mobile calls `userProfileHref` — except to
  * build a SHARE address, which must be the public page.
  */
@@ -365,16 +365,16 @@ describe('phone screens open a person on the phone, never the desktop page (audi
   )
   it.each(hits.map((h) => [`${h.file}:${h.line}`, h] as const))('%s builds a public profile address only to share it', (_where, hit) => {
     const allowed = PHONE_PUBLIC_PROFILE_ALLOWED.some((a) => a.file === hit.file && hit.text.includes(a.contains))
-    expect(allowed, `${hit.file}:${hit.line} sends a phone to the desktop profile page — use UsernameLink or phoneProfileHref: ${hit.text}`).toBe(true)
+    expect(allowed, `${hit.file}:${hit.line} sends a phone to the desktop profile page — use UsernameLink or appProfileHref: ${hit.text}`).toBe(true)
   })
   it.each(PHONE_PUBLIC_PROFILE_ALLOWED.map((a) => [a.file, a] as const))('allowlist entry is live: %s', (_label, entry) => {
     expect(hits.filter((h) => h.file === entry.file && h.text.includes(entry.contains))).toHaveLength(1)
   })
   it('the public person pages hand a signed-in phone to the phone screen (a shared link, a list owner)', () => {
     const page = (rel: string) => readFileSync(path.join(ROOT, 'src/app/u/[username]', rel), 'utf8')
-    expect(page('page.tsx')).toContain('<PhoneHandoff to={phoneProfileHref(profile.username)} />')
-    expect(page('followers/page.tsx')).toContain("<PhoneHandoff to={phoneFollowsHref(profile.username, 'followers')} />")
-    expect(page('following/page.tsx')).toContain("<PhoneHandoff to={phoneFollowsHref(profile.username, 'following')} />")
+    expect(page('page.tsx')).toContain('<PhoneHandoff to={appProfileHref(profile.username)} />')
+    expect(page('followers/page.tsx')).toContain("<PhoneHandoff to={appFollowsHref(profile.username, 'followers')} />")
+    expect(page('following/page.tsx')).toContain("<PhoneHandoff to={appFollowsHref(profile.username, 'following')} />")
     // …only when signed in, and only on a device that gets the phone layout.
     const handoff = readFileSync(path.join(ROOT, 'src/components/shared/phone-handoff.tsx'), 'utf8')
     expect(handoff).toContain("if (signedIn && detectMode() === 'mobile') router.replace(to)")

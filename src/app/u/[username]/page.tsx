@@ -1,23 +1,46 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import type { Metadata } from 'next'
 
+import { FollowButton } from '@/components/explore/follow-button'
 import { GuestShell } from '@/components/layout/guest-shell'
 import { ProfileHeader } from '@/components/profile/profile-header'
 import { ProfileStats } from '@/components/profile/profile-stats'
 import { PublicListCard } from '@/components/lists/public-list-card'
 import { PhoneHandoff } from '@/components/shared/phone-handoff'
 import { Button } from '@/components/ui/button'
-import { phoneProfileHref } from '@/components/shared/username-link-ops'
+import { appProfileHref, personHandoff } from '@/components/shared/username-link-ops'
 import { credOrStart } from '@/lib/cred-tiers'
 import { featureFlags } from '@/lib/feature-flags'
 import { createServerClient } from '@/lib/supabase/server'
+
+/**
+ * A person's public profile — `/u/[username]`, server-rendered for search
+ * engines and signed-out visitors (CLAUDE.md: public pages are SSR).
+ *
+ * **Signed in, someone else's profile, Community on** (plan C6): handed into
+ * the app on EITHER layout — the same profile inside the app shell
+ * (`personHandoff` → `/app/u/<name>`), with Follow and Share. A server
+ * redirect before the lists are read, so the public page never flashes and
+ * Back doesn't return to it. On a phone that is the phone screen
+ * `PhoneHandoff` opened before C6.
+ *
+ * **Otherwise this page stays:** for search engines and signed-out
+ * visitors, for the person themselves (their "View public profile" — what a
+ * stranger sees), and for everyone while Community is off. A signed-in phone
+ * is still handed to its phone screen by `PhoneHandoff` (audit profile-1), as
+ * before. With Community on, a signed-out visitor gets Follow in the header:
+ * it sends them to sign in, then back here — and so into the app. The person
+ * themselves never gets it.
+ */
 
 interface PageProps {
   params: Promise<{ username: string }>
 }
 
-async function loadProfile(username: string) {
+/** The person and who is looking — all `generateMetadata` needs, and all
+ *  the hand-off into the app needs, before the lists are read. */
+async function loadPerson(username: string) {
   const supabase = await createServerClient()
 
   // A failed read throws (the segment's error.tsx says it couldn't load) —
@@ -32,10 +55,12 @@ async function loadProfile(username: string) {
   if (profileError) throw new Error(`Couldn't load the profile: ${profileError.message}`)
 
   if (!profile) return null
+  return { supabase, profile }
+}
 
-  const { data: viewer } = await supabase.auth.getUser()
-  const isOwn = viewer.user?.id === profile.id
+type Person = NonNullable<Awaited<ReturnType<typeof loadPerson>>>
 
+async function loadLists({ supabase, profile }: Person) {
   // Public lists: visible only to non-owners (the user's own /app/profile page
   // hides their lists per spec). Even when the owner is signed in viewing
   // their own /u/[username] page, we still show lists so they see what
@@ -53,14 +78,14 @@ async function loadProfile(username: string) {
     .limit(20)
   if (listsError) throw new Error(`Couldn't load the profile's lists: ${listsError.message}`)
 
-  return { profile, isOwn, lists: lists ?? [] }
+  return lists ?? []
 }
 
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { username } = await params
-  const data = await loadProfile(username)
+  const data = await loadPerson(username)
   if (!data) return { title: 'User not found' }
   const { profile } = data
   const handle = `@${profile.username}`
@@ -73,15 +98,30 @@ export async function generateMetadata({
 
 export default async function PublicProfilePage({ params }: PageProps) {
   const { username } = await params
-  const data = await loadProfile(username)
-  if (!data) notFound()
+  const person = await loadPerson(username)
+  if (!person) notFound()
+  const { profile } = person
 
-  const { profile, lists } = data
+  // Someone signed in opening someone else's profile while Community is on:
+  // into the app, on either layout (plan C6). Outside any try — `redirect`
+  // throws to do its work.
+  const {
+    data: { user },
+  } = await person.supabase.auth.getUser()
+  const handoff = personHandoff({
+    communityOn: featureFlags.community,
+    viewerId: user?.id ?? null,
+    personId: profile.id,
+    username: profile.username,
+  })
+  if (handoff) redirect(handoff)
+
+  const lists = await loadLists(person)
 
   return (
     <GuestShell>
       {/* A signed-in phone opens this as its phone screen, in the app. */}
-      <PhoneHandoff to={phoneProfileHref(profile.username)} />
+      <PhoneHandoff to={appProfileHref(profile.username)} />
       <div className="mx-auto flex max-w-[833px] flex-col gap-6">
         <ProfileHeader
           username={profile.username}
@@ -92,6 +132,19 @@ export default async function PublicProfilePage({ params }: PageProps) {
           followerCount={profile.follower_count}
           followingCount={profile.following_count}
           isOwn={false}
+          // Follow (plan C6) — with Community, where following someone shows
+          // you their lists — for a signed-out visitor only: it asks them to
+          // sign in, then comes back here and so into the app. Anyone else
+          // signed in was handed into the app above, so a signed-in viewer
+          // here is the person themselves ("View public profile"), who can't
+          // follow themselves. Decided on the server (it already knows the
+          // viewer), never left to FollowButton's own check, which only runs
+          // once the browser has the session — the server render would
+          // otherwise offer Follow-yourself for a moment ("Prevent, don't
+          // refuse").
+          actions={
+            featureFlags.community && !user ? <FollowButton userId={profile.id} size="md" /> : null
+          }
         />
 
         <ProfileStats

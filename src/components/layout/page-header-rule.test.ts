@@ -40,7 +40,7 @@ const EXCEPTIONS: Record<string, string> = {
   'src/components/big-board/public-big-board.tsx':
     'Public, server-rendered SEO page outside the logged-in shell — there is no shell header to claim, and the h1 is the SEO title.',
   'src/components/profile/profile-header.tsx':
-    'An identity card in the page content, shared with the public /u/[username] page (where it is the SEO h1). On /app/profile the page title is the standard header ("My stats"); the card demotes to h2 there.',
+    'An identity card in the page content, shared with the public /u/[username] page (where it is the SEO h1) and the desktop profile inside the app (/app/u/[username], plan C6 — the standard header there is "Profile" with Back, and the @handle is the identity h1, as the NFL team page\'s name is). On /app/profile the page title is the standard header ("My stats"); the card demotes to h2 there.',
   'src/app/app/(shell)/nfl/[team]/page.tsx':
     'The team identity card in the content (crest, division, bye); the page title + back action are already the standard header (D486(12)).',
   'src/components/players/player-detail-header.tsx':

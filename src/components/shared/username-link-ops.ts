@@ -5,9 +5,9 @@
  * user profile they clicked on. and user profile names should virtually
  * always be clickable."* A person's public page is `/u/[username]` (spec §3's
  * identity table: "public URLs (`/u/[username]`)"). This file is the ONE
- * spelling of that URL for a person — and of its phone screen inside the app
- * (`phoneProfileHref`, `/app/u/[username]`; the phone layout opens people
- * there, `profileHrefFor`) — and the two ways a username reaches a rendered
+ * spelling of that URL for a person — and of the same profile inside the app
+ * (`appProfileHref`, `/app/u/[username]`; the app opens people there,
+ * `profileHrefFor`) — and the two ways a username reaches a rendered
  * sentence:
  *
  *  - **Marked names** (`markUsername` / `usernameParts`). A sentence the app
@@ -37,45 +37,92 @@ export function userProfileHref(username: string): string {
 }
 
 /**
- * The same profile as a PHONE screen, inside the app — `/app/u/[username]`.
+ * The same profile inside the app — `/app/u/[username]`.
  *
  * `/u/[username]` is the public, server-rendered page (SEO, signed-out
- * visitors, desktop). On a phone it is the desktop layout with no dock, no
- * Back and no dark mode, so the phone layout opens a person here instead:
- * the app shell's dock, the Back rule and the phone's light/dark come with
- * it. Desktop never links here; a desktop visit is sent to `/u/…`, and a
- * signed-out one too (middleware — the URL stays shareable).
+ * visitors). Inside the app a person opens here instead, so the app's own
+ * frame comes with them:
+ *  - **the phone layout, always** (audit profile-1): the public page is the
+ *    desktop layout there, with no dock, no Back and no dark mode;
+ *  - **the desktop layout, while Community is on** (plan C6): the profile
+ *    inside the desktop shell, with Follow and Share, instead of the bare
+ *    public page. While Community is off desktop opens the public page, as
+ *    before C6, and a desktop visit here is sent there.
+ * A signed-out visit here goes to the public page too (middleware — the URL
+ * stays shareable).
  */
-export function phoneProfileHref(username: string): string {
+export function appProfileHref(username: string): string {
   return `/app/u/${encodeURIComponent(username)}`
 }
 
 export type PersonFollowsKind = 'followers' | 'following'
 
-/** A person's Followers / Following, on the phone (`phoneProfileHref` + the page). */
-export function phoneFollowsHref(username: string, kind: PersonFollowsKind): string {
-  return `${phoneProfileHref(username)}/${kind}`
+/** A person's Followers / Following inside the app (`appProfileHref` + the page). */
+export function appFollowsHref(username: string, kind: PersonFollowsKind): string {
+  return `${appProfileHref(username)}/${kind}`
 }
 
 /**
- * Where a person link goes in a layout (`<html data-layout>`): the phone
- * screen in the phone layout, the public page everywhere else — desktop,
- * and every page outside the app (no layout attribute; `null`).
+ * Where a person link goes in a layout (`<html data-layout>`):
+ *  - the phone layout → the profile inside the app (`/app/u/…`);
+ *  - the desktop layout → the profile inside the app while Community is on
+ *    (plan C6), else the public page (`/u/…`, as before C6);
+ *  - every page outside the app (no layout attribute; `null` — also the
+ *    server and the hydration pass) → the public page.
  */
-export function profileHrefFor(username: string, layout: 'desktop' | 'mobile' | null): string {
-  return layout === 'mobile' ? phoneProfileHref(username) : userProfileHref(username)
+export function profileHrefFor(
+  username: string,
+  layout: 'desktop' | 'mobile' | null,
+  communityOn: boolean,
+): string {
+  if (layout === 'mobile') return appProfileHref(username)
+  if (layout === 'desktop' && communityOn) return appProfileHref(username)
+  return userProfileHref(username)
 }
 
-const PHONE_PERSON_PATH = /^\/app\/u\/([^/]+)(\/followers|\/following)?\/?$/
+const APP_PERSON_PATH = /^\/app\/u\/([^/]+)(\/followers|\/following)?\/?$/
 
 /**
- * The public page a phone person path stands for — `/app/u/x[/followers|
- * /following]` → `/u/x[…]` — or `null` for any other path. A desktop visit
- * and a signed-out visit go there instead.
+ * The public page an in-app person path stands for — `/app/u/x[/followers|
+ * /following]` → `/u/x[…]` — or `null` for any other path. A signed-out
+ * visit goes there instead (middleware), and so does a desktop visit while
+ * Community is off.
  */
 export function publicPersonPath(pathname: string): string | null {
-  const m = PHONE_PERSON_PATH.exec(pathname)
+  const m = APP_PERSON_PATH.exec(pathname)
   return m ? `/u/${m[1]}${m[2] ?? ''}` : null
+}
+
+/**
+ * A person's public page (`/u/<name>`, or their Followers / Following)
+ * opened by someone signed in (plan C6, "Signed-in visitors"): while
+ * Community is on, it is handed into the app — the same profile inside the
+ * app shell, on either layout (on a phone that is the phone screen
+ * `PhoneHandoff` already opened). Returns where to send them, or `null` to
+ * keep the public page:
+ *  - the person themselves — "View public profile" shows them what a
+ *    stranger sees (on a phone `PhoneHandoff` still opens their own phone
+ *    screen, as before);
+ *  - anyone signed out, and search engines (no session — the page stays
+ *    server-rendered);
+ *  - everyone while Community is off (then a phone is handed on by
+ *    `PhoneHandoff`, as before C6, and desktop stays).
+ */
+export function personHandoff({
+  communityOn,
+  viewerId,
+  personId,
+  username,
+  kind = null,
+}: {
+  communityOn: boolean
+  viewerId: string | null
+  personId: string
+  username: string
+  kind?: PersonFollowsKind | null
+}): string | null {
+  if (!communityOn || !viewerId || viewerId === personId) return null
+  return kind ? appFollowsHref(username, kind) : appProfileHref(username)
 }
 
 /**

@@ -118,8 +118,9 @@ export function CommandPalette() {
   const isOpen = useUIStore((s) => s.isCommandPaletteOpen)
   const setOpen = useUIStore((s) => s.setCommandPaletteOpen)
   const toggle = useUIStore((s) => s.toggleCommandPalette)
-  // A person opens on their phone screen in the phone layout (an iPad with a
-  // keyboard), their public page everywhere else (`profileHrefFor`).
+  // A person opens inside the app in the phone layout (an iPad with a
+  // keyboard), and on desktop while Community is on (plan C6); their public
+  // page otherwise (`profileHrefFor`).
   const layout = useLayoutModeValue()
   // Whose lists are yours: they open on your Lists, someone else's on
   // Community's list page (plan C5, `inAppListHref`).
@@ -292,7 +293,7 @@ export function CommandPalette() {
               <CommandItem
                 key={u.id}
                 value={`${u.username} ${u.id}`}
-                onSelect={() => navigate(profileHrefFor(u.username, layout))}
+                onSelect={() => navigate(profileHrefFor(u.username, layout, featureFlags.community))}
               >
                 <UserAvatar
                   src={u.avatar_url}

@@ -10,7 +10,7 @@ import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MobileScreen, MPageBar } from '@/components/mobile/ui/mobile-header'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { UsernameLink } from '@/components/shared/username-link'
-import { phoneFollowsHref, phoneProfileHref, type PersonFollowsKind } from '@/components/shared/username-link-ops'
+import { appFollowsHref, appProfileHref, type PersonFollowsKind } from '@/components/shared/username-link-ops'
 import { useAuth } from '@/hooks/use-auth'
 import { usePersonFollows } from '@/hooks/use-person-follows'
 import { usePersonProfile } from '@/hooks/use-person-profile'
@@ -40,7 +40,7 @@ export function MobilePersonFollows({ username, kind }: { username: string; kind
     : null
   const isOwn = me?.username === username
 
-  const header = <MPageBar title={`@${username}`} onBack={() => goBack(phoneProfileHref(username))} />
+  const header = <MPageBar title={`@${username}`} onBack={() => goBack(appProfileHref(username))} />
 
   return (
     <MobileScreen header={header}>
@@ -50,7 +50,7 @@ export function MobilePersonFollows({ username, kind }: { username: string; kind
           options={FOLLOWS_KINDS.map((k) => ({ value: k.value, label: followsSegmentLabel(k.value, counts ? counts[k.value] : null) }))}
           value={kind}
           onChange={(next) => {
-            if (next !== kind) router.replace(phoneFollowsHref(username, next), { scroll: false })
+            if (next !== kind) router.replace(appFollowsHref(username, next), { scroll: false })
           }}
           className="mt-3"
           itemClassName="h-8 transition-none"

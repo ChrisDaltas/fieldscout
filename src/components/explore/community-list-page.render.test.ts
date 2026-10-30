@@ -177,8 +177,11 @@ describe('someone else’s list, inside the app', () => {
 
   it('Share copies the public share link — what someone else can open — never the app’s address', () => {
     expect(code(PAGE_SRC)).toContain('shareHref={`${userProfileHref(ownerUsername)}/lists/${encodeURIComponent(list.slug)}`}')
-    const view = code('src/components/lists/public-list-view.tsx')
-    expect(view).toContain('const url = href ? new URL(href, window.location.origin).toString() : window.location.href')
+    // The list's Share is the shared ShareLinkButton (also the in-app
+    // profile's, plan C6), which copies `href` when it is given one.
+    expect(code('src/components/lists/public-list-view.tsx')).toContain('<ShareLinkButton href={shareHref} />')
+    const button = code('src/components/shared/share-link-button.tsx')
+    expect(button).toContain('const url = href ? new URL(href, window.location.origin).toString() : window.location.href')
   })
 
   it('the list menu waits for Report (plan C10): no item yet, so no ⋯', () => {

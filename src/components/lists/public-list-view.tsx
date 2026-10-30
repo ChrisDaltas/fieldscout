@@ -11,10 +11,9 @@ import { ListDetailsTab } from '@/components/lists/v2/list-details-tab'
 import { EmptyListState } from '@/components/lists/v2/list-row-parts'
 import { formatCount, resolveStats } from '@/components/lists/v2/list-stats'
 import { ListToolbar } from '@/components/lists/v2/list-toolbar'
-import { Button } from '@/components/ui/button'
+import { ShareLinkButton } from '@/components/shared/share-link-button'
 import { Icon } from '@/components/ui/icon'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useToast } from '@/hooks/use-toast'
 import type { ListWithDetails } from '@/hooks/use-lists'
 import { isNumbered } from '@/lib/lists/ranking-mode'
 import {
@@ -279,37 +278,5 @@ export function PublicListView({
         </TabsContent>
       </Tabs>
     </article>
-  )
-}
-
-/**
- * Share — a v7 secondary button, the same one the app panel's hero carries,
- * copying the page's own address — or `href`, the list's share link, when the
- * page is the app's (plan C5): a link someone else can open, signed in or not.
- *
- * `window` is read inside the handler and never during render, so this survives
- * the server pass that puts the list into the initial HTML.
- */
-function ShareLinkButton({ href }: { href?: string }) {
-  const { toast } = useToast()
-
-  const share = () => {
-    const url = href ? new URL(href, window.location.origin).toString() : window.location.href
-    void navigator.clipboard
-      ?.writeText(url)
-      .then(() => toast({ title: 'Link copied', description: url }))
-      .catch(() =>
-        toast({
-          title: 'Could not copy the link',
-          description: url,
-          variant: 'destructive',
-        }),
-      )
-  }
-
-  return (
-    <Button variant="stroke" size="sm" onClick={share}>
-      <Icon name="send" size={11} /> Share
-    </Button>
   )
 }
