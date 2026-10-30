@@ -230,4 +230,30 @@ describe('From the AI experts — where a board opens (plan C8, inAppListHref)',
     expect(out).toContain('role="alert"')
     expect(out).toContain('Try again')
   })
+
+  it('a refetch that fails over boards already loaded keeps them — no error in their place', () => {
+    // React Query v5 keeps the old data when a later read fails (isError with
+    // data), e.g. Home remounting after the five-minute staleTime.
+    h.boards = { data: [board], isLoading: false, isError: true, refetch: vi.fn() }
+    const out = renderShelf()
+    expect(out).toContain('href="/u/fieldscout-ai/lists/week-9-rb-rankings"')
+    expect(out).toContain('Week 9 RB rankings')
+    expect(out).not.toContain("Couldn't load")
+    expect(out).not.toContain('role="alert"')
+  })
+
+  it('posts are only read while personas are released — a posts error with them off is not the shelf’s', () => {
+    h.boards = { data: [board], isLoading: false, isError: false, refetch: vi.fn() }
+    h.posts = { data: undefined, isLoading: false, isError: true, refetch: vi.fn() }
+    const out = renderShelf()
+    expect(out).toContain('Week 9 RB rankings')
+    expect(out).not.toContain("Couldn't load")
+  })
+
+  it('with personas released, posts that failed with nothing loaded say so', () => {
+    h.flags.personas = true
+    h.boards = { data: [board], isLoading: false, isError: false, refetch: vi.fn() }
+    h.posts = { data: undefined, isLoading: false, isError: true, refetch: vi.fn() }
+    expect(renderShelf()).toContain("Couldn't load the AI experts.")
+  })
 })

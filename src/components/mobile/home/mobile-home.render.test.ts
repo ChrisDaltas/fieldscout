@@ -295,6 +295,33 @@ describe('From the AI experts — a read that fails says so (plan C8)', () => {
     expect(out).toMatch(/role="alert"/)
     expect(out).toContain('>Try again<')
   })
+
+  it('a refetch that fails over boards already loaded keeps them — no error in their place', () => {
+    // React Query v5 keeps the old data when a later read fails (isError with
+    // data), e.g. Home remounting after the five-minute staleTime.
+    const board = {
+      id: 'b1',
+      title: 'Week 9 RB rankings',
+      slug: 'week-9-rb-rankings',
+      description: null,
+      position_filter: 'RB',
+      player_count: 24,
+      updated_at: new Date().toISOString(),
+      persona: { username: 'bathew', display_name: 'Bathew Merry', avatar_url: null },
+      owner: { username: 'bathew_ai' },
+    }
+    const qc = seeded()
+    qc.setDefaultOptions({ queries: { retryOnMount: false } })
+    qc.getQueryCache()
+      .build(qc, { queryKey: ['persona-boards', 9] })
+      .setState({ status: 'error', data: [board], dataUpdatedAt: Date.now() - 10 * 60 * 1000, error: new Error('boom'), fetchStatus: 'idle' })
+    expect(qc.getQueryState(['persona-boards', 9])?.status).toBe('error')
+    const out = render(qc)
+    expect(out).toContain('From the AI experts')
+    expect(out).toContain('href="/app/lists?list=b1"')
+    expect(out).toContain('Week 9 RB rankings')
+    expect(out).not.toContain('Couldn’t load the AI experts.')
+  })
 })
 
 /** Plan C8: Home's "From the Community" shelf (phone). */

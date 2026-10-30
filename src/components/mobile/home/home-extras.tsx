@@ -91,14 +91,19 @@ interface ExpertItem {
 /**
  * The AI experts' latest boards and posts (the desktop `AiExpertShelf`'s
  * reads and rules): hidden until anything exists; posts and "Meet the
- * experts" only while personas are released. A read that fails says so,
- * with Try again — never a shelf that quietly isn't there (plan C8).
+ * experts" only while personas are released. A read that fails with
+ * nothing loaded says so, with Try again — never a shelf that quietly isn't
+ * there (plan C8); a refetch that fails over boards already shown keeps them.
  */
 export function HomeAiExperts() {
   const boards = usePersonaBoards(9)
   const posts = usePersonaPosts(6, featureFlags.personas)
   if (boards.isLoading || posts.isLoading) return null
-  if (boards.isError || posts.isError) {
+  // Only a read that left NOTHING to show is an error here: a failed refetch
+  // keeps its data (React Query v5), so boards already shown stay.
+  const boardsFailed = boards.isError && !boards.data
+  const postsFailed = featureFlags.personas && posts.isError && !posts.data
+  if (boardsFailed || postsFailed) {
     return (
       <section className="mt-6">
         <AiExpertsTitle />

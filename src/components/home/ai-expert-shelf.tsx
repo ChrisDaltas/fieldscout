@@ -56,8 +56,9 @@ type ShelfItem =
  *
  * A board opens where a list opens in the app (`inAppListHref`, plan C8):
  * while Community is on, on Community's list page inside the app (plan C5);
- * otherwise on its share page, as before. A read that fails says so, with
- * Try again — never a shelf that quietly isn't there.
+ * otherwise on its share page, as before. A read that fails with nothing
+ * loaded says so, with Try again — never a shelf that quietly isn't there;
+ * a refetch that fails over boards already shown keeps them.
  */
 export function AiExpertShelf() {
   const boards = usePersonaBoards(9)
@@ -65,7 +66,13 @@ export function AiExpertShelf() {
 
   if (boards.isLoading || posts.isLoading) return null
 
-  if (boards.isError || posts.isError) {
+  // Only a read that left NOTHING to show is an error here. A failed refetch
+  // keeps the data it already had (React Query v5: isError with data), so
+  // boards that loaded stay on screen rather than being swapped for the
+  // error when a later background read fails.
+  const boardsFailed = boards.isError && !boards.data
+  const postsFailed = featureFlags.personas && posts.isError && !posts.data
+  if (boardsFailed || postsFailed) {
     return (
       <ShelfFrame>
         <div className="flex flex-col items-center gap-[9px] rounded-xl bg-white px-[15px] py-6 text-center">
