@@ -67,7 +67,18 @@ export interface HeroOwner {
 
 interface HeroShellProps {
   list: ListWithDetails
-  owner: HeroOwner
+  /**
+   * Who made the list. `null` while the app panel is still reading the real
+   * owner of someone else's list (`list-owner.ts`): the byline then names
+   * nobody rather than the wrong person.
+   */
+  owner: HeroOwner | null
+  /**
+   * Said in the byline in place of a name when `owner` is `null` because the
+   * owner couldn't be read — so a failed read never passes for a list with no
+   * author. Absent while the read is still running (no name, no note).
+   */
+  ownerNote?: string
   /** Inline rename (owner only). Without `onRename` the pencil never renders. */
   canRename: boolean
   onRename?: (title: string) => void
@@ -93,6 +104,7 @@ interface HeroShellProps {
 export function ListHeroShell({
   list,
   owner,
+  ownerNote,
   canRename,
   onRename,
   heading = 'h3',
@@ -175,19 +187,29 @@ export function ListHeroShell({
         )}
 
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <UserAvatar
-            src={owner.avatarUrl}
-            name={owner.username}
-            className="h-[17px] w-[17px]"
-            fallbackClassName="text-[8px]"
-          />
-          {owner.isPersona ? (
-            <PersonaHandle username={owner.username} className="text-[11px] font-semibold text-ink" />
-          ) : (
-            <UsernameLink username={owner.username} className="text-[11px] font-semibold text-ink" />
+          {owner && (
+            <>
+              <UserAvatar
+                src={owner.avatarUrl}
+                name={owner.username}
+                className="h-[17px] w-[17px]"
+                fallbackClassName="text-[8px]"
+              />
+              {owner.isPersona ? (
+                <PersonaHandle username={owner.username} className="text-[11px] font-semibold text-ink" />
+              ) : (
+                <UsernameLink username={owner.username} className="text-[11px] font-semibold text-ink" />
+              )}
+            </>
+          )}
+          {!owner && ownerNote && (
+            // An error's words: red text, never a fill.
+            <span data-owner-note className="whitespace-nowrap text-[11px] font-semibold text-negative-strong">
+              {ownerNote}
+            </span>
           )}
           <span className="whitespace-nowrap text-[11px] font-semibold text-n-6">
-            created {formatCreated(list.created_at)}
+            {owner ? 'created' : !ownerNote ? 'Created' : '· Created'} {formatCreated(list.created_at)}
           </span>
           <span className="whitespace-nowrap text-[11px] font-semibold text-n-6">
             · {list.players.length} {list.players.length === 1 ? 'player' : 'players'}
@@ -203,7 +225,9 @@ export function ListHeroShell({
 
 interface HeroProps {
   list: ListWithDetails
-  owner: HeroOwner
+  owner: HeroOwner | null
+  /** The byline's word when the owner couldn't be read (`ListHeroShell`). */
+  ownerNote?: string
   canEdit: boolean
   expanded: boolean
   onToggleExpanded: () => void
@@ -216,6 +240,13 @@ interface HeroProps {
   onPopOut: () => void
   onRename: (title: string) => void
   onShare: () => void
+  /**
+   * Why Share can't copy the link yet — the handle it carries (the list's
+   * real owner) is still loading or couldn't be read. Set, the button stays
+   * but is disabled, with this as its tooltip: a wrong link can never be
+   * copied (prevent, don't refuse).
+   */
+  shareUnavailable?: string
   /** Duplicate — a list copy, a plain list's only: a ranking (the season
    *  board, a weekly board, an AI expert's board) has no Duplicate item at
    *  all (Chris, 2026-10-19; `offersDuplicate`). */
@@ -273,6 +304,7 @@ interface HeroProps {
 export function ListDetailHero({
   list,
   owner,
+  ownerNote,
   canEdit,
   expanded,
   onToggleExpanded,
@@ -280,6 +312,7 @@ export function ListDetailHero({
   onPopOut,
   onRename,
   onShare,
+  shareUnavailable,
   onDuplicate,
   onSetPrivate,
   onSetCommentsEnabled,
@@ -298,13 +331,23 @@ export function ListDetailHero({
     <ListHeroShell
       list={list}
       owner={owner}
+      ownerNote={ownerNote}
       canRename={canEdit}
       onRename={onRename}
       actions={
         <>
-          <Button variant="stroke" size="sm" onClick={onShare}>
-            <Icon name="send" size={11} /> Share
-          </Button>
+          {shareUnavailable ? (
+            // A disabled button takes no pointer, so the reason rides on a wrapper.
+            <span title={shareUnavailable} className="inline-flex">
+              <Button variant="stroke" size="sm" disabled>
+                <Icon name="send" size={11} /> Share
+              </Button>
+            </span>
+          ) : (
+            <Button variant="stroke" size="sm" onClick={onShare}>
+              <Icon name="send" size={11} /> Share
+            </Button>
+          )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

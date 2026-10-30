@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useComments } from '@/hooks/use-comments'
 import { useDraftMode } from '@/hooks/use-draft-mode'
 import { useFolders, useMoveListToFolder } from '@/hooks/use-folders'
+import { useListOwner } from '@/hooks/use-list-owner'
 import {
   useAddLink,
   useAddPlayer,
@@ -55,8 +56,9 @@ import { EmptyListState } from './list-row-parts'
 import { ListBody, type RowHandlers } from './list-body'
 import { useListDropCommit } from './use-list-drop'
 import { ListCommentsTab } from './list-comments-tab'
-import { ListDetailHero, type HeroOwner } from './list-detail-hero'
+import { ListDetailHero } from './list-detail-hero'
 import { ListDetailsTab } from './list-details-tab'
+import { listShareLink, needsOwnerLookup, resolveListOwner } from './list-owner'
 import { formatCount, resolveStats } from './list-stats'
 import { AddPlayersPopover, ListToolbar } from './list-toolbar'
 
@@ -183,6 +185,12 @@ export function ListDetailPanel({
   }, [openComments, listId, onCommentsShown])
 
   const list = detail.data
+  // Someone else's list you haven't saved has no owner in the collection:
+  // read the real one (walk-off-1) — never stand the viewer in for it.
+  const ownerLookup = useListOwner(
+    list?.owner_id,
+    Boolean(list && needsOwnerLookup(list, summary, user?.id)),
+  )
   const org: ListOrg = resolveOrg(display.org, list?.ranking_mode)
   const stats = React.useMemo(
     () => resolveStats(colsForView(display.cols, display.view)),
@@ -434,11 +442,15 @@ export function ListDetailPanel({
     )
   }
 
-  const owner: HeroOwner = summary?.owner
-    ? { username: summary.owner.username, avatarUrl: summary.owner.avatar_url }
-    : { username: viewer.username ?? 'you', avatarUrl: viewer.avatarUrl }
-
-  const shareLink = `${window.location.origin}/u/${owner.username}/lists/${list.slug}`
+  // Saved → the collection's owner; yours → you; anyone else's → the real
+  // owner once read, and no name (Share disabled) until then; a read that
+  // failed says so in the byline (`ownerNote`, `list-owner.ts`).
+  const { owner, shareAs, shareUnavailable, ownerNote } = resolveListOwner({
+    list,
+    summary,
+    viewer: { id: user?.id, username: viewer.username, avatarUrl: viewer.avatarUrl },
+    lookup: { data: ownerLookup.data, isError: ownerLookup.isError },
+  })
 
   // Comments on / off (C1): the switch says what happened, or why it didn't.
   const setCommentsEnabled = (enabled: boolean) => {
@@ -454,6 +466,9 @@ export function ListDetailPanel({
   }
 
   const share = () => {
+    // The button is disabled without a handle; never copy a guessed link.
+    if (!shareAs) return
+    const shareLink = listShareLink(window.location.origin, shareAs, list.slug)
     void navigator.clipboard
       ?.writeText(shareLink)
       .then(() => toast({ title: 'Link copied', description: shareLink }))
@@ -473,6 +488,7 @@ export function ListDetailPanel({
       <ListDetailHero
         list={list}
         owner={owner}
+        ownerNote={ownerNote}
         canEdit={canEdit}
         expanded={expanded}
         onToggleExpanded={onToggleExpanded}
@@ -482,6 +498,7 @@ export function ListDetailPanel({
         onPopOut={() => popOut(list.id)}
         onRename={(title) => updateList.mutate({ title })}
         onShare={share}
+        shareUnavailable={shareUnavailable}
         onDuplicate={() =>
           duplicateList.mutate(list.id, {
             onSuccess: (copy) => toast({ title: `“${copy.title}” created` }),
