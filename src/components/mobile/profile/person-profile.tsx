@@ -1,7 +1,7 @@
 'use client'
 
 import { FollowButton } from '@/components/explore/follow-button'
-import { postHref } from '@/components/mobile/community/community-ops'
+import { inAppListHref } from '@/components/mobile/community/community-ops'
 import { personAvatarClass, personListSub, personProfileParent } from '@/components/mobile/profile/person-profile-ops'
 import { CredCardView, PreviewBody, PreviewRow, StatCard } from '@/components/mobile/profile/profile-parts'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
@@ -120,7 +120,7 @@ function PersonBody({ data, isOwn }: { data: PersonProfileData; isOwn: boolean }
         {lists.map((l) => (
           <PreviewRow
             key={l.id}
-            href={postHref(l.id, featureFlags.community)}
+            href={inAppListHref(l.id, featureFlags.community)}
             iconPath={M_ICON.lists}
             title={l.title}
             sub={personListSub(l)}

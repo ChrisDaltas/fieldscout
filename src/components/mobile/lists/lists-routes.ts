@@ -8,7 +8,7 @@
  *
  * Your own list opens there with Edit. Someone else's opens there read-only
  * while Community is off, and on Community's list page while it is on
- * (`postHref`, community-ops).
+ * (`inAppListHref`, community-ops).
  */
 
 /** Where the List view was opened from, when that changes its Back. */

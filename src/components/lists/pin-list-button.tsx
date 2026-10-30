@@ -5,6 +5,8 @@ import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
+import { useToggleFavorite } from '@/hooks/use-lists'
+import { toast } from '@/hooks/use-toast'
 
 interface PinListButtonProps {
   listId: string
@@ -14,9 +16,13 @@ interface PinListButtonProps {
 
 /**
  * Pin (favorite) another user's public list so it shows up in your "Pinned"
- * lists. Signed-out viewers get a sign-in CTA. Self-contained (plain fetch +
- * local optimistic state) so it works on the public/guest page without a
- * React Query provider.
+ * lists — on the public share page and on Community's list page in the app
+ * (plan C5). Signed-out viewers get a sign-in CTA.
+ *
+ * Optimistic on its own state (the share page has no list cache to flip), and
+ * through the shared `useToggleFavorite`, so your Lists' Pinned section and
+ * the list's own read follow at once. A pin that doesn't go through puts the
+ * button back and says so — never a silent snap-back.
  */
 export function PinListButton({
   listId,
@@ -24,7 +30,7 @@ export function PinListButton({
   signedIn,
 }: PinListButtonProps) {
   const [pinned, setPinned] = useState(initialPinned)
-  const [busy, setBusy] = useState(false)
+  const toggle = useToggleFavorite()
 
   if (!signedIn) {
     return (
@@ -37,28 +43,30 @@ export function PinListButton({
     )
   }
 
-  const toggle = async () => {
-    if (busy) return
-    setBusy(true)
+  const onClick = () => {
+    // One toggle at a time: the server flips whatever it holds.
+    if (toggle.isPending) return
     const next = !pinned
     setPinned(next) // optimistic
-    try {
-      const res = await fetch(`/api/lists/${listId}/favorite`, { method: 'POST' })
-      if (!res.ok) throw new Error('Request failed')
-      const body = (await res.json()) as { is_favorited?: boolean }
-      if (typeof body.is_favorited === 'boolean') setPinned(body.is_favorited)
-    } catch {
-      setPinned(!next) // rollback
-    } finally {
-      setBusy(false)
-    }
+    toggle.mutate(listId, {
+      onSuccess: (body) => setPinned(body.is_favorited),
+      onError: () => {
+        setPinned(!next) // rollback
+        toast({
+          title: next ? 'Couldn’t pin this list' : 'Couldn’t unpin this list',
+          description: 'Try again in a moment.',
+          variant: 'destructive',
+        })
+      },
+    })
   }
 
   return (
     <Button
       type="button"
-      onClick={toggle}
-      disabled={busy}
+      onClick={onClick}
+      disabled={toggle.isPending}
+      aria-pressed={pinned}
       variant={pinned ? 'stroke' : 'blue'}
       size="sm"
       className="shrink-0"

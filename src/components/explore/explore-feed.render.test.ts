@@ -10,6 +10,9 @@
  *  - the badge reads the item's kind: an ordinary list is a "List";
  *  - the topic chips are only trending tags a list on the feed carries
  *    (plan C4), so a chip never opens an empty feed;
+ *  - a row's Like keeps keyboard focus through a like — never remounted,
+ *    never turned disabled while it's in flight — and re-seeds from the feed's liked state, so a like made on the list's own
+ *    page (plan C5) shows on the row;
  *  - a failed Like or Follow shows the error toast (the toast is checked as
  *    what it hands the toaster; the wiring is a source pin, as the click
  *    can't run in a static render).
@@ -246,6 +249,30 @@ describe('the badge', () => {
     const out = render()
     expect(out.match(/>List</g)).toHaveLength(1)
     expect(out.match(/>Ranking</g)).toHaveLength(1)
+  })
+})
+
+describe('Like keeps focus and follows the feed', () => {
+  // Source pins, as the click can't run in a static render.
+  it('the row renders its Like with no key, so a like from the feed never remounts it (focus stays on the button)', () => {
+    const feed = code('src/components/explore/explore-feed.tsx')
+    expect(feed).toMatch(/<LikeButton item=\{item\} \/>/)
+    expect(feed).not.toMatch(/<LikeButton[^>]*\bkey=/)
+  })
+
+  it('a like in flight is held by a guard, not `disabled` (a focused button that turns disabled loses focus)', () => {
+    const feed = code('src/components/explore/explore-feed.tsx')
+    const button = feed.slice(feed.indexOf('function LikeButton'), feed.indexOf('function FeedRow'))
+    expect(button).not.toMatch(/(?<![-\w])disabled=/)
+    expect(button).toMatch(/aria-disabled=\{toggleLike\.isPending\}/)
+    expect(button).toMatch(/onClick=\{\(\) => \{\s*if \(toggleLike\.isPending\) return/)
+  })
+
+  it('the button re-seeds from the feed’s liked state when it changes (a like made on the list’s own page shows on the row)', () => {
+    const feed = code('src/components/explore/explore-feed.tsx')
+    expect(feed).toMatch(
+      /const \[seenLiked, setSeenLiked\] = useState\(item\.is_liked\)\s*if \(item\.is_liked !== seenLiked\) \{\s*setSeenLiked\(item\.is_liked\)\s*setLiked\(item\.is_liked\)\s*setDelta\(0\)\s*\}/,
+    )
   })
 })
 

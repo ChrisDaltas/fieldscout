@@ -7,10 +7,12 @@
  *    link from outside the app) is handed to the list's phone screen inside
  *    the app (`PhoneHandoff`): your own list on the List view with Edit
  *    (`listHref`); someone else's where every other phone link to it goes
- *    (`postHref`) — Community's list page while Community is on, else the
- *    List view, read-only. The page itself stays the server-rendered one for
- *    search engines, signed-out visitors and desktop — the split the public
- *    profile makes (audit profile-1);
+ *    (`inAppListHref`) — Community's list page while Community is on (since
+ *    plan C5 a server hand-off, on either layout — `sharedListHandoff`),
+ *    else the List view, read-only. The page itself stays the
+ *    server-rendered one for search engines, signed-out visitors and the
+ *    owner on desktop — the split the public profile makes (audit
+ *    profile-1);
  *  - a signed-out visitor who opens one of those phone addresses (shared
  *    from a phone's address bar) gets the public page back — the middleware
  *    reads them with `phoneListIdOf`;
@@ -36,9 +38,20 @@ describe('the share page hands a signed-in phone to the list’s phone screen (a
   const page = read(SHARE_PAGE)
 
   it('renders the handoff: your own list to the List view, someone else’s where every phone link to it goes', () => {
-    expect(page).toContain('<PhoneHandoff to={isOwner ? listHref(list.id) : postHref(list.id, featureFlags.community)} />')
+    // `inAppListHref` with `own`: your own → the List view; someone else's →
+    // Community's list page while Community is on, else the List view — the
+    // same addresses #550 built (pinned in community-ops.test).
+    expect(page).toContain('<PhoneHandoff to={inAppListHref(list.id, featureFlags.community, { own: isOwner })} />')
     // The one handoff — the person pages use it too — not a copy of it.
     expect(page).toContain("import { PhoneHandoff } from '@/components/shared/phone-handoff'")
+  })
+
+  it('Community on: someone signed in on someone else’s list is handed in on the server, before the page renders (plan C5)', () => {
+    expect(page).toContain('const handoff = sharedListHandoff({')
+    expect(page).toContain('communityOn: featureFlags.community,')
+    expect(page).toContain('if (handoff) redirect(handoff)')
+    // Before the list's own reads — the redirect wastes none of them.
+    expect(page.indexOf('if (handoff) redirect(handoff)')).toBeLessThan(page.indexOf('await loadList(header, user)'))
   })
 
   it('…only for a signed-in visitor on a device that gets the phone layout', () => {
@@ -52,8 +65,7 @@ describe('the share page hands a signed-in phone to the list’s phone screen (a
   })
 
   it('builds the address from plain modules: a server page cannot call into a client one', () => {
-    expect(page).toContain("import { listHref } from '@/components/mobile/lists/lists-routes'")
-    expect(page).toContain("import { postHref } from '@/components/mobile/community/community-ops'")
+    expect(page).toContain("import { inAppListHref, sharedListHandoff } from '@/components/mobile/community/community-ops'")
     expect(page).not.toContain("from '@/components/mobile/lists/lists-nav'")
     expect(page).not.toContain("from '@/components/mobile/search/search-ops'")
     for (const file of ['src/components/mobile/lists/lists-routes.ts', 'src/components/mobile/community/community-ops.ts']) {
@@ -139,6 +151,6 @@ describe('phone screens never link to the desktop share page (audit lists-2)', (
 
   it('Home’s AI-expert boards open where every other phone link to them goes', () => {
     const home = read('src/components/mobile/home/home-extras.tsx')
-    expect(home).toContain('href: postHref(b.id, featureFlags.community),')
+    expect(home).toContain('href: inAppListHref(b.id, featureFlags.community),')
   })
 })

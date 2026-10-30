@@ -16,7 +16,7 @@ import { featureFlags } from '@/lib/feature-flags'
  *
  * Under the players on both phone screens that show one list: the List view
  * and Community's list page (audit lists-2 — a shared AI expert's list opens
- * on either, `postHref`).
+ * on either, `inAppListHref`).
  */
 export function ListAiAttribution({ personaId }: { personaId: string }) {
   const persona = useListPersona(personaId)

@@ -16,9 +16,11 @@ import {
   CommandSeparator,
 } from '@/components/ui/command'
 import { Icon, type IconName } from '@/components/ui/icon'
+import { inAppListHref } from '@/components/mobile/community/community-ops'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { communitySearchHref } from '@/lib/community/community-search'
 import { featureFlags } from '@/lib/feature-flags'
+import { useAuth } from '@/hooks/use-auth'
 import { useLayoutModeValue } from '@/hooks/use-layout-mode'
 import { openPlayer } from '@/hooks/use-open-player'
 import { useUIStore } from '@/stores/ui-store'
@@ -119,6 +121,9 @@ export function CommandPalette() {
   // A person opens on their phone screen in the phone layout (an iPad with a
   // keyboard), their public page everywhere else (`profileHrefFor`).
   const layout = useLayoutModeValue()
+  // Whose lists are yours: they open on your Lists, someone else's on
+  // Community's list page (plan C5, `inAppListHref`).
+  const { profile } = useAuth()
 
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
@@ -249,7 +254,17 @@ export function CommandPalette() {
               <CommandItem
                 key={list.id}
                 value={`${list.title} ${list.id}`}
-                onSelect={() => navigate(`/app/lists/${list.id}`)}
+                onSelect={() =>
+                  // While Community is on: someone else's list inside the app
+                  // on Community's list page, your own on your Lists (plan
+                  // C5). Off, Lists as before.
+                  navigate(
+                    inAppListHref(list.id, featureFlags.community, {
+                      own: Boolean(profile?.username) && list.owner_username === profile?.username,
+                      otherwise: `/app/lists/${list.id}`,
+                    }),
+                  )
+                }
               >
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-surface-control text-ink">
                   <Icon name="list" size={12} className="!size-3" />
