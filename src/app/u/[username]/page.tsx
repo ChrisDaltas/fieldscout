@@ -29,8 +29,9 @@ import { createServerClient } from '@/lib/supabase/server'
  * visitors, for the person themselves (their "View public profile" — what a
  * stranger sees), and for everyone while Community is off. A signed-in phone
  * is still handed to its phone screen by `PhoneHandoff` (audit profile-1), as
- * before. With Community on, the header's Follow sends a signed-out visitor
- * to sign in, then back here — and so into the app.
+ * before. With Community on, a signed-out visitor gets Follow in the header:
+ * it sends them to sign in, then back here — and so into the app. The person
+ * themselves never gets it.
  */
 
 interface PageProps {
@@ -132,9 +133,18 @@ export default async function PublicProfilePage({ params }: PageProps) {
           followingCount={profile.following_count}
           isOwn={false}
           // Follow (plan C6) — with Community, where following someone shows
-          // you their lists. Signed out it asks you to sign in; on your own
-          // profile it isn't there (FollowButton).
-          actions={featureFlags.community ? <FollowButton userId={profile.id} size="md" /> : null}
+          // you their lists — for a signed-out visitor only: it asks them to
+          // sign in, then comes back here and so into the app. Anyone else
+          // signed in was handed into the app above, so a signed-in viewer
+          // here is the person themselves ("View public profile"), who can't
+          // follow themselves. Decided on the server (it already knows the
+          // viewer), never left to FollowButton's own check, which only runs
+          // once the browser has the session — the server render would
+          // otherwise offer Follow-yourself for a moment ("Prevent, don't
+          // refuse").
+          actions={
+            featureFlags.community && !user ? <FollowButton userId={profile.id} size="md" /> : null
+          }
         />
 
         <ProfileStats

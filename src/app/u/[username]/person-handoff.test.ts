@@ -9,9 +9,10 @@
  *    session), and everyone while Community is off keep the public,
  *    server-rendered page — and the phone's own hand-off (`PhoneHandoff`,
  *    audit profile-1) is there exactly as before;
- *  - the public profile's header carries Follow while Community is on (a
- *    signed-out click asks you to sign in, then comes back), and nothing
- *    new while it's off.
+ *  - the public profile's header carries Follow for a signed-out visitor
+ *    while Community is on (a click asks you to sign in, then comes back),
+ *    never for the person themselves (decided on the server, so the server
+ *    render can't offer Follow-yourself), and nothing new while it's off.
  */
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -159,6 +160,12 @@ describe('Follow on the public profile’s header', () => {
     const follow = find(find(page, ProfileHeader)?.props.actions as ReactNode, FollowButton)
     expect(follow?.props.userId).toBe('u-kelly')
     expect(follow?.props.size).toBe('md')
+  })
+
+  it('the person themselves, signed in: no Follow — not even for a moment before the browser has the session', async () => {
+    h.user = { id: 'u-kelly' }
+    const page = (await PublicProfilePage(params())) as ReactElement
+    expect(find(page, ProfileHeader)?.props.actions).toBeNull()
   })
 
   it('Community off: nothing new on the public page', async () => {
