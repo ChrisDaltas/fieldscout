@@ -12,9 +12,9 @@ import { UsernameLink } from '@/components/shared/username-link'
 import { useAiListBuild } from '@/hooks/use-ai-list-build'
 import { useAuth } from '@/hooks/use-auth'
 import { useDraftMode } from '@/hooks/use-draft-mode'
+import { useListOwner } from '@/hooks/use-list-owner'
 import { useList, useLists, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
 import { useMobileListsCoverPassed } from '@/hooks/use-mobile-lists-cover-passed'
-import { useMobileListsOwner } from '@/hooks/use-mobile-lists-owner'
 import { rankPoolPositions, useMobileListsPosRanks } from '@/hooks/use-mobile-lists-pool'
 import { useMobileListsLatestWeek, useMobileListsTimeframeStats } from '@/hooks/use-mobile-lists-timeframe-stats'
 import { useMobileListsUsage } from '@/hooks/use-mobile-lists-usage'
@@ -110,10 +110,10 @@ export function ListView({ listId }: { listId: string }) {
 
   const list = detail.data
   const summary = lists.data?.lists.find((l) => l.id === listId)
-  const owner = useMobileListsOwner(list?.owner_id, Boolean(list && !list.is_owner && !summary?.owner))
+  const owner = useListOwner(list?.owner_id, Boolean(list && !list.is_owner && !summary?.owner))
   const ownerUsername = list?.is_owner
     ? (profile?.username ?? null)
-    : (summary?.owner?.username ?? owner.data ?? null)
+    : (summary?.owner?.username ?? owner.data?.username ?? null)
   const canEdit = Boolean(list?.is_owner) && !aiBuild.building
   const loaded = Boolean(list) && !detail.isError
   const coverOff = useMobileListsCoverPassed(coverRef, barRef, loaded)
