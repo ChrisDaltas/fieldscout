@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 
+import { commentControlsOn } from '@/components/lists/comment-menu-ops'
 import { toastMovedToTrash } from '@/components/lists/trash-door'
 import { offersDuplicate } from '@/components/mobile/community/community-ops'
 import { MIcon } from '@/components/mobile/ui/m-icon'
@@ -47,8 +48,9 @@ export interface ListToolsProps {
  * feature the design lacks, kept reachable in its row language (the brief:
  * delete nothing). First the list tools — Group by, Check off drafted, Clear
  * drafted, Show notes, Side by side — then Edit details, visibility, pin /
- * save, folders, attach to a league (leagues test cohort), comments, copy
- * link, duplicate, delete (to the trash, restorable). Every action is the
+ * save, folders, attach to a league (leagues test cohort), comments (the
+ * owner's on / off, then the thread), copy link, duplicate, delete (to the
+ * trash, restorable). Every action is the
  * desktop panel's own mutation. The switches flip in place; the rest close
  * the sheet first.
  *
@@ -92,6 +94,7 @@ export function ListActionsSheet({
   }
 
   const owned = list.is_owner
+  const commentsOn = list.comments_enabled ?? true
   const commentCount = comments.data?.pagination.total
 
   return (
@@ -142,6 +145,27 @@ export function ListActionsSheet({
                   {
                     onSuccess: () => toast({ title: list.is_private ? 'List is public' : 'List is private' }),
                     onError: (error) => toast({ title: 'Could not change visibility', description: error.message }),
+                  },
+                ),
+              )}
+            />
+          )}
+          {canEdit && commentControlsOn() && (
+            // Comments on / off — the owner's switch (Community launch plan
+            // C1, on the Community switch), beside visibility and in its row
+            // language. Off hides the thread from everyone but the owner and
+            // takes the comment box away.
+            <SheetRow
+              icon={<MIcon name="chat" size={15} />}
+              label={commentsOn ? 'Turn off comments' : 'Turn on comments'}
+              sub={commentsOn ? 'On' : 'Off'}
+              onClick={then(() =>
+                update.mutate(
+                  { comments_enabled: !commentsOn },
+                  {
+                    onSuccess: () => toast({ title: commentsOn ? 'Comments are off' : 'Comments are on', description: list.title }),
+                    onError: (error) =>
+                      toast({ title: 'Couldn’t change comments', description: error.message, variant: 'destructive' }),
                   },
                 ),
               )}
@@ -227,7 +251,8 @@ export function ListActionsSheet({
         open={commentsOpen}
         onOpenChange={setCommentsOpen}
         listId={list.id}
-        enabled={list.comments_enabled ?? true}
+        enabled={commentsOn}
+        listOwned={owned}
         viewer={viewer}
       />
       {featureFlags.leagues && owned && (

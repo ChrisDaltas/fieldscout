@@ -200,6 +200,12 @@ interface HeroProps {
   onDuplicate: () => void
   onSetPrivate: (isPrivate: boolean) => void
   /**
+   * Comments on / off — the owner's switch (Community launch plan C1), the
+   * item beside Visibility. Handler-gated like the rename pencil: the panel
+   * passes it only to the list's owner.
+   */
+  onSetCommentsEnabled?: (enabled: boolean) => void
+  /**
    * The Ranked switch — **Numbers → Ranked / Unranked** (one numbering rule,
    * Chris 2026-10-16: a Basic list shows no 1-2-3 on desktop either, so the
    * owner needs a way to turn them back on after create, as the phone
@@ -247,6 +253,7 @@ export function ListDetailHero({
   onShare,
   onDuplicate,
   onSetPrivate,
+  onSetCommentsEnabled,
   onSetNumbered,
   onClearDrafted,
   onDelete,
@@ -256,6 +263,7 @@ export function ListDetailHero({
   onAttachToLeague,
 }: HeroProps) {
   const numbered = isNumbered(list.ranking_mode)
+  const commentsOn = list.comments_enabled ?? true
   return (
     <ListHeroShell
       list={list}
@@ -289,6 +297,26 @@ export function ListDetailHero({
                   <DropdownMenuItem onSelect={() => onSetPrivate(false)}>
                     <Icon name={list.is_private ? 'team' : 'check'} size={13} />
                     Public
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
+            {onSetCommentsEnabled && (
+              // Off hides the thread from everyone but the owner and takes
+              // the comment box away; On brings both back.
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger data-comments-switch>
+                  <Icon name="comments" size={13} />
+                  Comments
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onSelect={() => onSetCommentsEnabled(true)}>
+                    <Icon name={commentsOn ? 'check' : 'comments'} size={13} />
+                    On
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onSetCommentsEnabled(false)}>
+                    <Icon name={commentsOn ? 'close' : 'check'} size={13} />
+                    Off
                   </DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>

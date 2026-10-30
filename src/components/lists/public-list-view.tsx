@@ -238,6 +238,7 @@ export function PublicListView({
             viewer={viewer}
             signedIn={signedIn}
             commentsEnabled={list.comments_enabled ?? true}
+            listOwned={list.is_owner}
           />
         </TabsContent>
       </Tabs>

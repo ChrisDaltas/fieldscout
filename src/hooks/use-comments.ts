@@ -1,10 +1,14 @@
 'use client'
 
 import {
+  infiniteQueryOptions,
   keepPreviousData,
+  useInfiniteQuery,
   useMutation,
-  useQuery,
   useQueryClient,
+  type InfiniteData,
+  type QueryClient,
+  type QueryKey,
 } from '@tanstack/react-query'
 
 import type { CreateCommentInput } from '@/types/schemas/lists'
@@ -17,7 +21,7 @@ export interface CommentWithAuthor extends ListComment {
   >
 }
 
-interface CommentsResponse {
+export interface CommentsResponse {
   comments: CommentWithAuthor[]
   pagination: { page: number; pageSize: number; total: number; hasMore: boolean }
 }
@@ -57,28 +61,94 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 }
 
 export const commentsKeys = {
-  list: (listId: string, page: number, pageSize: number) =>
-    ['comments', listId, page, pageSize] as const,
   all: (listId: string) => ['comments', listId] as const,
+  thread: (listId: string, pageSize: number) => ['comments', listId, 'thread', pageSize] as const,
 }
 
-export function useComments(
-  listId: string | undefined,
-  opts: { page?: number; pageSize?: number } = {},
-) {
-  const page = opts.page ?? 1
-  const pageSize = opts.pageSize ?? 20
-  return useQuery({
-    queryKey: listId
-      ? commentsKeys.list(listId, page, pageSize)
-      : ['comments', 'undefined'],
-    queryFn: () =>
-      fetch(`/api/lists/${listId}/comments?page=${page}&pageSize=${pageSize}`).then(
+/** The API's page (`GET /api/lists/[id]/comments`): newest first. */
+export const COMMENTS_PAGE_SIZE = 20
+
+/**
+ * A comment box's thread: every page read so far, newest first, once each.
+ * `total` is the newest page's count (it counts live comments the viewer can
+ * read); `hasMore` is the oldest page's — whether "Show older comments" has
+ * anything left to read.
+ */
+export interface CommentsThread {
+  comments: CommentWithAuthor[]
+  pagination: { total: number; hasMore: boolean }
+}
+
+/** The page after `last`, or none once the API says there are no more. */
+export function nextCommentsPage(last: CommentsResponse): number | undefined {
+  return last.pagination.hasMore ? last.pagination.page + 1 : undefined
+}
+
+/**
+ * The pages read so far as one thread. Pages are offsets, so a comment posted
+ * between two reads pushes one already shown onto the next page — it is kept
+ * once (by id), never twice.
+ */
+export function flattenCommentPages(data: InfiniteData<CommentsResponse, number>): CommentsThread {
+  const seen = new Set<string>()
+  const comments: CommentWithAuthor[] = []
+  for (const page of data.pages) {
+    for (const comment of page.comments) {
+      if (seen.has(comment.id)) continue
+      seen.add(comment.id)
+      comments.push(comment)
+    }
+  }
+  const newest = data.pages[0]
+  const oldest = data.pages[data.pages.length - 1]
+  return {
+    comments,
+    pagination: { total: newest?.pagination.total ?? 0, hasMore: oldest?.pagination.hasMore ?? false },
+  }
+}
+
+/** The thread with one comment taken out of every page it is on (and out of the count). */
+export function withoutComment(
+  data: InfiniteData<CommentsResponse, number>,
+  commentId: string,
+): InfiniteData<CommentsResponse, number> {
+  if (!data.pages.some((page) => page.comments.some((c) => c.id === commentId))) return data
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      comments: page.comments.filter((c) => c.id !== commentId),
+      pagination: { ...page.pagination, total: Math.max(0, page.pagination.total - 1) },
+    })),
+  }
+}
+
+/**
+ * A list's comments, a page at a time (Community launch plan C1 — "Show
+ * older comments"): the first read is the newest {@link COMMENTS_PAGE_SIZE};
+ * `fetchNextPage()` reads the next older page while `hasNextPage`. Every
+ * caller — the comment boxes and the counts beside them — shares this one
+ * read, so a count and the thread under it never disagree.
+ */
+export function commentsThreadOptions(listId: string | undefined, pageSize = COMMENTS_PAGE_SIZE) {
+  return infiniteQueryOptions({
+    queryKey: commentsKeys.thread(listId ?? 'none', pageSize),
+    enabled: Boolean(listId),
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
+      fetch(`/api/lists/${listId}/comments?page=${pageParam}&pageSize=${pageSize}`).then(
         jsonOrThrow<CommentsResponse>,
       ),
-    enabled: Boolean(listId),
+    getNextPageParam: nextCommentsPage,
+    select: flattenCommentPages,
+    // As before paging: a box that moves to another list keeps showing the
+    // last thread until the new one arrives (`isPlaceholderData` meanwhile).
     placeholderData: keepPreviousData,
   })
+}
+
+export function useComments(listId: string | undefined, opts: { pageSize?: number } = {}) {
+  return useInfiniteQuery(commentsThreadOptions(listId, opts.pageSize))
 }
 
 export function useAddComment(listId: string) {
@@ -96,39 +166,48 @@ export function useAddComment(listId: string) {
   })
 }
 
-export function useDeleteComment(listId: string) {
-  const qc = useQueryClient()
-  return useMutation({
+/**
+ * Delete (soft-delete) a comment — `DELETE /api/lists/[id]/comments/[id]`,
+ * which since migration 213 goes through `remove_list_comment` (author, list
+ * owner or a FieldScout admin). The comment leaves every page of the thread
+ * at once and comes back if the server refuses; the refusal is the server's
+ * own words (`CommentRequestError`). `useDeleteComment` is this plus
+ * `useMutation`; tests drive it through a `MutationObserver`.
+ */
+export function deleteCommentMutationOptions(qc: QueryClient, listId: string) {
+  return {
     mutationFn: (commentId: string) =>
       fetch(`/api/lists/${listId}/comments/${commentId}`, {
         method: 'DELETE',
       }).then(jsonOrThrow<{ ok: boolean }>),
 
-    onMutate: async (commentId) => {
+    onMutate: async (commentId: string) => {
       await qc.cancelQueries({ queryKey: commentsKeys.all(listId) })
-      const snapshots = qc.getQueriesData<CommentsResponse>({
+      const snapshots = qc.getQueriesData<InfiniteData<CommentsResponse, number>>({
         queryKey: commentsKeys.all(listId),
       })
       for (const [key, value] of snapshots) {
-        if (!value) continue
-        qc.setQueryData<CommentsResponse>(key, {
-          ...value,
-          comments: value.comments.filter((c) => c.id !== commentId),
-          pagination: {
-            ...value.pagination,
-            total: Math.max(0, value.pagination.total - 1),
-          },
-        })
+        if (!value?.pages) continue
+        qc.setQueryData(key, withoutComment(value, commentId))
       }
       return { snapshots }
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (
+      _err: Error,
+      _vars: string,
+      ctx: { snapshots: [QueryKey, InfiniteData<CommentsResponse, number> | undefined][] } | undefined,
+    ) => {
       for (const [key, value] of ctx?.snapshots ?? []) {
         qc.setQueryData(key, value)
       }
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: commentsKeys.all(listId) })
+      void qc.invalidateQueries({ queryKey: commentsKeys.all(listId) })
     },
-  })
+  }
+}
+
+export function useDeleteComment(listId: string) {
+  const qc = useQueryClient()
+  return useMutation(deleteCommentMutationOptions(qc, listId))
 }
