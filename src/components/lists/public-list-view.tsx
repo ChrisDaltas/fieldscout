@@ -62,6 +62,19 @@ import {
  * | `Pin` | the one write a stranger is offered, and it already existed with a signed-out sign-in CTA |
  * | `Share` | you are already at the link, but copying it is the gesture the hero is built around and it needs no account |
  *
+ * ## Inside the app: Community's list page (plan C5)
+ *
+ * The same body is what someone signed in reads when they open someone else's
+ * list in the app on desktop (`/app/explore?list=<id>`,
+ * `explore/community-list-page.tsx`) — one list renderer, not two. That page
+ * keeps everything above and adds, through `community`, what a signed-in
+ * reader does on Community: **Like** in the action cluster (the tab row then
+ * drops its display-only like count, so the count shows once), **Follow**
+ * beside the author, and the list's **⋯ menu** (Report, plan C10). Its Share
+ * copies the public share link (`shareHref`), not the app's own address. The
+ * hooks behind those controls live on that page, so this view still mounts
+ * no write hook of its own.
+ *
  * ## Bucket keys are load-bearing here
  *
  * This page is server-rendered (plan **D7**), so a throw is an HTTP **500**, not
@@ -90,9 +103,24 @@ interface PublicListViewProps {
   initialPinned: boolean
   /**
    * Counted on the server so the tab badge is in the SSR HTML rather than
-   * appearing a round-trip later.
+   * appearing a round-trip later. In the app it's the comments read's count —
+   * `undefined` until that lands, which shows no badge (never a guessed 0).
    */
-  commentCount: number
+  commentCount: number | undefined
+  /** What Share copies (a path on this site). Default: this page's own
+   *  address — the share page. In the app: the list's share link. */
+  shareHref?: string
+  /**
+   * Community's controls on someone else's list, inside the app (plan C5):
+   * `like` leads the action cluster (and replaces the tab row's display-only
+   * like count), `follow` sits at the end of the byline beside the author,
+   * `menu` is the list's ⋯, last in the cluster. Absent on the share page.
+   */
+  community?: {
+    like: React.ReactNode
+    follow?: React.ReactNode
+    menu?: React.ReactNode
+  }
 }
 
 type DetailTab = 'list' | 'details' | 'comments'
@@ -105,6 +133,8 @@ export function PublicListView({
   signedIn,
   initialPinned,
   commentCount,
+  shareHref,
+  community,
 }: PublicListViewProps) {
   const [tab, setTab] = React.useState<DetailTab>('list')
 
@@ -150,9 +180,11 @@ export function PublicListView({
         owner={owner}
         canRename={false}
         heading="h1"
+        bylineAction={community?.follow}
         actions={
           <>
-            <ShareLinkButton />
+            {community?.like}
+            <ShareLinkButton href={shareHref} />
             {canPin && (
               <PinListButton
                 listId={list.id}
@@ -160,6 +192,7 @@ export function PublicListView({
                 signedIn={signedIn}
               />
             )}
+            {community?.menu}
           </>
         }
       />
@@ -185,10 +218,13 @@ export function PublicListView({
               <Icon name="eye" size={12} />
               <span className="fs-num">{formatCount(list.view_count)}</span>
             </span>
-            <span className="flex items-center gap-1.5">
-              <Icon name="like" size={12} />
-              <span className="fs-num">{formatCount(list.like_count)}</span>
-            </span>
+            {/* In the app the Like button carries the count. */}
+            {!community && (
+              <span className="flex items-center gap-1.5">
+                <Icon name="like" size={12} />
+                <span className="fs-num">{formatCount(list.like_count)}</span>
+              </span>
+            )}
           </span>
         </div>
 
@@ -248,16 +284,17 @@ export function PublicListView({
 
 /**
  * Share — a v7 secondary button, the same one the app panel's hero carries,
- * copying the page's own address.
+ * copying the page's own address — or `href`, the list's share link, when the
+ * page is the app's (plan C5): a link someone else can open, signed in or not.
  *
  * `window` is read inside the handler and never during render, so this survives
  * the server pass that puts the list into the initial HTML.
  */
-function ShareLinkButton() {
+function ShareLinkButton({ href }: { href?: string }) {
   const { toast } = useToast()
 
   const share = () => {
-    const url = window.location.href
+    const url = href ? new URL(href, window.location.origin).toString() : window.location.href
     void navigator.clipboard
       ?.writeText(url)
       .then(() => toast({ title: 'Link copied', description: url }))

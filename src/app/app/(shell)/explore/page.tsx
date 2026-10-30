@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 
+import { DesktopCommunity } from '@/components/explore/desktop-community'
 import { ExploreFeed } from '@/components/explore/explore-feed'
 import { ScoutsToFollowCard } from '@/components/explore/scouts-to-follow-card'
 import { TrendingTagsCard } from '@/components/explore/trending-tags-card'
@@ -13,26 +14,32 @@ import { getCurrentNflWeek } from '@/lib/sports-data/nfl-state'
  * Community (package screen 08) — the social surface: explore other users'
  * public lists and rankings (moved here from Home). Feed fills the main
  * column; Scouts to follow + trending tags sit in the capped
- * context column. The mobile layout is its own screen (FieldScout Mobile
- * handoff, m-community).
+ * context column. At `?list=<id>` desktop shows someone else's list inside
+ * the app instead, over the kept feed (plan C5, `DesktopCommunity`). The
+ * mobile layout is its own screen (FieldScout Mobile handoff, m-community),
+ * which opens the same address as its full-screen list page.
  */
 export default function ExplorePage() {
   return (
     <ByLayout
       desktop={
-        <>
-          <PageHeader title="Community" />
+        <DesktopCommunity
+          feed={
+            <>
+              <PageHeader title="Community" />
 
-          <TwoColumnLayout
-            main={<ExploreFeed />}
-            aside={
-              <>
-                <ScoutsToFollowCard />
-                <TrendingTagsCard />
-              </>
-            }
-          />
-        </>
+              <TwoColumnLayout
+                main={<ExploreFeed />}
+                aside={
+                  <>
+                    <ScoutsToFollowCard />
+                    <TrendingTagsCard />
+                  </>
+                }
+              />
+            </>
+          }
+        />
       }
       mobile={
         // Streams on its own, so reading the NFL week never holds up the

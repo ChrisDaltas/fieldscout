@@ -8,7 +8,7 @@ import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { teamPageHref } from '@/components/leagues/league-cells'
 import { poolRows, type Availability } from '@/components/leagues/players-page-ops'
 import { AuthorAvatar } from '@/components/mobile/community/community-cards'
-import { formatFollows, postHref } from '@/components/mobile/community/community-ops'
+import { formatFollows, inAppListHref } from '@/components/mobile/community/community-ops'
 import { isPreDraft } from '@/components/mobile/player/profile-ops'
 import { mobileRoute } from '@/components/mobile/shell/mobile-nav'
 import { MOverlay, MOverlayScroll } from '@/components/mobile/trades/m-overlay'
@@ -502,7 +502,7 @@ function PersonRow({ user, onOpen }: { user: SearchUser; onOpen: (label: string)
 function PostRow({ list, onOpen }: { list: SearchList; onOpen: (label: string) => void }) {
   const handle = list.owner_username ? `@${list.owner_username}` : null
   return (
-    <Link href={postHref(list.id, featureFlags.community)} onClick={() => onOpen(list.title)} className="flex items-center gap-[10px] border-b border-m-b2 py-[10px]">
+    <Link href={inAppListHref(list.id, featureFlags.community)} onClick={() => onOpen(list.title)} className="flex items-center gap-[10px] border-b border-m-b2 py-[10px]">
       <span className="flex h-5 flex-none items-center rounded-pill bg-m-ink px-[7px] text-[10px] font-semibold text-white">List</span>
       <span className="flex min-w-0 flex-1 flex-col gap-px">
         <span className="truncate text-[14px] font-semibold text-m-t1">{list.title}</span>

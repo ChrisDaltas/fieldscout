@@ -93,10 +93,11 @@ function LikeButton({ item }: { item: ExploreFeedItem }) {
           onSuccess: (data) => {
             setLiked(data.liked)
             setDelta(0)
-            // Write the authoritative count into every cached feed tab.
+            // Write the authoritative count — and the liked state — into
+            // every cached feed tab.
             qc.setQueriesData<InfiniteData<ExploreFeedPage, ExploreFeedPageParam>>(
               { queryKey: exploreFeedKeys.all },
-              (old) => withLikeCount(old, item.id, data.like_count),
+              (old) => withLikeCount(old, item.id, data.like_count, data.liked),
             )
           },
           onError: () => {
@@ -170,7 +171,9 @@ function FeedRow({ item }: { item: ExploreFeedItem }) {
           is display-only, so clicks there fall through to the row link. */}
       <div className="pointer-events-none relative z-10 flex shrink-0 items-center gap-4">
         <span className="pointer-events-auto">
-          <LikeButton item={item} />
+          {/* Keyed by the liked state the feed holds, so a like made on the
+              list's own page (plan C5) re-seeds the row's button. */}
+          <LikeButton key={String(item.is_liked)} item={item} />
         </span>
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-n-6">
           <Icon name="comments" size={12} />

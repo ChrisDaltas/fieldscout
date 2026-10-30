@@ -68,6 +68,11 @@ interface HeroShellProps {
   heading?: 'h1' | 'h3'
   /** The right-hand action cluster. Entirely surface-specific. */
   actions: React.ReactNode
+  /**
+   * A control at the end of the byline, beside the author — Community's
+   * Follow on someone else's list (plan C5). Absent everywhere else.
+   */
+  bylineAction?: React.ReactNode
 }
 
 /**
@@ -81,6 +86,7 @@ export function ListHeroShell({
   onRename,
   heading = 'h3',
   actions,
+  bylineAction,
 }: HeroShellProps) {
   const [renaming, setRenaming] = React.useState(false)
   const [draft, setDraft] = React.useState(list.title)
@@ -171,6 +177,7 @@ export function ListHeroShell({
           <span className="whitespace-nowrap text-[11px] font-semibold text-n-6">
             · {list.players.length} {list.players.length === 1 ? 'player' : 'players'}
           </span>
+          {bylineAction}
         </div>
       </div>
 

@@ -39,7 +39,8 @@ describe('/app/explore/latest', () => {
     expect(page.type).toBe(ByLayout)
     expect(page.props.mobile.type).toBe(MobileCommunityLatest)
     expect(page.props.desktop.type).toBe(DesktopRedirect)
-    expect(page.props.desktop.props).toStrictEqual({ href: '/app/explore' })
+    // With the address's query, so `?list=<id>` opens that list on desktop (plan C5).
+    expect(page.props.desktop.props).toStrictEqual({ href: '/app/explore', keepQuery: true })
   })
 
   it('bounces with the rest of Community while Community is switched off', () => {

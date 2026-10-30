@@ -974,24 +974,65 @@ export function topicAwaitingServer(
 /** Community's own address — the parent the detail's Back falls back to. */
 export const COMMUNITY_HREF = '/app/explore'
 
-/** The Community detail URL — the screen it opens from (`from`: the feed,
- *  or the Latest page) stays mounted underneath. A mobile URL: the desktop
- *  Community page ignores `?list=`. */
+/** The Community list page's URL — the screen it opens from (`from`: the
+ *  feed, or the phone's Latest page) stays mounted underneath. The same
+ *  address on both layouts: the phone's full-screen list page, and on
+ *  desktop the list inside the app shell (plan C5). */
 export function communityDetailHref(id: string, from: string = COMMUNITY_HREF): string {
   return `${from}?list=${encodeURIComponent(id)}`
 }
 
 /**
- * Where someone else's list opens on a phone: Community's list page while
- * Community is on (the handoff's door — Like, Follow and the counts live
- * there; lr-lists: "social features belong to Community"), else the List
- * view. One rule for every way in — People search, a person's profile,
- * Home's AI-expert boards and a shared link (the share page's phone handoff,
- * audit lists-2) — so the same list never opens on two different screens.
- * Your own list opens on the List view, with Edit (`listHref`).
+ * Where a list opens inside the app — the ONE rule for every way in, on
+ * both layouts (plan C5): Community's feed and search, a person's profile,
+ * Home's boards and a shared link.
+ *
+ *  - **Someone else's list, while Community is on:** Community's list page
+ *    (`/app/explore?list=<id>`) — Like, Save, Share, Follow the author and
+ *    the comments live there (lr-lists: "social features belong to
+ *    Community"). On a phone that's the full-screen page over the feed; on
+ *    desktop, the list inside the app shell.
+ *  - **Your own list, while Community is on (`own`):** your Lists, with
+ *    Edit (`listHref`) — Community keeps other people's lists apart from
+ *    your own (ruling #20).
+ *  - **While Community is off:** `otherwise` — what that way in opened
+ *    before Community, unchanged: on a phone the List view (`listHref`, the
+ *    default), on desktop the caller says (the share page, or Lists).
+ *
+ * So the same list never opens on two different screens.
  */
-export function postHref(listId: string, communityOn: boolean): string {
-  return communityOn ? communityDetailHref(listId) : listHref(listId)
+export function inAppListHref(
+  listId: string,
+  communityOn: boolean,
+  { own = false, otherwise = listHref(listId) }: { own?: boolean; otherwise?: string } = {},
+): string {
+  if (!communityOn) return otherwise
+  return own ? listHref(listId) : communityDetailHref(listId)
+}
+
+/**
+ * A shared link (`/u/<name>/lists/<slug>`) opened by someone signed in
+ * (plan C5, "Signed-in visitors"): while Community is on, someone else's
+ * list is handed into the app — Community's list page, on either layout —
+ * where they can like it, save it, follow its author and comment. Returns
+ * where to send them, or `null` to keep the public page: the owner (it's
+ * their share link, as a stranger sees it), anyone signed out and search
+ * engines (no session — the page stays server-rendered), and everyone while
+ * Community is off (then a phone is handed on by `PhoneHandoff`, as before).
+ */
+export function sharedListHandoff({
+  communityOn,
+  viewerId,
+  ownerId,
+  listId,
+}: {
+  communityOn: boolean
+  viewerId: string | null
+  ownerId: string
+  listId: string
+}): string | null {
+  if (!communityOn || !viewerId || viewerId === ownerId) return null
+  return inAppListHref(listId, communityOn)
 }
 
 /**

@@ -27,6 +27,7 @@ import {
   filterItems,
   formatFollows,
   hottestLikedOutside,
+  inAppListHref,
   latestPageItems,
   listsOnlyQuery,
   normQuery,
@@ -36,7 +37,6 @@ import {
   pickLatest,
   playerMeta,
   popularScore,
-  postHref,
   postedAgo,
   rankFilterOk,
   rankTypeChips,
@@ -46,6 +46,7 @@ import {
   scoringFormatOf,
   scoringLabel,
   searchPlaceholder,
+  sharedListHandoff,
   shownInCommunityQuery,
   shownItems,
   sortPopular,
@@ -831,8 +832,62 @@ describe('what the screen shows (#35, #27)', () => {
   })
 
   it('someone else’s list opens on Community’s list page while Community is on, else the List view', () => {
-    expect(postHref('l 1', true)).toBe('/app/explore?list=l%201')
-    expect(postHref('l1', false)).toBe('/app/lists?list=l1')
+    expect(inAppListHref('l 1', true)).toBe('/app/explore?list=l%201')
+    expect(inAppListHref('l1', false)).toBe('/app/lists?list=l1')
+  })
+})
+
+/**
+ * Plan C5: the ONE helper for where a list opens inside the app, on both
+ * layouts (C6's profile lists and C8's Home shelves use it next), and the
+ * share link's hand-off into it.
+ */
+describe('where a list opens inside the app (plan C5, inAppListHref)', () => {
+  const SHARE = '/u/kelly/lists/top-25'
+
+  it('Community on: someone else’s list opens Community’s list page — the same address on phone and desktop', () => {
+    expect(inAppListHref('l1', true)).toBe('/app/explore?list=l1')
+    expect(inAppListHref('l1', true, { otherwise: SHARE })).toBe('/app/explore?list=l1')
+    expect(inAppListHref('l1', true, { own: false, otherwise: SHARE })).toBe('/app/explore?list=l1')
+  })
+
+  it('Community on: your own list opens your Lists with Edit, never Community (ruling #20)', () => {
+    expect(inAppListHref('l1', true, { own: true })).toBe('/app/lists?list=l1')
+    expect(inAppListHref('l1', true, { own: true, otherwise: SHARE })).toBe('/app/lists?list=l1')
+  })
+
+  it('Community off: what that way in opened before — the phone’s List view by default, else the caller’s', () => {
+    expect(inAppListHref('l1', false)).toBe('/app/lists?list=l1')
+    expect(inAppListHref('l1', false, { own: true })).toBe('/app/lists?list=l1')
+    expect(inAppListHref('l1', false, { otherwise: SHARE })).toBe(SHARE)
+    // Off, ownership changes nothing: the caller's door stays exactly as it was.
+    expect(inAppListHref('l1', false, { own: true, otherwise: SHARE })).toBe(SHARE)
+    expect(inAppListHref('l1', false, { otherwise: '/app/lists/l1' })).toBe('/app/lists/l1')
+  })
+
+  it('escapes the id as the Community address always has', () => {
+    expect(inAppListHref('a b/c', true)).toBe('/app/explore?list=a%20b%2Fc')
+  })
+})
+
+describe('a shared list link opened by someone signed in (plan C5, sharedListHandoff)', () => {
+  const base = { communityOn: true, viewerId: 'u-me', ownerId: 'u-kelly', listId: 'l1' }
+
+  it('Community on, signed in, someone else’s list: handed into Community’s list page (either layout)', () => {
+    expect(sharedListHandoff(base)).toBe('/app/explore?list=l1')
+  })
+
+  it('the owner keeps the public page — their own share link, as a stranger sees it', () => {
+    expect(sharedListHandoff({ ...base, viewerId: 'u-kelly' })).toBeNull()
+  })
+
+  it('signed out (and search engines — no session) keep the public, server-rendered page', () => {
+    expect(sharedListHandoff({ ...base, viewerId: null })).toBeNull()
+  })
+
+  it('Community off: nobody is handed in here — the phone’s own hand-off stays as it was', () => {
+    expect(sharedListHandoff({ ...base, communityOn: false })).toBeNull()
+    expect(sharedListHandoff({ ...base, communityOn: false, viewerId: null })).toBeNull()
   })
 })
 

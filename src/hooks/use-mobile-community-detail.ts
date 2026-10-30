@@ -17,6 +17,10 @@ import { createBrowserClient } from '@/lib/supabase/client'
  */
 export interface CommunityListMeta {
   ownerUsername: string
+  /** The owner profile's own picture — the desktop byline's (plan C5),
+   *  which names the owner even on an AI expert's board, as the share page
+   *  does. */
+  ownerAvatarUrl: string | null
   author: CommunityAuthor
   scoring: CommunityScoring | null
 }
@@ -58,6 +62,7 @@ export function useMobileCommunityListMeta(list: {
       const persona = personaRes.data as { username: string; avatar_url: string | null; scoring: string | null } | null
       return {
         ownerUsername: owner.username,
+        ownerAvatarUrl: owner.avatar_url,
         author: persona
           ? { profileId: null, username: persona.username, avatarUrl: persona.avatar_url, followers: null, isPersona: true }
           : {

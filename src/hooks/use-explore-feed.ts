@@ -5,6 +5,7 @@ import { useInfiniteQuery, type InfiniteData } from '@tanstack/react-query'
 import {
   classifyCommunityList,
   hottestLikedOutside,
+  inAppListHref,
   shownInCommunityQuery,
   sortPopular,
 } from '@/components/mobile/community/community-ops'
@@ -16,6 +17,7 @@ import {
   readRecentLikes,
   type PoolCursor,
 } from '@/hooks/use-mobile-community-feed'
+import { featureFlags } from '@/lib/feature-flags'
 import { ranksOn } from '@/lib/rankings/ranks-on'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { firstEmbed } from '@/utils/supabase-embed'
@@ -77,7 +79,10 @@ export interface ExploreFeedItem {
     handle: string
     avatar_url: string | null
   }
-  /** Public list page (persona boards also live under the owner profile). */
+  /** Where the row opens (`inAppListHref`): while Community is on,
+   *  someone else's list on Community's list page and your own on your
+   *  Lists; otherwise the public list page (persona boards also live under
+   *  the owner profile). */
   href: string
   author_href: string
   /** Owner profile id for the follow control — null for AI-persona boards
@@ -164,7 +169,11 @@ export interface ExploreFeedPage {
 
 export const EXPLORE_FEED_START: ExploreFeedPageParam = { at: 'start' }
 
-export function mapFeedRows(rows: FeedRowShape[], likedIds: ReadonlySet<string>): ExploreFeedItem[] {
+export function mapFeedRows(
+  rows: FeedRowShape[],
+  likedIds: ReadonlySet<string>,
+  viewerId: string | null = null,
+): ExploreFeedItem[] {
   return rows.flatMap((row) => {
     const owner = firstEmbed(row.owner)
     if (!owner) return []
@@ -199,7 +208,13 @@ export function mapFeedRows(rows: FeedRowShape[], likedIds: ReadonlySet<string>)
               handle: owner.username,
               avatar_url: owner.avatar_url,
             },
-        href: `/u/${owner.username}/lists/${row.slug}`,
+        // Inside the app while Community is on (plan C5): someone else's
+        // list on Community's list page, your own on your Lists. Off, the
+        // share page, as before.
+        href: inAppListHref(row.id, featureFlags.community, {
+          own: viewerId !== null && owner.id === viewerId,
+          otherwise: `/u/${owner.username}/lists/${row.slug}`,
+        }),
         author_href: persona
           ? `/personas/${persona.username}`
           : userProfileHref(owner.username),
@@ -238,18 +253,28 @@ export function exploreFeedItems(pages: readonly ExploreFeedPage[]): ExploreFeed
   return pages.flatMap((page) => page.items).filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)))
 }
 
-/** The like toggle's authoritative count, written into every loaded page. */
+/**
+ * The like toggle's authoritative count, written into every loaded page —
+ * and, when the toggle happened somewhere else (Community's list page, plan
+ * C5), whether you now like it (`liked`), so the feed row Back returns to
+ * shows the same.
+ */
 export function withLikeCount(
   data: InfiniteData<ExploreFeedPage, ExploreFeedPageParam> | undefined,
   listId: string,
   likeCount: number,
+  liked?: boolean,
 ): InfiniteData<ExploreFeedPage, ExploreFeedPageParam> | undefined {
   if (!data) return data
   return {
     ...data,
     pages: data.pages.map((page) => ({
       ...page,
-      items: page.items.map((item) => (item.id === listId ? { ...item, like_count: likeCount } : item)),
+      items: page.items.map((item) =>
+        item.id === listId
+          ? { ...item, like_count: likeCount, ...(liked === undefined ? {} : { is_liked: liked }) }
+          : item,
+      ),
     })),
   }
 }
@@ -322,7 +347,7 @@ export async function readExploreFeedPage(
 
   /** A page of rows already in order; `next` decided by the caller. */
   const page = async (rows: FeedRowShape[], next: ExploreFeedPageParam | null): Promise<ExploreFeedPage> => ({
-    items: mapFeedRows(rows, await likedAmong(supabase, userId, rows)),
+    items: mapFeedRows(rows, await likedAmong(supabase, userId, rows), userId),
     next,
   })
 

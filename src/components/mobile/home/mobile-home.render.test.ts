@@ -266,7 +266,7 @@ describe('From the AI experts (audit lists-2)', () => {
     expect(out).not.toContain('/lists/week-9-rb-rankings')
   })
 
-  it('…and Community’s list page while it is on, as search, profiles and a shared link do (postHref)', () => {
+  it('…and Community’s list page while it is on, as search, profiles and a shared link do (inAppListHref)', () => {
     flags.community = true
     try {
       const out = renderBoards()

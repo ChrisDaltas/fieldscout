@@ -19,7 +19,7 @@ interface Call {
   ops: Op[]
 }
 const h = vi.hoisted(() => ({
-  flags: { weeklyRanks: false },
+  flags: { weeklyRanks: false, community: false },
   user: { id: 'viewer' } as { id: string } | null,
 }))
 const calls: Call[] = []
@@ -102,6 +102,7 @@ const rows = (n: number, over: (i: number) => Record<string, unknown> = () => ({
 beforeEach(() => {
   calls.length = 0
   h.flags.weeklyRanks = false
+  h.flags.community = false
   h.user = { id: 'viewer' }
   answer = () => ({ data: [], error: null })
 })
@@ -426,5 +427,45 @@ describe('the like count written back', () => {
     expect(out.pages[0]!.items[0]!.like_count).toBe(1)
     expect(out.pages[1]!.items[0]!.like_count).toBe(6)
     expect(withLikeCount(undefined, 'b', 6)).toBeUndefined()
+  })
+
+  it('with the liked state when the like was made elsewhere (Community’s list page, plan C5)', () => {
+    const a = { id: 'a', like_count: 1, is_liked: false } as ExploreFeedPage['items'][number]
+    const data = { pages: [{ items: [a], next: null }], pageParams: [EXPLORE_FEED_START] }
+    expect(withLikeCount(data, 'a', 2, true)!.pages[0]!.items[0]).toMatchObject({ like_count: 2, is_liked: true })
+    // Without it, the liked state is left as it was.
+    expect(withLikeCount(data, 'a', 2)!.pages[0]!.items[0]).toMatchObject({ like_count: 2, is_liked: false })
+  })
+})
+
+/** Plan C5: a row opens inside the app while Community is on. */
+describe('where a row opens', () => {
+  const read = async () => {
+    answer = (call) =>
+      call.table === 'lists'
+        ? { data: [row('mine', { owner: { id: 'viewer', username: 'me', avatar_url: null } }), row('theirs')], error: null }
+        : { data: [], error: null }
+    const page = await readExploreFeedPage('newest', null, EXPLORE_FEED_START, NOW)
+    return Object.fromEntries(page.items.map((i) => [i.id, i.href]))
+  }
+
+  it('Community on: someone else’s list on Community’s list page; your own on your Lists (ruling #20)', async () => {
+    h.flags.community = true
+    const href = await read()
+    expect(href.theirs).toBe('/app/explore?list=theirs')
+    expect(href.mine).toBe('/app/lists?list=mine')
+  })
+
+  it('Community off: the public share page, as before', async () => {
+    const href = await read()
+    expect(href.theirs).toBe('/u/usertheirs/lists/theirs')
+    expect(href.mine).toBe('/u/me/lists/mine')
+  })
+
+  it('signed out, nothing is yours', async () => {
+    h.flags.community = true
+    h.user = null
+    const href = await read()
+    expect(href.mine).toBe('/app/explore?list=mine')
   })
 })

@@ -1,12 +1,10 @@
-import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import type { Metadata } from 'next'
 
 import { GuestShell } from '@/components/layout/guest-shell'
-import { PersonaBadge } from '@/components/personas/persona-badge'
+import { ListAiNote } from '@/components/lists/list-ai-note'
 import { PublicListView } from '@/components/lists/public-list-view'
-import { postHref } from '@/components/mobile/community/community-ops'
-import { listHref } from '@/components/mobile/lists/lists-routes'
+import { inAppListHref, sharedListHandoff } from '@/components/mobile/community/community-ops'
 import { PhoneHandoff } from '@/components/shared/phone-handoff'
 import { featureFlags } from '@/lib/feature-flags'
 import { fetchListLinks } from '@/lib/lists/links-service'
@@ -31,14 +29,21 @@ import type { ListPlayerWithPlayer, ListWithDetails } from '@/hooks/use-lists'
  * would silently render `—` in every stat cell on the one page strangers see.
  * Widening a SELECT is not a schema change and adds no route (plan §5 DoD 3).
  *
- * **On a phone** (audit lists-2) a signed-in visitor is handed to the list's
- * phone screen inside the app (`PhoneHandoff`), where Back and the phone's
- * light/dark come with it and the owner's @handle opens their phone profile.
- * Your own list opens on the List view with Edit (`listHref`). Someone else's
- * opens where every other phone link to it goes (`postHref`): Community's
- * list page while Community is on (Like, Follow, the counts), else the List
- * view, read-only. This page stays what search engines, signed-out visitors
- * and desktop get — the same split the public profile makes
+ * **Signed in, someone else's list, Community on** (plan C5): handed into
+ * the app on EITHER layout — Community's list page (`sharedListHandoff`),
+ * where they can like it, save it, follow the author and comment. A server
+ * redirect, before anything else is read: the public page never flashes,
+ * and it leaves no history entry for Back to return to.
+ *
+ * **On a phone otherwise** (audit lists-2, unchanged by C5) a signed-in
+ * visitor is handed to the list's phone screen inside the app
+ * (`PhoneHandoff`), where Back and the phone's light/dark come with it and
+ * the owner's @handle opens their phone profile: your own list on the List
+ * view with Edit, someone else's — Community off — on the List view,
+ * read-only (`inAppListHref`, the one rule for where a list opens).
+ *
+ * This page stays what search engines and signed-out visitors get, and the
+ * owner on desktop — the same split the public profile makes
  * (`/u/[username]`, audit profile-1).
  */
 
@@ -86,9 +91,18 @@ async function loadListHeader(username: string, slug: string) {
   return { supabase, profile, list }
 }
 
-async function loadList(username: string, slug: string) {
-  const header = await loadListHeader(username, slug)
-  if (!header) return null
+type ListHeader = NonNullable<Awaited<ReturnType<typeof loadListHeader>>>
+
+/** The viewer, if signed in — read before the rest so a hand-off into the
+ *  app (plan C5) happens before the page's own reads. */
+async function viewerOf(header: ListHeader) {
+  const {
+    data: { user },
+  } = await header.supabase.auth.getUser()
+  return user
+}
+
+async function loadList(header: ListHeader, user: Awaited<ReturnType<typeof viewerOf>>) {
   const { supabase, profile, list } = header
 
   interface TagJoin {
@@ -168,10 +182,6 @@ async function loadList(username: string, slug: string) {
     if (personaError) throw new Error(`Couldn't load the list: ${personaError.message}`)
     persona = personaRow ?? null
   }
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
 
   // Server-authoritative, as `/api/lists/[id]` computes it — never derived on
   // the client, where it races session loading.
@@ -253,16 +263,28 @@ export async function generateMetadata({
 
 export default async function PublicListPage({ params }: PageProps) {
   const { username, listSlug } = await params
-  const data = await loadList(username, listSlug)
-  if (!data) notFound()
+  const header = await loadListHeader(username, listSlug)
+  if (!header) notFound()
+
+  const user = await viewerOf(header)
+  // Someone signed in opening someone else's list while Community is on:
+  // into the app, on either layout (plan C5). Outside any try — `redirect`
+  // throws to do its work.
+  const handoff = sharedListHandoff({
+    communityOn: featureFlags.community,
+    viewerId: user?.id ?? null,
+    ownerId: header.list.owner_id,
+    listId: header.list.id,
+  })
+  if (handoff) redirect(handoff)
 
   const { list, owner, viewer, persona, signedIn, isOwner, initialPinned, commentCount } =
-    data
+    await loadList(header, user)
 
   return (
     <GuestShell>
       {/* A signed-in phone opens this list as its phone screen, in the app. */}
-      <PhoneHandoff to={isOwner ? listHref(list.id) : postHref(list.id, featureFlags.community)} />
+      <PhoneHandoff to={inAppListHref(list.id, featureFlags.community, { own: isOwner })} />
       <div className="mx-auto flex w-full max-w-[900px] flex-col gap-5">
         <PublicListView
           list={list}
@@ -273,28 +295,7 @@ export default async function PublicListPage({ params }: PageProps) {
           initialPinned={initialPinned}
           commentCount={commentCount}
         />
-        {persona && (
-          <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] font-medium text-n-3">
-            <PersonaBadge />
-            <span>
-              Generated by FieldScout AI as{' '}
-              {/* The persona profile is release-gated out of the 2026 go-live
-                  scope; the AI disclosure itself always stays — only the link
-                  to the (hidden) profile drops. */}
-              {featureFlags.personas ? (
-                <Link
-                  href={`/personas/${persona.username}`}
-                  className="font-bold text-ink hover:underline"
-                >
-                  {persona.display_name}
-                </Link>
-              ) : (
-                <span className="font-bold text-ink">{persona.display_name}</span>
-              )}{' '}
-              — a fictional, parody analyst persona not affiliated with any real person.
-            </span>
-          </div>
-        )}
+        {persona && <ListAiNote persona={persona} />}
       </div>
     </GuestShell>
   )
