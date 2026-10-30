@@ -7,13 +7,27 @@
  * and the profile counts still re-read at once. Scouts to follow (plan C4)
  * works the same way: the toggle moves the tapped row's "N followers" at
  * once (`moveScoutFollowers`, put back if it fails), the settle only marks
- * the card stale. Driven through a real QueryClient with mounted observers,
- * on the app's staleTimes.
+ * the card stale. So does a Community list page's author count (sweep
+ * WPO-3, `moveListMetaFollowers`). The follow set itself is read past
+ * PostgREST's 1000-row cap (`readFollowingIds`, sweep XPR-8). Driven through
+ * a real QueryClient with mounted observers, on the app's staleTimes.
  */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { followKeys, moveScoutFollowers, putBackScouts, refreshAfterFollowToggle } from './use-follows'
+import {
+  followKeys,
+  moveListMetaFollowers,
+  moveScoutFollowers,
+  putBackListMeta,
+  putBackScouts,
+  readFollowingIds,
+  refreshAfterFollowToggle,
+} from './use-follows'
+import { COMMUNITY_LIST_META_KEY, withAuthorFollowerChange, type CommunityListMeta } from './use-mobile-community-detail'
 import { SCOUTS_TO_FOLLOW_KEY, type ScoutToFollow } from './use-scouts-to-follow'
 
 const ME = 'dev_user'
@@ -178,5 +192,140 @@ describe('Scouts to follow: the tapped row\'s "N followers" moves at once, the r
     unsubs.pop()!()
     await mountScouts(client, reads)
     await vi.waitFor(() => expect(reads.n).toBe(2))
+  })
+})
+
+// Community sweep WPO-3: the phone Community list page's author line
+// ("@devpro · 0 follows") moves with the Follow tap, the way Scouts to follow
+// does — put back if the follow fails; the next visit reads the server's.
+describe('a Community list page: the author’s count moves at once', () => {
+  const metaKey = (ownerId: string) => [...COMMUNITY_LIST_META_KEY, ownerId, '', ''] as const
+  const meta = (profileId: string | null, followers: number | null, username = 'devpro'): CommunityListMeta => ({
+    ownerUsername: username,
+    ownerAvatarUrl: null,
+    author: { profileId, username, avatarUrl: null, followers, isPersona: profileId === null },
+    scoring: null,
+  })
+  const followersOf = (client: QueryClient, ownerId: string) =>
+    client.getQueryData<CommunityListMeta>(metaKey(ownerId))?.author.followers
+
+  it('the read lives under the key the toggle patches', () => {
+    expect(COMMUNITY_LIST_META_KEY).toEqual(['mobile-community', 'list-meta'])
+  })
+
+  it('following @devpro: "0 follows" becomes 1 on his list page; someone else’s page is left alone', () => {
+    const client = new QueryClient()
+    client.setQueryData(metaKey('u-devpro'), meta('u-devpro', 0))
+    client.setQueryData(metaKey('u-kelly'), meta('u-kelly', 3, 'kelly'))
+    moveListMetaFollowers(client, 'u-devpro', false)
+    expect(followersOf(client, 'u-devpro')).toBe(1)
+    expect(followersOf(client, 'u-kelly')).toBe(3)
+  })
+
+  it('unfollowing takes one off, never below 0; an AI expert (no count) is never touched', () => {
+    const client = new QueryClient()
+    client.setQueryData(metaKey('u-devpro'), meta('u-devpro', 1))
+    moveListMetaFollowers(client, 'u-devpro', true)
+    expect(followersOf(client, 'u-devpro')).toBe(0)
+    moveListMetaFollowers(client, 'u-devpro', true)
+    expect(followersOf(client, 'u-devpro')).toBe(0)
+    const expert = meta(null, null, 'fs_ai')
+    expect(withAuthorFollowerChange(expert, 'u-devpro', 1)).toBe(expert)
+    expect(withAuthorFollowerChange(undefined, 'u-devpro', 1)).toBeUndefined()
+  })
+
+  it('a follow that fails puts the count back', () => {
+    const client = new QueryClient()
+    client.setQueryData(metaKey('u-devpro'), meta('u-devpro', 4))
+    const before = moveListMetaFollowers(client, 'u-devpro', false)
+    expect(followersOf(client, 'u-devpro')).toBe(5)
+    putBackListMeta(client, before)
+    expect(followersOf(client, 'u-devpro')).toBe(4)
+  })
+
+  it('the settle marks the open page stale without re-reading it; the toggle wires the step and its undo', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const reads = { n: 0 }
+    await mount(client, metaKey('u-devpro'), reads)
+    refreshAfterFollowToggle(client)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(reads.n).toBe(1)
+    expect(client.getQueryState(metaKey('u-devpro'))?.isInvalidated).toBe(true)
+
+    const src = readFileSync(path.resolve(process.cwd(), 'src/hooks/use-follows.ts'), 'utf8')
+    expect(src).toContain('prevListMeta: moveListMetaFollowers(qc, targetId, isFollowing)')
+    expect(src).toContain('if (ctx?.prevListMeta) putBackListMeta(qc, ctx.prevListMeta)')
+  })
+
+  it('the list page reads under that key', () => {
+    const src = readFileSync(path.resolve(process.cwd(), 'src/hooks/use-mobile-community-detail.ts'), 'utf8')
+    expect(src).toContain("queryKey: [...COMMUNITY_LIST_META_KEY, ownerId ?? '', personaId ?? '', scoringId ?? '']")
+  })
+})
+
+// Community sweep XPR-8: the follow set is read past PostgREST's 1000-row cap
+// (CLAUDE.md "exactly 1000 rows") — every Follow button and the desktop
+// Following tab read it through `readFollowingIds`.
+describe('the follow set, paged', () => {
+  /** A fake follows table of `total` rows, answering each `.range()` page. */
+  function fakeSupabase(total: number) {
+    const calls: Array<Array<[string, unknown[]]>> = []
+    const supabase = {
+      from: (table: string) => {
+        expect(table).toBe('follows')
+        const ops: Array<[string, unknown[]]> = []
+        calls.push(ops)
+        const builder: Record<string, unknown> = {}
+        for (const name of ['select', 'eq', 'order']) {
+          builder[name] = (...args: unknown[]) => {
+            ops.push([name, args])
+            return builder
+          }
+        }
+        builder.range = (from: number, to: number) => {
+          ops.push(['range', [from, to]])
+          const end = Math.min(to, total - 1)
+          const data = Array.from({ length: Math.max(0, end - from + 1) }, (_, i) => ({ following_id: `u-${from + i}` }))
+          return Promise.resolve({ data, error: null, count: total })
+        }
+        return builder
+      },
+    }
+    return { supabase: supabase as unknown as Parameters<typeof readFollowingIds>[0], calls }
+  }
+
+  it('someone who follows 1,500 people gets all 1,500 — two pages, an exact count, a total order', async () => {
+    const { supabase, calls } = fakeSupabase(1500)
+    const ids = await readFollowingIds(supabase, 'u-me')
+    expect(ids).toHaveLength(1500)
+    expect(new Set(ids).size).toBe(1500)
+    expect(calls.map((ops) => ops.find(([n]) => n === 'range')![1])).toEqual([
+      [0, 999],
+      [1000, 1999],
+    ])
+    for (const ops of calls) {
+      expect(ops).toContainEqual(['select', ['following_id', { count: 'exact' }]])
+      expect(ops).toContainEqual(['eq', ['follower_id', 'u-me']])
+      expect(ops).toContainEqual(['order', ['following_id', { ascending: true }]])
+    }
+  })
+
+  it('a failed page throws — never a short set that looks whole', async () => {
+    const supabase = {
+      from: () => {
+        const builder: Record<string, unknown> = {}
+        for (const name of ['select', 'eq', 'order']) builder[name] = () => builder
+        builder.range = () => Promise.resolve({ data: null, error: { message: 'boom' }, count: null })
+        return builder
+      },
+    } as unknown as Parameters<typeof readFollowingIds>[0]
+    await expect(readFollowingIds(supabase, 'u-me')).rejects.toThrow('boom')
+  })
+
+  it('every Follow button’s set and the Following tab read it this way', () => {
+    const follows = readFileSync(path.resolve(process.cwd(), 'src/hooks/use-follows.ts'), 'utf8')
+    expect(follows).toContain('const rows = await readFollowingIds(supabase, user!.id)')
+    const feed = readFileSync(path.resolve(process.cwd(), 'src/hooks/use-explore-feed.ts'), 'utf8')
+    expect(feed).toContain('ownerIds = await readFollowingIds(supabase, userId)')
   })
 })

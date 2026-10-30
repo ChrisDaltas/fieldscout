@@ -1,5 +1,6 @@
 'use client'
 
+import { useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
 import { budgetShare } from '@/components/lists/v2/list-buckets'
@@ -34,6 +35,7 @@ import { draftedCount, groupOptions, groupSections, noteOf, notesCount, resolveG
 import { ComparePickSheet, DraftedBox, GroupBySheet } from './list-tools-sheets'
 import { playersLabel, tierChipClass, updatedLabel } from './lists-model'
 import { useListsNav } from './lists-nav'
+import { LIST_COMMENTS_PARAM, withoutCommentsFlag } from './lists-routes'
 import {
   CenterNote,
   CoverCollage,
@@ -105,6 +107,10 @@ export function ListView({ listId }: { listId: string }) {
   const [optionsOpen, setOptionsOpen] = React.useState(false)
   const [groupOpen, setGroupOpen] = React.useState(false)
   const [compareOpen, setCompareOpen] = React.useState(false)
+  // The thread's sheet (in List options' row language) — held here so a
+  // "commented on your list" alert can open it on arrival.
+  const [commentsOpen, setCommentsOpen] = React.useState(false)
+  const commentsAsked = useSearchParams().get(LIST_COMMENTS_PARAM) === '1'
   const coverRef = React.useRef<HTMLDivElement>(null)
   const barRef = React.useRef<HTMLDivElement>(null)
 
@@ -133,6 +139,15 @@ export function ListView({ listId }: { listId: string }) {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list?.id, list?.title, list?.player_count, list?.thumbnail_url, pushHistory])
+
+  // "@x commented on your list" (`listCommentsHref`): once the list is on
+  // screen, its Comments sheet opens over it and the flag leaves the
+  // address, so Back and a reload show the List view as usual.
+  React.useEffect(() => {
+    if (!commentsAsked || !loaded) return
+    setCommentsOpen(true)
+    window.history.replaceState(null, '', withoutCommentsFlag(window.location.pathname + window.location.search))
+  }, [commentsAsked, loaded])
 
   const back = () => nav.closeList()
 
@@ -285,6 +300,7 @@ export function ListView({ listId }: { listId: string }) {
         viewer={{ username: profile?.username ?? null, avatarUrl: profile?.avatar_url ?? null }}
         onEditDetails={() => nav.openDetails(list.id)}
         onDeleted={() => nav.closeList()}
+        commentsSheet={{ open: commentsOpen, onOpenChange: setCommentsOpen }}
         tools={{
           group: options.length > 1 ? (options.find((option) => option.id === org)?.label ?? null) : null,
           onGroupBy: () => setGroupOpen(true),

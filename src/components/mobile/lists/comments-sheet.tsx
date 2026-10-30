@@ -20,6 +20,7 @@ import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/hooks/use-auth'
 import { useCommentCooldown } from '@/hooks/use-comment-cooldown'
 import {
+  COMMENTS_READ_FAILED,
   CommentRequestError,
   useAddComment,
   useComments,
@@ -175,9 +176,22 @@ export function CommentsSheet({
           )}
           {comments.isPending && <p className="py-6 text-center text-[13px] font-medium text-m-t3">Loading comments…</p>}
           {readFailed && (
-            <p className="py-6 text-center text-[13px] font-medium text-m-t3">
-              Comments could not be loaded. {comments.error.message}
-            </p>
+            // Said out loud, with Try again — never "No comments yet." A
+            // retry puts the thread back to "Loading comments…" until it
+            // answers.
+            <div className="flex flex-col items-center gap-1.5 py-6" data-comments-read-failed>
+              <p role="alert" className="text-center text-[13px] font-medium text-m-t3">
+                {COMMENTS_READ_FAILED}
+              </p>
+              <button
+                type="button"
+                onClick={() => void comments.refetch()}
+                className="flex h-9 items-center rounded-pill bg-m-b2 px-4 text-[13px] font-semibold text-m-t1 active:bg-m-b2h"
+                data-comments-retry
+              >
+                Try again
+              </button>
+            </div>
           )}
           {comments.data?.comments.map((comment) => {
             const items = menusLive ? commentMenuItems({ viewerId: user?.id, authorId: comment.author_id, listOwned }) : []

@@ -1,3 +1,4 @@
+import { listCommentsHref } from '@/components/mobile/lists/lists-routes'
 import type { NotificationItem } from '@/hooks/use-notifications'
 import { featureFlags } from '@/lib/feature-flags'
 
@@ -75,9 +76,16 @@ export function notificationHref(n: Pick<NotificationItem, 'type' | 'data'>): st
   if (n.type === 'content_report') {
     return featureFlags.community ? ADMIN_REPORTS_HREF : null
   }
+  // Someone commented on your list (`list_comment`, 213 — the alert goes to
+  // the list's owner, so this is his own list) → that list, opened on its
+  // comments: the phone's List view with its Comments sheet up, desktop's
+  // Lists panel on its Comments tab. Not on the Community switch — comments
+  // on your own lists are Lists.
+  if (n.type === 'list_comment' && typeof data?.list_id === 'string' && data.list_id !== '') {
+    return listCommentsHref(data.list_id)
+  }
   // List activity (the pre-existing arm): a list you saved was updated
-  // (`list_updated`, 077) or someone commented on your list (`list_comment`,
-  // 213 — the alert goes to the list's owner, so this is his own list).
+  // (`list_updated`, 077).
   if (typeof data?.list_id === 'string' && data.list_id !== '') {
     return `/app/lists/${data.list_id}`
   }

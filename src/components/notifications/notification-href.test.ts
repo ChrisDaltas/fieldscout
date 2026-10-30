@@ -33,10 +33,16 @@ describe('notificationHref', () => {
     ).toBe('/app/lists/list-9')
   })
 
-  it('213: a new comment on your list links to that list', () => {
+  // WPO-1 (Community sweep) DELIBERATELY changes what C2 pinned here: the
+  // alert used to open the bare list, where the phone shows no comment at all.
+  it('213: a new comment on your list opens that list on its comments (the flag the List view and the Lists panel read)', () => {
     expect(
       notificationHref({ type: 'list_comment', data: { list_id: 'list-9', actor_id: 'u2' } }),
-    ).toBe('/app/lists/list-9')
+    ).toBe('/app/lists?list=list-9&comments=1')
+    // Not on the Community switch: comments on your own lists are Lists.
+    expect(notificationHref({ type: 'list_comment', data: { list_id: 'a b' } })).toBe('/app/lists?list=a%20b&comments=1')
+    // No list id: nothing to open.
+    expect(notificationHref({ type: 'list_comment', data: { actor_id: 'u2' } })).toBeNull()
   })
 
   it('is inert when a league_invite carries no token (defensive)', () => {
