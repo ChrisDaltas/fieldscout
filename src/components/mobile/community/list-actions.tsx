@@ -174,6 +174,7 @@ export function ListActions({ list }: { list: ListWithDetails }) {
         onOpenChange={setCommentsOpen}
         listId={list.id}
         enabled={list.comments_enabled ?? true}
+        listOwned={list.is_owner}
         viewer={{ username: profile?.username ?? null, avatarUrl: profile?.avatar_url ?? null }}
       />
     </>

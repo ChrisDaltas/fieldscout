@@ -57,6 +57,7 @@ const phone = () =>
     onOpenChange: () => {},
     listId: 'L1',
     enabled: true,
+    listOwned: false,
     viewer: { username: 'me', avatarUrl: null },
   })
 const desktop = () => createElement(ListCommentsTab, { listId: 'L1', viewer: { username: 'me', avatarUrl: null } })

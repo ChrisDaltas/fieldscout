@@ -5,6 +5,7 @@ import * as React from 'react'
 
 import { AttachListToLeagueModal } from '@/components/leagues/attach-list-modal'
 import { AiBuildBanner } from '@/components/lists/ai-build-banner'
+import { commentControlsOn } from '@/components/lists/comment-menu-ops'
 import { toastMovedToTrash } from '@/components/lists/trash-door'
 import { Icon } from '@/components/ui/icon'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -417,6 +418,19 @@ export function ListDetailPanel({
 
   const shareLink = `${window.location.origin}/u/${owner.username}/lists/${list.slug}`
 
+  // Comments on / off (C1): the switch says what happened, or why it didn't.
+  const setCommentsEnabled = (enabled: boolean) => {
+    if ((list.comments_enabled ?? true) === enabled) return
+    updateList.mutate(
+      { comments_enabled: enabled },
+      {
+        onSuccess: () => toast({ title: enabled ? 'Comments are on' : 'Comments are off', description: list.title }),
+        onError: (error) =>
+          toast({ title: 'Couldn’t change comments', description: error.message, variant: 'destructive' }),
+      },
+    )
+  }
+
   const share = () => {
     void navigator.clipboard
       ?.writeText(shareLink)
@@ -452,6 +466,9 @@ export function ListDetailPanel({
           })
         }
         onSetPrivate={(isPrivate) => updateList.mutate({ is_private: isPrivate })}
+        // Comments on / off (C1, on the Community switch) — the owner's,
+        // beside Visibility.
+        onSetCommentsEnabled={canEdit && commentControlsOn() ? setCommentsEnabled : undefined}
         // The Ranked switch — owner only, and never the Big Board (always ranked).
         onSetNumbered={canEdit && !list.is_big_board ? setNumbered : undefined}
         onTogglePin={() =>
@@ -626,6 +643,7 @@ export function ListDetailPanel({
             listId={listId}
             viewer={viewer}
             commentsEnabled={list.comments_enabled ?? true}
+            listOwned={list.is_owner}
           />
         </TabsContent>
       </Tabs>
