@@ -3,6 +3,7 @@
 import { useState } from 'react'
 
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
+import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { ScoringSheet } from '@/components/mobile/ui/scoring-sheet'
@@ -16,7 +17,8 @@ import { SCORING_OPTIONS, TIME_FRAMES, scoringLabel, timeFrameLabel } from './li
 /**
  * FieldScout Mobile — Lists shared parts (lr-lists §2, lr-frame §2.13): the
  * prototype's inline icons, the Ranked / Tiers switch, the time-frame and
- * scoring controls, covers and the video card.
+ * scoring controls, covers, the video card and the slim bar that takes over
+ * from a scrolled-off cover.
  */
 
 // =============================================================================
@@ -451,5 +453,98 @@ export function DiscardSheet({
     >
       <span className="sr-only">{detail}</span>
     </MobileSheet>
+  )
+}
+
+// =============================================================================
+// The slim bar (gap list #25)
+// =============================================================================
+
+/** Where the List view's pinned column names stick: just under the slim bar
+ *  (the safe area plus its 48px row, hairline included). */
+export const PINNED_UNDER_SLIM_BAR = 'top-[calc(env(safe-area-inset-top)+48px)]'
+
+/**
+ * Back · the title · ⋯ · Edit, once a list's cover has scrolled off (#25).
+ * The design has no such bar, so it extends the editor's header: a 48px b0
+ * row with a hairline under it, 36px round Back and ⋯, a 32px Edit pill. It
+ * carries what the cover carried: the List view's has ⋯ (and Edit on your
+ * own list); the Community list page's cover has only Back, so its bar is
+ * Back · the title (plan C7).
+ *
+ * It hangs from a zero-height sticky anchor at the top of its scroller, so it
+ * covers the page without taking room in it: nothing below moves when it
+ * fades in. Hidden, it is `inert` — out of the tab order and the screen
+ * reader's view — while staying laid out, so its edge can be measured
+ * (`useMobileListsCoverPassed`).
+ *
+ * No resting shadow: the hairline is what separates it from the list
+ * scrolling under it, as on the editor's header it extends.
+ */
+export function SlimBar({
+  barRef,
+  shown,
+  title,
+  onBack,
+  onOptions,
+  onEdit,
+  safeArea = true,
+}: {
+  barRef: React.RefObject<HTMLDivElement | null>
+  shown: boolean
+  title: string
+  onBack: () => void
+  /** Absent where the cover has no ⋯ (the Community list page). */
+  onOptions?: () => void
+  /** Absent when the viewer can't edit (as the cover's Edit). */
+  onEdit?: () => void
+  /** Pads the bar clear of the notch. The List view scrolls from the
+   *  screen's top edge; the Community list page's scroller already sits
+   *  under the safe area, so it passes false. */
+  safeArea?: boolean
+}) {
+  return (
+    <div className="sticky top-0 z-20 h-0" data-list-slim-bar>
+      <div
+        ref={barRef}
+        inert={shown ? undefined : true}
+        className={cn(
+          'absolute inset-x-0 top-0 bg-m-b0 transition-[opacity,visibility] duration-150 ease-out',
+          safeArea && 'pt-[env(safe-area-inset-top)]',
+          shown ? 'visible opacity-100' : 'invisible opacity-0',
+        )}
+      >
+        <div className="flex h-12 items-center gap-1 border-b border-m-b2 pl-2 pr-3">
+          <button
+            type="button"
+            aria-label="Back"
+            onClick={onBack}
+            className="flex size-9 flex-none items-center justify-center rounded-full text-m-t1 active:bg-m-b2"
+          >
+            <MIcon name="back" size={16} stroke={2} />
+          </button>
+          <span className="min-w-0 flex-1 truncate pl-0.5 text-[16px] font-semibold text-m-t1">{title}</span>
+          {onOptions && (
+            <button
+              type="button"
+              aria-label="List options"
+              onClick={onOptions}
+              className="flex size-9 flex-none items-center justify-center rounded-full text-m-t1 active:bg-m-b2"
+            >
+              <LIcon name="dots" size={16} stroke={2.6} />
+            </button>
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="ml-1 flex h-8 flex-none items-center whitespace-nowrap rounded-pill bg-m-b2 px-3.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2h"
+            >
+              Edit
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }

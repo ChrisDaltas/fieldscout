@@ -11,9 +11,12 @@ import { describe, expect, it } from 'vitest'
  * push toward unifying it.** Desktop shows the primaries in the sidebar with
  * a small More expander; mobile's five bottom tabs push far more overflow
  * into the sheet. The lists therefore hold *different* sets on purpose —
- * Community is desktop-only today, Big Board / Rankings / Start or sit /
- * Teams / Leagues are sheet-only — and Chris confirmed that production
- * behaviour (tasks-MP §5 MP.9 item 2, §6 "Deferred").
+ * Big Board / Rankings / Start or sit / Teams / Leagues are sheet-only — and
+ * Chris confirmed that production behaviour (tasks-MP §5 MP.9 item 2, §6
+ * "Deferred"). Community was desktop-only here until it moved out of More
+ * into the desktop main menu, right after Lists (Community launch plan C7;
+ * the order is pinned in `sidebar.render.test.ts`). On the phone it is a
+ * bottom tab, so it is in neither More list now.
  *
  * **The defect is that nothing couples them**: an entry meant to appear on
  * both form factors can be added to one file and missed in the other with no
@@ -72,8 +75,10 @@ const SHARED: MoreEntry[] = [
  * file: an exclusion list you can park a shared entry in is the escape hatch
  * that would make the whole pin optional, so both directions are asserted.
  */
-/** Desktop-only: the sidebar's More carries it, the sheet does not. */
-const DESKTOP_ONLY = ['/app/explore'] as const
+/** Desktop-only: the sidebar's More carries it, the sheet does not. Empty
+ *  since Community moved to the desktop main menu (plan C7) — kept, so a
+ *  future one-sided desktop row has a named place to go. */
+const DESKTOP_ONLY: readonly string[] = []
 /** Sheet-only: mobile's five bottom tabs push far more overflow into the
  *  sheet than desktop's More expander shows. */
 const SHEET_ONLY = [
@@ -217,6 +222,11 @@ describe('the two More lists (F104)', () => {
     for (const href of [...DESKTOP_ONLY, ...SHEET_ONLY]) {
       expect(SHARED.map((e) => e.href), href).not.toContain(href)
     }
+  })
+
+  it('Community is in neither More list — a desktop main-menu row and a phone bottom tab (plan C7)', () => {
+    expect(sidebar.some((e) => e.href === '/app/explore'), SIDEBAR).toBe(false)
+    expect(sheet.some((e) => e.href === '/app/explore'), SHEET).toBe(false)
   })
 
   it('entries that appear in both do not disagree about label or icon', () => {

@@ -18,7 +18,7 @@ import {
 import { ListActions } from '@/components/mobile/community/list-actions'
 import { ListAiAttribution } from '@/components/mobile/lists/list-ai-attribution'
 import { tierChipClass, viewSections, youTubeId, youTubeThumb } from '@/components/mobile/lists/lists-model'
-import { YouTubeBadge } from '@/components/mobile/lists/lists-parts'
+import { SlimBar, YouTubeBadge } from '@/components/mobile/lists/lists-parts'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { posTextClass } from '@/components/mobile/ui/m-pos-chip'
@@ -26,6 +26,7 @@ import { M_PROJ_TEXT, SEASON_PROJ_LABEL } from '@/components/players/projected-p
 import { UsernameLink } from '@/components/shared/username-link'
 import { useList, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
 import { useMobileCommunityListMeta } from '@/hooks/use-mobile-community-detail'
+import { useMobileListsCoverPassed } from '@/hooks/use-mobile-lists-cover-passed'
 import type { CommunityPlayer, CommunityVideo } from '@/hooks/use-mobile-community-feed'
 import { featureFlags } from '@/lib/feature-flags'
 import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
@@ -35,11 +36,14 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
 /**
  * FieldScout Mobile — Community list detail (handoff m-community §2.14, D).
  * A full-screen page over the feed (`/app/explore?list=<id>`): it covers the
- * dock, has no fixed header — Back floats on the 230px cover and scrolls
- * away with it — then kind pill, title, author + Follow, description, Save /
- * Share, the Videos shelf and the players. A ranking (big board, weekly
- * board, AI expert's board) is the handoff's ranking variant ("Ranking ·
- * PPR", "Ranked players · N", always the collage cover). The players carry
+ * dock; Back floats on the 230px cover and scrolls away with it — then kind
+ * pill, title, author + Follow, description, Save / Share, the Videos shelf
+ * and the players. Once the cover has scrolled off, the List view's slim
+ * Back · title bar (`SlimBar`, gap list #25) takes over at the top, so Back
+ * never scrolls out of reach on a long list (plan C7, readiness S16). A
+ * ranking (big board, weekly board, AI expert's board) is the handoff's
+ * ranking variant ("Ranking · PPR", "Ranked players · N", always the collage
+ * cover). The players carry
  * 1-2-3 numbers only when the list is numbered (`isNumbered` — not a Basic
  * or tier-only list), and sit under "Tier N" headings when it has tiers
  * (`hasTiers`) — as the phone's own List view draws them.
@@ -217,6 +221,11 @@ function DetailBody({
     scoring_system_id: null,
   })
   const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
+  // The slim bar shows once the cover has gone up under it (the List view's
+  // watcher: it hears this dialog's own scroller too).
+  const coverRef = useRef<HTMLDivElement>(null)
+  const barRef = useRef<HTMLDivElement>(null)
+  const coverOff = useMobileListsCoverPassed(coverRef, barRef, true)
 
   // Rankings vs lists as the feed draws them (big boards, weekly boards and
   // AI experts' boards are rankings).
@@ -254,7 +263,9 @@ function DetailBody({
 
   return (
     <>
-      <div className="relative">
+      {/* The dialog already pads its scroller clear of the notch. */}
+      <SlimBar barRef={barRef} shown={coverOff} title={list.title} onBack={onBack} safeArea={false} />
+      <div ref={coverRef} className="relative">
         <ListCover
           item={{
             id: list.id,

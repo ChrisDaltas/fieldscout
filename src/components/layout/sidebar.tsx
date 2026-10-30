@@ -23,9 +23,25 @@ interface NavEntry {
 // Community lives at /app/explore, My Stats at /app/stats.
 // Surfaces outside the 2026 go-live scope drop out with their own release
 // flag and come back as each one is reskinned.
+//
+// Community sits in the main menu right after Lists, behind its own switch
+// (Chris, 2026-10-27; Community launch plan C7, readiness F3). It used to be
+// under More, closed by default, while the phone gave it a main tab. With the
+// rankings rows on, it stays right after Lists. `sidebar.render.test.ts`
+// pins the order with the switch on and off.
 const PRIMARY: NavEntry[] = [
   { href: '/app', label: 'Home', icon: 'dashboard' },
   { href: '/app/lists', label: 'Lists', icon: 'list', matchPrefix: '/app/lists' },
+  ...(featureFlags.community
+    ? [
+        {
+          href: '/app/explore',
+          label: 'Community',
+          icon: 'team',
+          matchPrefix: '/app/explore',
+        } as NavEntry,
+      ]
+    : []),
   ...(featureFlags.bigBoard
     ? [
         {
@@ -55,16 +71,6 @@ const PRIMARY: NavEntry[] = [
 ]
 
 const MORE_ITEMS: NavEntry[] = [
-  ...(featureFlags.community
-    ? [
-        {
-          href: '/app/explore',
-          label: 'Community',
-          icon: 'team',
-          matchPrefix: '/app/explore',
-        } as NavEntry,
-      ]
-    : []),
   {
     href: '/app/stats',
     label: 'My stats',
