@@ -53,9 +53,10 @@ const DEVPRO: PersonProfileData = {
     following_count: 3,
   },
   lists: [
-    { id: 'list-1', title: 'Week 9 RB rankings', ranking_mode: 'ranked', player_count: 24, like_count: 3, updated_at: '2026-10-25T12:00:00Z' },
-    { id: 'list-2', title: 'Waiver wire targets', ranking_mode: 'unranked', player_count: 8, like_count: 0, updated_at: '2026-10-27T07:00:00Z' },
+    { id: 'list-1', title: 'Week 9 RB rankings', description: null, position_filter: 'RB', ranking_mode: 'ranked', player_count: 24, like_count: 3, updated_at: '2026-10-25T12:00:00Z' },
+    { id: 'list-2', title: 'Waiver wire targets', description: 'Adds for week 9.', position_filter: null, ranking_mode: 'unranked', player_count: 8, like_count: 0, updated_at: '2026-10-27T07:00:00Z' },
   ],
+  listCount: 2,
 }
 
 function render(el: ReturnType<typeof createElement>, seed?: (qc: QueryClient) => void) {
@@ -128,7 +129,7 @@ describe('a person’s profile on the phone', () => {
   })
 
   it('with no public lists it says so', () => {
-    const out = profileOf('devpro', { ...DEVPRO, lists: [] })
+    const out = profileOf('devpro', { ...DEVPRO, lists: [], listCount: 0 })
     expect(out).toContain('No public lists yet')
   })
 

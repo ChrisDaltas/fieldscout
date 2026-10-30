@@ -1,14 +1,14 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import type { Metadata } from 'next'
 
 import { GuestShell } from '@/components/layout/guest-shell'
 import { PhoneHandoff } from '@/components/shared/phone-handoff'
-import { ProfileListRow } from '@/components/profile/profile-list-row'
-import { credOrStart } from '@/lib/cred-tiers'
+import { PersonFollowsList } from '@/components/profile/person-follows-list'
+import { featureFlags } from '@/lib/feature-flags'
 import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
 import { createServerClient } from '@/lib/supabase/server'
-import { phoneFollowsHref, userProfileHref } from '@/components/shared/username-link-ops'
+import { appFollowsHref, personHandoff, userProfileHref } from '@/components/shared/username-link-ops'
 
 interface PageProps {
   params: Promise<{ username: string }>
@@ -35,6 +35,21 @@ async function loadFollowers(username: string) {
     .maybeSingle()
   if (error) throw new Error(`Couldn't load the profile: ${error.message}`)
   if (!profile) return null
+
+  // Signed in, someone else's Followers, Community on: into the app, on
+  // either layout (plan C6) — before the rows are read. Outside any try:
+  // `redirect` throws to do its work.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const handoff = personHandoff({
+    communityOn: featureFlags.community,
+    viewerId: user?.id ?? null,
+    personId: profile.id,
+    username: profile.username,
+    kind: 'followers',
+  })
+  if (handoff) redirect(handoff)
 
   // Every row, past PostgREST's 1000-row cap (`pageAll`, with an exact
   // count) — the same read as the phone's screen (`usePersonFollows`). The
@@ -74,7 +89,7 @@ export default async function FollowersPage({ params }: PageProps) {
   return (
     <GuestShell>
       {/* A signed-in phone opens this as its phone screen, in the app. */}
-      <PhoneHandoff to={phoneFollowsHref(profile.username, 'followers')} />
+      <PhoneHandoff to={appFollowsHref(profile.username, 'followers')} />
       <div className="mx-auto flex max-w-2xl flex-col gap-5">
         <header>
           <Link
@@ -90,31 +105,7 @@ export default async function FollowersPage({ params }: PageProps) {
           </p>
         </header>
 
-        {followers.length === 0 ? (
-          <div className="rounded-2xl border border-n-4 bg-white px-6 py-14 text-center">
-            <h2 className="text-h6 text-ink">No followers yet</h2>
-            <p className="mx-auto mt-1.5 max-w-md text-[11px] font-medium text-n-6">
-              When scouts follow @{profile.username}, they show up here.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-2xl border border-n-4 bg-white">
-            <ul className="divide-y divide-n-4">
-              {followers.map((p) => (
-                <li key={p.id}>
-                  <ProfileListRow
-                    userId={p.id}
-                    username={p.username}
-                    avatarUrl={p.avatar_url}
-                    bio={p.bio}
-                    credScore={credOrStart(p.cred_score)}
-                    isPro={p.is_pro}
-                  />
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <PersonFollowsList username={profile.username} kind="followers" people={followers} />
       </div>
     </GuestShell>
   )

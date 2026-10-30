@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
 import { useFollowingIds, useToggleFollow } from '@/hooks/use-follows'
 import { toast } from '@/hooks/use-toast'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 
 interface FollowButtonProps {
@@ -18,6 +19,9 @@ interface FollowButtonProps {
    * mode). Default: the desktop v7 button.
    */
   look?: 'desktop' | 'phone'
+  /** The desktop button's v7 size: `sm` (24px, rows and bylines — the
+   *  default) or `md` (27px, beside a profile's name, as v7 draws it). */
+  size?: 'sm' | 'md'
 }
 
 /** A follow or unfollow that didn't go through: the error toast (an alert
@@ -31,13 +35,23 @@ export function toastFollowFailed(wasFollowing: boolean) {
 }
 
 /**
+ * Where a signed-out Follow goes: sign in, then back to the page it was on
+ * (`here`) while Community is on — a public profile then hands the visitor
+ * into the app, to the profile with Follow (plan C6). While Community is off
+ * it is the plain sign-in, as before.
+ */
+export function signInHref(here: string, communityOn: boolean): string {
+  return communityOn ? `/login?redirect=${encodeURIComponent(here)}` : '/login'
+}
+
+/**
  * Community follow control (package screen 08). Reads the viewer's follow set
  * from the shared `useFollowingIds` query so every button stays in sync, and
  * toggles optimistically. Renders nothing for the viewer's own row; a
- * signed-out click routes to login. v7 pills: Follow is the blue primary;
- * Following settles to the grey secondary.
+ * signed-out click routes to sign in (`signInHref`). v7 pills: Follow is the
+ * blue primary; Following settles to the grey secondary.
  */
-export function FollowButton({ userId, className, look = 'desktop' }: FollowButtonProps) {
+export function FollowButton({ userId, className, look = 'desktop', size = 'sm' }: FollowButtonProps) {
   const router = useRouter()
   const { user } = useAuth()
   const { data: following } = useFollowingIds()
@@ -53,7 +67,7 @@ export function FollowButton({ userId, className, look = 'desktop' }: FollowButt
     e.preventDefault()
     e.stopPropagation()
     if (!user) {
-      router.push('/login')
+      router.push(signInHref(window.location.pathname + window.location.search, featureFlags.community))
       return
     }
     // The toggle is optimistic and puts the button back if it fails — so a
@@ -82,7 +96,7 @@ export function FollowButton({ userId, className, look = 'desktop' }: FollowButt
   return (
     <Button
       variant={isFollowing ? 'stroke' : 'blue'}
-      size="sm"
+      size={size}
       onClick={onClick}
       disabled={toggle.isPending}
       className={cn(className)}

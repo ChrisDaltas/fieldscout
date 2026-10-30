@@ -7,7 +7,7 @@ import { CredCardView, PreviewBody, PreviewRow, StatCard } from '@/components/mo
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { M_ICON } from '@/components/mobile/ui/m-icon'
 import { MobileScreen, RoundNavButton } from '@/components/mobile/ui/mobile-header'
-import { phoneFollowsHref } from '@/components/shared/username-link-ops'
+import { appFollowsHref } from '@/components/shared/username-link-ops'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/hooks/use-auth'
 import { usePersonProfile, type PersonProfileData } from '@/hooks/use-person-profile'
@@ -99,12 +99,12 @@ function PersonBody({ data, isOwn }: { data: PersonProfileData; isOwn: boolean }
         <StatCard
           value={profile.follower_count.toLocaleString('en-US')}
           label="Followers"
-          href={phoneFollowsHref(profile.username, 'followers')}
+          href={appFollowsHref(profile.username, 'followers')}
         />
         <StatCard
           value={profile.following_count.toLocaleString('en-US')}
           label="Following"
-          href={phoneFollowsHref(profile.username, 'following')}
+          href={appFollowsHref(profile.username, 'following')}
         />
       </div>
 

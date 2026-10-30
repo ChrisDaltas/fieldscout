@@ -12,7 +12,8 @@ interface PublicListCardProps {
   positionFilter: string | null
   playerCount: number
   likeCount: number
-  updatedAt: string
+  /** When it last changed; a list with none just shows no date. */
+  updatedAt: string | null
   owner: {
     username: string
     avatar_url: string | null
@@ -29,6 +30,12 @@ interface PublicListCardProps {
    * the wrong page (an AI persona's profile is `/personas/…`, not `/u/…`).
    */
   linkOwner?: boolean
+  /**
+   * Show who made it — the avatar and the handle. Off on a person's own
+   * profile (the in-app profile's lists grid, plan C6), where every card is
+   * theirs and the page already says whose it is. Default true.
+   */
+  showOwner?: boolean
 }
 
 function formatRelative(iso: string): string {
@@ -49,6 +56,7 @@ export function PublicListCard({
   updatedAt,
   owner,
   linkOwner = false,
+  showOwner = true,
 }: PublicListCardProps) {
   // The whole card opens the list through its title's stretched hit area
   // (`after:inset-0`), so the owner's handle can be its own link above it —
@@ -56,11 +64,13 @@ export function PublicListCard({
   return (
     <div className="relative block rounded-2xl border border-n-4 bg-white p-[15px] transition-[border-color,box-shadow] hover:border-surface-strong hover:shadow-hard-6">
       <div className="flex items-start gap-3">
-        <UserAvatar
-          src={owner.avatar_url}
-          name={owner.name ?? owner.username}
-          className="h-9 w-9 shrink-0"
-        />
+        {showOwner && (
+          <UserAvatar
+            src={owner.avatar_url}
+            name={owner.name ?? owner.username}
+            className="h-9 w-9 shrink-0"
+          />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-[13px] font-bold tracking-[-0.01em] text-ink">
@@ -83,23 +93,31 @@ export function PublicListCard({
             </p>
           )}
           <div className="mt-2 flex items-center gap-2 text-[10px] font-medium text-n-6">
-            <span className="truncate">
-              {owner.name ? `${owner.name} · ` : ''}
-              {linkOwner && !owner.name ? (
-                <UsernameLink username={owner.username} className="relative z-10" />
-              ) : (
-                `@${owner.username}`
-              )}
-            </span>
-            <span>·</span>
+            {showOwner && (
+              <>
+                <span className="truncate">
+                  {owner.name ? `${owner.name} · ` : ''}
+                  {linkOwner && !owner.name ? (
+                    <UsernameLink username={owner.username} className="relative z-10" />
+                  ) : (
+                    `@${owner.username}`
+                  )}
+                </span>
+                <span>·</span>
+              </>
+            )}
             <span className="fs-num whitespace-nowrap">{playerCount} players</span>
             <span>·</span>
             <span className="fs-num inline-flex items-center gap-1 whitespace-nowrap">
               <Icon name="like" size={10} />
               {likeCount}
             </span>
-            <span>·</span>
-            <span className="whitespace-nowrap">{formatRelative(updatedAt)}</span>
+            {updatedAt && (
+              <>
+                <span>·</span>
+                <span className="whitespace-nowrap">{formatRelative(updatedAt)}</span>
+              </>
+            )}
           </div>
         </div>
       </div>

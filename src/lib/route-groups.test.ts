@@ -256,13 +256,15 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // desktop visit goes to the matchup. Gated on `featureFlags.leagues` by
   // `(shell)/leagues/layout.tsx`.
   '/app/leagues/[leagueId]/games/[gameId]',
-  // FieldScout Mobile — a PERSON's profile and their Followers / Following
-  // as phone screens inside the app (audit profile-1): the phone layout
-  // opens every username here, keeping the dock, Back and light/dark. The
-  // public, server-rendered `/u/[username]` pages are unchanged and stay the
-  // SEO / signed-out / desktop surface; a desktop visit here goes there, and
-  // a signed-out one too (middleware). Not flag-gated (profiles and lists
-  // are launch scope). Permanent.
+  // A PERSON's profile and their Followers / Following inside the app:
+  // phone screens (audit profile-1) — the phone layout opens every username
+  // here, keeping the dock, Back and light/dark — and, while Community is
+  // on, the same pages in the desktop shell (plan C6). The public,
+  // server-rendered `/u/[username]` pages stay the SEO / signed-out surface
+  // (and desktop's while Community is off — a desktop visit here then goes
+  // there); a signed-out visit here goes there too (middleware). The phone
+  // screens aren't flag-gated (profiles and lists are launch scope).
+  // Permanent.
   '/app/u/[username]',
   '/app/u/[username]/followers',
   '/app/u/[username]/following',

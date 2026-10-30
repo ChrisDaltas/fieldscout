@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 import { CredInfoPopover } from '@/components/stats/cred-info-popover'
 import { Progress } from '@/components/ui/progress'
 import { CRED_START, computeCredRank } from '@/lib/cred-tiers'
@@ -101,21 +103,33 @@ export function ProfileStats({
   )
 }
 
-function StatTile({
+/**
+ * One v7 grey stat tile: a 10px label over a 20px bold value, and an
+ * optional 10px sub line. Shared by the profile's tiles (My stats, the
+ * public page, the profile inside the app).
+ *
+ * With `href` the tile is a link (the in-app profile's Followers /
+ * Following open those lists): the grey deepens under the pointer and while
+ * pressed, as v7's grey buttons do. Nothing lifts at rest (CLAUDE.md,
+ * elevation).
+ */
+export function StatTile({
   label,
   value,
   sub,
   tone,
   valueIsNum = true,
+  href,
 }: {
   label: string
   value: string
   sub?: string
   tone?: 'good'
   valueIsNum?: boolean
+  href?: string
 }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-[3px] rounded-2xl bg-surface-sunken px-[15px] py-3.5">
+  const body = (
+    <>
       <div className="text-[10px] font-semibold text-n-3">{label}</div>
       <div
         className={cn(
@@ -135,6 +149,22 @@ function StatTile({
           {sub}
         </div>
       )}
-    </div>
+    </>
   )
+  const tile = 'flex min-w-0 flex-col gap-[3px] rounded-2xl bg-surface-sunken px-[15px] py-3.5'
+  if (href) {
+    return (
+      <Link
+        href={href}
+        data-stat-link={label}
+        className={cn(
+          tile,
+          'transition-colors hover:bg-surface-hover active:bg-surface-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+        )}
+      >
+        {body}
+      </Link>
+    )
+  }
+  return <div className={tile}>{body}</div>
 }
