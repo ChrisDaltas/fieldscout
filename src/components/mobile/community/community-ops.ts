@@ -830,6 +830,50 @@ function withoutRepeats(items: CommunityItem[]): CommunityItem[] {
 }
 
 // =============================================================================
+// Home's "From the Community" (plan C8)
+// =============================================================================
+
+/** How many lists Home's "From the Community" shows (plan C8: 3–5). */
+export const HOME_COMMUNITY_SIZE = 5
+
+/**
+ * Home's "From the Community" shelf on the phone (plan C8): the lists For
+ * you shows, in For you's order — "popular + recent" (ruling #35) — the
+ * first HOME_COMMUNITY_SIZE. Worked out by For you's own rule
+ * (`communityView`) over For you's own candidates (the pool and the lists
+ * liked lately that it left out), so the shelf and the tab its See all
+ * opens never disagree.
+ *
+ * Real lists only, the feed's rule (plan C3): the pool holds no list
+ * without players, and rankings stay off the shelf whatever their switch
+ * says — Home's way into Rankings comes with them (plan Stage 2).
+ */
+export function homeCommunityLists(
+  feed: { items: readonly CommunityItem[]; popularExtra: readonly CommunityItem[] },
+  now: number,
+  size: number = HOME_COMMUNITY_SIZE,
+): CommunityItem[] {
+  return communityView({
+    pool: feed.items,
+    popularExtra: feed.popularExtra,
+    latestRows: [],
+    filter: { tab: 'all', topic: null, q: '', followingIds: new Set() },
+    rk: RANK_FILTERS_ALL,
+    ranksOn: false,
+    currentWeek: 0,
+    now,
+  }).lists.slice(0, size)
+}
+
+/** A Home shelf card's last line: what's in the list and how liked it is —
+ *  "8 players · 2 likes"; no likes yet, just "8 players". */
+export function playersAndLikes(item: Pick<CommunityItem, 'playerCount' | 'likeCount'>): string {
+  const players = `${item.playerCount} ${item.playerCount === 1 ? 'player' : 'players'}`
+  if (item.likeCount <= 0) return players
+  return `${players} · ${item.likeCount} ${item.likeCount === 1 ? 'like' : 'likes'}`
+}
+
+// =============================================================================
 // Past the pool (gap list §3 #30): search and filters cover every public list
 // =============================================================================
 

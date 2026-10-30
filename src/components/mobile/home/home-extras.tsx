@@ -91,12 +91,32 @@ interface ExpertItem {
 /**
  * The AI experts' latest boards and posts (the desktop `AiExpertShelf`'s
  * reads and rules): hidden until anything exists; posts and "Meet the
- * experts" only while personas are released.
+ * experts" only while personas are released. A read that fails says so,
+ * with Try again — never a shelf that quietly isn't there (plan C8).
  */
 export function HomeAiExperts() {
   const boards = usePersonaBoards(9)
   const posts = usePersonaPosts(6, featureFlags.personas)
   if (boards.isLoading || posts.isLoading) return null
+  if (boards.isError || posts.isError) {
+    return (
+      <section className="mt-6">
+        <AiExpertsTitle />
+        <HomeNote
+          tone="error"
+          action={{
+            label: 'Try again',
+            onClick: () => {
+              if (boards.isError) void boards.refetch()
+              if (posts.isError) void posts.refetch()
+            },
+          }}
+        >
+          Couldn’t load the AI experts.
+        </HomeNote>
+      </section>
+    )
+  }
   const now = Date.now()
   const items: ExpertItem[] = [
     ...(boards.data ?? []).map((b) => ({
@@ -126,22 +146,7 @@ export function HomeAiExperts() {
   if (items.length === 0) return null
   return (
     <section className="mt-6">
-      <span className="flex items-center gap-1.5 text-[11px] font-semibold leading-[14px] text-m-t3">
-        <span className="size-1.5 rounded-full bg-accent" aria-hidden />
-        Scout AI · AI experts
-      </span>
-      <HomeSectionTitle
-        title="From the AI experts"
-        align="center"
-        className="mt-1"
-        right={
-          featureFlags.personas ? (
-            <Link href="/personas" className="-my-[7px] py-[7px] text-[13px] font-semibold leading-[16px] text-accent">
-              Meet the experts
-            </Link>
-          ) : null
-        }
-      />
+      <AiExpertsTitle />
       <div className="mt-1 flex flex-col">
         {items.map((item) => (
           <Link key={item.id} href={item.href} className="flex items-center gap-3 border-b border-m-b2 py-[9px]">
@@ -164,5 +169,30 @@ export function HomeAiExperts() {
         ))}
       </div>
     </section>
+  )
+}
+
+/** The AI experts shelf's label and title, with "Meet the experts" while
+ *  personas are released. */
+function AiExpertsTitle() {
+  return (
+    <>
+      <span className="flex items-center gap-1.5 text-[11px] font-semibold leading-[14px] text-m-t3">
+        <span className="size-1.5 rounded-full bg-accent" aria-hidden />
+        Scout AI · AI experts
+      </span>
+      <HomeSectionTitle
+        title="From the AI experts"
+        align="center"
+        className="mt-1"
+        right={
+          featureFlags.personas ? (
+            <Link href="/personas" className="-my-[7px] py-[7px] text-[13px] font-semibold leading-[16px] text-accent">
+              Meet the experts
+            </Link>
+          ) : null
+        }
+      />
+    </>
   )
 }

@@ -1,7 +1,12 @@
 /**
  * Mobile Home (m-home §2A) rendered over seeded query caches — the designed
  * sections in order, the tile and card doors, the league card's stored
- * numbers, and the honest omissions (no win %, no add/drop counts).
+ * numbers, and the honest omissions (no win %, no add/drop counts). Plan C8:
+ * "From the Community" right after My stuff while Community is switched on
+ * (For you's lists, in For you's order, each opening Community's list page),
+ * and the AI experts' boards opening where a list opens in the app. Home
+ * itself never says "Scout AI" unless the AI experts shelf is there — the
+ * AI note on an expert's board is on Community's list page, not Home.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
@@ -30,6 +35,7 @@ import { scheduleKeys } from '@/hooks/use-schedule'
 import { auctionPoolKeys } from '@/hooks/use-draft-pool'
 import { listsKeys } from '@/hooks/use-lists'
 import { mobileRankingBoardsKey, type BoardPlayerLite } from '@/hooks/use-mobile-rankings-boards'
+import { mobileCommunityKeys, type CommunityItem, type CommunityPool } from '@/hooks/use-mobile-community-feed'
 
 import { MobileHome } from './mobile-home'
 
@@ -275,5 +281,154 @@ describe('From the AI experts (audit lists-2)', () => {
     } finally {
       flags.community = false
     }
+  })
+})
+
+describe('From the AI experts — a read that fails says so (plan C8)', () => {
+  it('Couldn’t load, with Try again — never a shelf that quietly isn’t there', () => {
+    const qc = seeded()
+    qc.setDefaultOptions({ queries: { retryOnMount: false } })
+    qc.getQueryCache().build(qc, { queryKey: ['persona-boards', 9] }).setState({ status: 'error', error: new Error('boom'), fetchStatus: 'idle' })
+    const out = render(qc)
+    expect(out).toContain('From the AI experts')
+    expect(out).toContain('Couldn’t load the AI experts.')
+    expect(out).toMatch(/role="alert"/)
+    expect(out).toContain('>Try again<')
+  })
+})
+
+/** Plan C8: Home's "From the Community" shelf (phone). */
+describe('From the Community (plan C8)', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const daysAgo = (d: number) => new Date(Date.now() - d * DAY).toISOString()
+  const person = { profileId: 'u-kelly', username: 'kelly', avatarUrl: null, followers: 3, isPersona: false }
+  const communityItem = (id: string, over: Partial<CommunityItem> = {}): CommunityItem => ({
+    id,
+    title: `List ${id}`,
+    slug: id,
+    description: null,
+    kind: 'list',
+    rankType: null,
+    positionFilter: 'WR',
+    scoring: 'Half PPR',
+    scoringFormat: 'half',
+    playerCount: 8,
+    likeCount: 0,
+    recentLikes: [],
+    createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
+    thumbnailUrl: null,
+    ownerUsername: 'kelly',
+    author: person,
+    heads: [],
+    tags: [],
+    videos: [],
+    ...over,
+  })
+  const pool = (items: CommunityItem[], popularExtra: CommunityItem[] = []): CommunityPool => ({
+    items,
+    latest: [],
+    popularExtra,
+    capped: false,
+    olderFrom: null,
+  })
+  const withCommunity = (fn: () => void) => {
+    flags.community = true
+    try {
+      fn()
+    } finally {
+      flags.community = false
+    }
+  }
+  const renderPool = (data: CommunityPool) => {
+    const qc = seeded()
+    qc.setQueryData(mobileCommunityKeys.pool(), data)
+    return render(qc)
+  }
+  /** The shelf's own markup. */
+  const shelfOf = (out: string) => {
+    const at = out.indexOf('data-home-community=')
+    expect(at).toBeGreaterThan(-1)
+    return out.slice(at, out.indexOf('</section>', at))
+  }
+  const cardIds = (shelf: string) => [...shelf.matchAll(/href="\/app\/explore\?list=([^"]+)"/g)].map((m) => m[1])
+
+  it('sits right after My stuff, before the league sections', () => {
+    withCommunity(() => {
+      const out = renderPool(pool([communityItem('a')]))
+      const order = ['My stuff', 'From the Community', 'Matchups', 'Join or create a league', 'Trending players', 'Injury news', 'Practice', 'Recently viewed']
+      const at = order.map((s) => out.indexOf(s))
+      expect(at.every((i) => i >= 0), JSON.stringify(at)).toBe(true)
+      expect([...at].sort((a, b) => a - b)).toEqual(at)
+    })
+  })
+
+  it('For you’s lists in For you’s order (popular + recent), at most five, each opening Community’s list page', () => {
+    withCommunity(() => {
+      const now = Date.now()
+      const items = [
+        communityItem('fresh', { updatedAt: daysAgo(0.1), createdAt: daysAgo(0.1) }),
+        communityItem('quiet', { updatedAt: daysAgo(2) }),
+        communityItem('liked', { updatedAt: daysAgo(20), likeCount: 4, recentLikes: [now - 1000, now - 2000, now - 3000, now - 4000] }),
+        communityItem('l4', { updatedAt: daysAgo(3) }),
+        communityItem('l5', { updatedAt: daysAgo(4) }),
+        communityItem('l6', { updatedAt: daysAgo(5) }),
+        // Rankings never show here, however liked.
+        communityItem('board', { kind: 'rank', rankType: 'season', likeCount: 50, recentLikes: [now, now, now] }),
+      ]
+      const extra = communityItem('extra', { updatedAt: daysAgo(30), likeCount: 9, recentLikes: [now, now, now, now, now, now] })
+      const shelf = shelfOf(renderPool(pool(items, [extra])))
+      expect(cardIds(shelf)).toEqual(['extra', 'liked', 'fresh', 'quiet', 'l4'])
+      expect(shelf).not.toContain('board')
+      // A plain link into Community's list page — no feed under Home to open it over.
+      expect(shelf).not.toContain('/app/lists?list=')
+      // "See all" opens Community.
+      expect(shelf).toMatch(/<a [^>]*href="\/app\/explore"[^>]*>See all<\/a>/)
+      // The card's last line says how popular it is.
+      expect(shelf).toContain('8 players · 4 likes')
+      expect(shelf).toContain('@kelly')
+    })
+  })
+
+  it('no list to show: the section is left out — no empty box', () => {
+    withCommunity(() => {
+      const out = renderPool(pool([communityItem('board', { kind: 'rank', rankType: 'season' })]))
+      expect(out).not.toContain('From the Community')
+      expect(out).toContain('My stuff')
+    })
+  })
+
+  it('loading: card placeholders under the title, never a blank', () => {
+    withCommunity(() => {
+      const shelf = shelfOf(render())
+      expect(shelf).toContain('From the Community')
+      expect(shelf).toContain('aria-busy="true"')
+      expect(shelf).toContain('aria-label="Loading lists"')
+    })
+  })
+
+  it('a failed read says Couldn’t load, with Try again — never an empty shelf', () => {
+    withCommunity(() => {
+      const qc = seeded()
+      qc.setDefaultOptions({ queries: { retryOnMount: false } })
+      qc.getQueryCache().build(qc, { queryKey: mobileCommunityKeys.pool() }).setState({ status: 'error', error: new Error('boom'), fetchStatus: 'idle' })
+      const shelf = shelfOf(render(qc))
+      expect(shelf).toContain('Couldn’t load lists from the Community.')
+      expect(shelf).toContain('role="alert"')
+      expect(shelf).toContain('>Try again<')
+    })
+  })
+
+  it('never says "Scout AI" on Home — the AI note lives on Community’s list page', () => {
+    withCommunity(() => {
+      expect(renderPool(pool([communityItem('a')]))).not.toContain('Scout AI')
+    })
+  })
+
+  it('Community switched off: no shelf, and Community’s feed isn’t read', () => {
+    const qc = seeded()
+    const out = render(qc)
+    expect(out).not.toContain('From the Community')
+    expect(qc.getQueryCache().find({ queryKey: mobileCommunityKeys.pool() })).toBeUndefined()
   })
 })
