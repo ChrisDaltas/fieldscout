@@ -1043,7 +1043,15 @@ export function communityDetailHref(id: string, from: string = COMMUNITY_HREF): 
  *    before Community, unchanged: on a phone the List view (`listHref`, the
  *    default), on desktop the caller says (the share page, or Lists).
  *
- * So the same list never opens on two different screens.
+ * Your own list goes to your Lists only when the caller passes `own`. The
+ * desktop ways in pass it (Community's feed and Home's card of it, a
+ * person's profile, the command palette, Admin › Reports), so on desktop
+ * your own list opens on your Lists. The phone's ways in don't (Community's
+ * cards open `communityDetailHref` directly; search, a person's profile and
+ * Home's boards call this without `own`), so on a phone your own list opens
+ * on Community's list page like anyone else's. The two layouts differ
+ * here, kept as built (ruling #20 follow-up, 2026-10-15). Your own shared
+ * link, opened signed in on a phone, passes `own` and opens your Lists.
  */
 export function inAppListHref(
   listId: string,

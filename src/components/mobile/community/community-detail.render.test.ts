@@ -676,3 +676,32 @@ describe('the Community detail — the ⋯ and Report (plan C10)', () => {
     expect(sheet).not.toMatch(/\bdark:/)
   })
 })
+
+describe('the Community detail — a list with nobody on it (WPO-4)', () => {
+  it('says “No players on this list yet.” under the players heading — never a count over blank space', () => {
+    h.list = list({ is_big_board: false, players: [] })
+    const out = render()
+    expect(out).toMatch(/Players · 0/)
+    const empty = out.match(/<p[^>]*data-list-empty[^>]*>([^<]*)<\/p>/)
+    expect(empty?.[1]).toBe('No players on this list yet.')
+    expect(out.indexOf('data-list-empty')).toBeGreaterThan(out.indexOf('Players · 0'))
+    // Themed for light and dark: m-* tokens, no dark: variants.
+    expect(empty?.[0]).toContain('text-m-t3')
+    expect(empty?.[0]).not.toMatch(/\bdark:/)
+  })
+
+  it('a list with players has no such line', () => {
+    expect(render()).not.toContain('data-list-empty')
+  })
+})
+
+describe('the Community detail — an AI expert’s byline (XPR-1)', () => {
+  it('names the expert as plain text — the shared PersonaHandle, never a person’s profile link', () => {
+    h.list = list({ is_big_board: false, slug: 'top-25-rb-ppr', ai_persona_id: 'p1' })
+    h.meta = { data: { ownerUsername: 'fieldscout-ai', author: EXPERT, scoring: 'PPR' }, isError: false }
+    const out = render()
+    expect(out).toMatch(/<span data-persona-handle="bathew-merry-ai">@bathew-merry-ai<\/span>/)
+    expect(out).not.toContain('data-username-link')
+    expect(out).not.toContain('fieldscout-ai')
+  })
+})

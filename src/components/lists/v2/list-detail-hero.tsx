@@ -4,7 +4,7 @@ import * as React from 'react'
 
 import { offersDuplicate } from '@/components/mobile/community/community-ops'
 import { ReportMenuItem } from '@/components/report/report-dialog'
-import { UsernameLink } from '@/components/shared/username-link'
+import { PersonaHandle, UsernameLink } from '@/components/shared/username-link'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -53,6 +53,16 @@ import { formatCreated } from './list-stats'
 export interface HeroOwner {
   username: string
   avatarUrl: string | null
+  /**
+   * The byline names an AI expert, not a person (Community's list page on an
+   * expert's board, plan C5): its handle is the expert's and renders as
+   * {@link PersonaHandle} — plain text (the expert's /personas page only
+   * while that surface is on), never a person's profile — as the phone's
+   * list page does, so nobody follows the account that owns every expert
+   * board by mistake (plan E2). Absent everywhere else: your own Lists and
+   * the share page name the owning account as a link.
+   */
+  isPersona?: boolean
 }
 
 interface HeroShellProps {
@@ -185,7 +195,11 @@ export function ListHeroShell({
                 className="h-[17px] w-[17px]"
                 fallbackClassName="text-[8px]"
               />
-              <UsernameLink username={owner.username} className="text-[11px] font-semibold text-ink" />
+              {owner.isPersona ? (
+                <PersonaHandle username={owner.username} className="text-[11px] font-semibold text-ink" />
+              ) : (
+                <UsernameLink username={owner.username} className="text-[11px] font-semibold text-ink" />
+              )}
             </>
           )}
           {!owner && ownerNote && (

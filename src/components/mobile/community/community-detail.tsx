@@ -1,7 +1,6 @@
 'use client'
 
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 
 import { FollowButton } from '@/components/explore/follow-button'
@@ -26,14 +25,13 @@ import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { M_PROJ_TEXT, SEASON_PROJ_LABEL } from '@/components/players/projected-points'
 import { reportAccess } from '@/components/report/report-ops'
-import { UsernameLink } from '@/components/shared/username-link'
+import { PersonaHandle, UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import { useListPersona } from '@/hooks/use-list-persona'
 import { useList, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
 import { useMobileCommunityListMeta } from '@/hooks/use-mobile-community-detail'
 import { useMobileListsCoverPassed } from '@/hooks/use-mobile-lists-cover-passed'
 import type { CommunityPlayer, CommunityVideo } from '@/hooks/use-mobile-community-feed'
-import { featureFlags } from '@/lib/feature-flags'
 import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
@@ -163,13 +161,6 @@ function ScoutAiNote({ personaId }: { personaId: string }) {
       <span className="min-w-0 truncate">Scout AI · An AI expert’s ranking, made by FieldScout AI</span>
     </p>
   )
-}
-
-/** An AI expert's handle: its page is /personas/… (when that surface is
- *  on), never a person's profile. */
-function PersonaHandle({ username }: { username: string }) {
-  const handle = `@${username}`
-  return featureFlags.personas ? <Link href={`/personas/${encodeURIComponent(username)}`}>{handle}</Link> : <>{handle}</>
 }
 
 /** The cover's ⋯ — the List view's, in the same place (top right). */
@@ -437,6 +428,13 @@ function DetailBody({
           </span>
         )}
       </div>
+      {/* A list with nobody on it says so — never a count of 0 over blank
+          space (desktop's share page and list page say the same). */}
+      {players.length === 0 && (
+        <p className="px-4 pb-2 pt-2 text-[13px] font-medium text-m-t3" data-list-empty>
+          No players on this list yet.
+        </p>
+      )}
       {sections.map((section, si) => (
         <div key={section.label ?? si}>
           {section.label !== null && (
