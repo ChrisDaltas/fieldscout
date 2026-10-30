@@ -51,10 +51,23 @@ function retryAfterOf(res: Response, body: { retry_after_seconds?: unknown }): n
   return Number.isFinite(fromHeader) && fromHeader >= 1 ? Math.ceil(fromHeader) : null
 }
 
+/**
+ * A failed comments request's words when the server gave none of its own (a
+ * 5xx with no JSON error) — plain words, never "Request failed with 500".
+ * It is what the comment boxes show beside "Couldn't load older comments."
+ * and in the post and delete toasts.
+ */
+export const COMMENTS_REQUEST_FAILED = 'Something went wrong. Try again in a moment.'
+
+/** A comment box's first read failed: what it says above its Try again, on
+ *  both layouts. The server's words stay out of it (a failed read's are a
+ *  database message, not something to show a player). */
+export const COMMENTS_READ_FAILED = 'Couldn’t load the comments.'
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: unknown; retry_after_seconds?: unknown }
-    const message = typeof body.error === 'string' && body.error ? body.error : `Request failed with ${res.status}`
+    const message = typeof body.error === 'string' && body.error ? body.error : COMMENTS_REQUEST_FAILED
     throw new CommentRequestError(message, res.status, retryAfterOf(res, body))
   }
   return (await res.json()) as T

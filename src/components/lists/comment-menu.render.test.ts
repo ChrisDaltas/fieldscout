@@ -111,6 +111,9 @@ import { ListDetailHero } from '@/components/lists/v2/list-detail-hero'
 import { CommentMenuSheet, CommentsSheet } from '@/components/mobile/lists/comments-sheet'
 import { ListActionsSheet } from '@/components/mobile/lists/list-actions-sheet'
 import {
+  COMMENTS_READ_FAILED,
+  COMMENTS_REQUEST_FAILED,
+  CommentRequestError,
   commentsKeys,
   commentsThreadOptions,
   deleteCommentMutationOptions,
@@ -702,5 +705,138 @@ describe('while Community is off, every comment box is as it was', () => {
   it('desktop list menu: the panel hands the switch over only while Community is on', () => {
     const panel = readFileSync(path.join(process.cwd(), 'src/components/lists/v2/list-detail-panel.tsx'), 'utf8')
     expect(panel).toContain('onSetCommentsEnabled={canEdit && commentControlsOn() ? setCommentsEnabled : undefined}')
+  })
+})
+
+// Community sweep WPO-5 / WDO-6: a comment box whose first read fails says so
+// in plain words, with Try again — on both layouts — never raw HTTP text,
+// never "No comments yet".
+describe('a failed first read', () => {
+  const refetch = vi.fn()
+  const failed = (over: Record<string, unknown> = {}) =>
+    thread([], {
+      data: undefined,
+      isError: true,
+      error: new Error('permission denied for table list_comments'),
+      refetch,
+      ...over,
+    })
+
+  it('both layouts: "Couldn’t load the comments." as an alert, a Try again — and no server words, no empty state', () => {
+    h.thread = failed()
+    for (const out of [phone(), desktop()]) {
+      const block = out.slice(out.indexOf('data-comments-read-failed'))
+      expect(block).toMatch(new RegExp(`<p role="alert"[^>]*>${COMMENTS_READ_FAILED}</p>`))
+      expect(block).toMatch(/<button[^>]*data-comments-retry[^>]*>Try again<\/button>/)
+      expect(out).not.toContain('permission denied')
+      expect(out).not.toContain('Request failed')
+      expect(out).not.toContain('No comments yet.')
+    }
+    expect(COMMENTS_READ_FAILED).toBe('Couldn’t load the comments.')
+  })
+
+  it('a retry reads again: "Loading comments…" (a first read that failed has no thread to keep), then the answer', () => {
+    h.thread = thread([], { data: undefined, isPending: true, isFetching: true, refetch })
+    for (const out of [phone(), desktop()]) {
+      expect(out).toContain('Loading comments…')
+      expect(out).not.toContain('data-comments-read-failed')
+    }
+  })
+
+  it('Try again re-reads the thread (comments.refetch) — source pin, as a click can’t run in a static render', () => {
+    for (const file of ['src/components/lists/v2/list-comments-tab.tsx', 'src/components/mobile/lists/comments-sheet.tsx']) {
+      const src = readFileSync(path.resolve(process.cwd(), file), 'utf8')
+      const block = src.slice(src.indexOf('data-comments-read-failed'), src.indexOf('data-comments-retry'))
+      expect(block).toContain('onClick={() => void comments.refetch()}')
+    }
+  })
+
+  it('older comments failing is still its own line beside its button (the first-read block stays out)', () => {
+    h.thread = thread([KELLYS], { hasNextPage: true, isError: true, isFetchNextPageError: true, error: new Error('Network down') })
+    for (const out of [phone(), desktop()]) expect(out).not.toContain('data-comments-read-failed')
+  })
+})
+
+describe('a failed comments request in plain words (jsonOrThrow)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('a 5xx with no words of its own: plain copy, never "Request failed with 500" — the status is kept', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>Bad gateway</html>', { status: 502 })))
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const observer = new InfiniteQueryObserver(qc, commentsThreadOptions('L1'))
+    const unsubscribe = observer.subscribe(noop)
+    try {
+      await vi.waitFor(() => expect(observer.getCurrentResult().isError).toBe(true))
+      const error = observer.getCurrentResult().error
+      expect(error).toBeInstanceOf(CommentRequestError)
+      expect(error?.message).toBe(COMMENTS_REQUEST_FAILED)
+      expect((error as CommentRequestError).status).toBe(502)
+      expect(error?.message).not.toMatch(/Request failed|\d{3}/)
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('a failed delete with no words: the toast says the plain line under "Couldn’t delete that comment"', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 500 })))
+    const qc = new QueryClient()
+    const notify = vi.fn()
+    const observer = new MutationObserver(qc, deleteCommentMutationOptions(qc, 'L1'))
+    // A mutation's own callbacks only reach a subscribed observer (a mounted button).
+    const unsubscribe = observer.subscribe(noop)
+    confirmCommentDelete({ mutate: (id, opts) => void observer.mutate(id, opts).catch(noop) }, 'c-mine', notify)
+    await vi.waitFor(() => expect(notify).toHaveBeenCalled())
+    unsubscribe()
+    expect(notify).toHaveBeenCalledWith({ title: DELETE_COMMENT.failed, description: COMMENTS_REQUEST_FAILED, variant: 'destructive' })
+  })
+
+  it('the server’s own words still come through when it gives them', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Comments are turned off on this list.' }), { status: 403 })))
+    const qc = new QueryClient()
+    await expect(new MutationObserver(qc, deleteCommentMutationOptions(qc, 'L1')).mutate('c-kelly')).rejects.toThrow(
+      'Comments are turned off on this list.',
+    )
+  })
+})
+
+// Community sweep WPO-1: "@x commented on your list" opens the phone List view
+// with its Comments sheet up. The List view holds the sheet's open state and
+// hands it to List options, so there is one Comments sheet, not two.
+describe('the List view can open the Comments sheet itself', () => {
+  const l = {
+    id: 'L1', title: 'Sleepers', slug: 'sleepers', owner_id: 'u-me', is_owner: true, is_favorited: false,
+    is_favorites: false, is_private: false, is_big_board: false, ai_persona_id: null, folder_id: null,
+    ranking_mode: 'ranked', comments_enabled: true, players: [], tags: [], links: [],
+  } as unknown as ListWithDetails
+  const tools = { group: null, onGroupBy: noop, checkOff: false, onCheckOff: noop, marked: 0, onClearDrafted: noop, notes: 0, notesShown: false, onNotes: noop, onCompare: noop }
+  const actions = (open: boolean, commentsSheet?: { open: boolean; onOpenChange: (open: boolean) => void }) =>
+    html(
+      createElement(ListActionsSheet, {
+        open, onOpenChange: noop, list: l, ownerUsername: 'me', canEdit: true,
+        viewer: { username: 'me', avatarUrl: null }, onEditDetails: noop, onDeleted: noop, tools, commentsSheet,
+      }),
+    )
+
+  it('held open by the List view: the thread shows with List options closed', () => {
+    h.thread = thread([KELLYS])
+    const out = actions(false, { open: true, onOpenChange: noop })
+    expect(out).not.toContain('data-sheet="List options"')
+    expect(out).toContain('data-sheet="Comments"')
+    expect(out).toContain('Kelly says hold him')
+    expect(actions(false, { open: false, onOpenChange: noop })).not.toContain('data-sheet="Comments"')
+  })
+
+  it('List options’ Comments row opens that same sheet through the List view', () => {
+    const onOpenChange = vi.fn()
+    actions(true, { open: false, onOpenChange })
+    h.rows.get('Comments')!.onClick()
+    expect(onOpenChange).toHaveBeenCalledWith(true)
+  })
+
+  it('without the List view’s state (older callers) the sheet still holds its own, closed', () => {
+    expect(actions(true)).toContain('data-row="Comments"')
+    expect(actions(true)).not.toContain('data-sheet="Comments"')
   })
 })

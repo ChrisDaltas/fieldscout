@@ -18,6 +18,9 @@
  *    claims are listed there.
  *  - An admin's "New reports to review" (`content_report`, 214) → none:
  *    Admin › Reports is desktop only.
+ *  - "@x commented on your list" (`list_comment`, 213) → the shared target,
+ *    your List view with its Comments sheet open on arrival
+ *    (`listCommentsHref`).
  *  - Everything else: the shared target, or none — including a commissioner
  *    note change (`league_commissioner_note`, migration 192), whose shared
  *    target is the league home: on the phone, the League tab with the note

@@ -259,7 +259,8 @@ function ReportRow({
           ) : (
             <p className="text-[12px] font-medium text-n-6">This comment is no longer there.</p>
           )}
-          <p className="text-[11px] font-medium text-n-3">
+          {/* A div, not a p: the Removed badge is a <div> (valid nesting). */}
+          <div className="text-[11px] font-medium text-n-3" data-report-on>
             {report.comment?.removed && (
               <Badge variant="pink" className="mr-1.5" data-report-removed>
                 Removed
@@ -267,7 +268,7 @@ function ReportRow({
             )}
             On <ListTitle report={report} />
             {listState && <span className="text-n-6"> · {listState}</span>}
-          </p>
+          </div>
         </div>
       ) : report.kind === 'list' ? (
         <p className="text-[13px] font-bold tracking-[-0.01em] text-ink">

@@ -12,6 +12,7 @@ import {
 } from '@/components/mobile/community/community-ops'
 import { userProfileHref } from '@/components/shared/username-link-ops'
 import { pastPoolCursor } from '@/hooks/use-community-older'
+import { readFollowingIds } from '@/hooks/use-follows'
 import {
   COMMUNITY_POOL_SIZE,
   LIKED_EXTRA_SIZE,
@@ -439,15 +440,14 @@ export async function readExploreFeedPage(
   let ownerIds: string[] | null = null
   if (tab === 'following') {
     if (!userId) return { items: [], next: null }
-    const { data: follows, error: followsError } = await supabase
-      .from('follows')
-      .select('following_id')
-      .eq('follower_id', userId)
-    if (followsError) throw followsError
-    ownerIds = (follows ?? []).map((f) => f.following_id as string)
+    // Everyone you follow, past PostgREST's 1000-row cap (`readFollowingIds`).
+    ownerIds = await readFollowingIds(supabase, userId)
     if (ownerIds.length === 0) return { items: [], next: null }
   }
   let query = lists()
+  // The ids go in the request's address, so a very long follow list (a few
+  // thousand) would outgrow what a URL can carry; fine at friends-and-testers
+  // scale. Past that, filter by the follows on the server instead.
   if (ownerIds) query = query.in('owner_id', ownerIds)
   const from = param.at === 'offset' ? param.from : 0
   const { data, error } = await query

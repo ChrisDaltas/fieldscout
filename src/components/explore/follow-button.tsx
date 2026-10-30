@@ -70,6 +70,10 @@ export function FollowButton({ userId, className, look = 'desktop', size = 'sm' 
       router.push(signInHref(window.location.pathname + window.location.search, featureFlags.community))
       return
     }
+    // One toggle at a time, held here rather than by `disabled`: a focused
+    // button that turns disabled loses keyboard focus (Like's fix, plan C5),
+    // which would drop a keyboard user's place in a feed on every Follow.
+    if (toggle.isPending) return
     // The toggle is optimistic and puts the button back if it fails — so a
     // failure says so, rather than silently snapping back (plan C3, F12).
     toggle.mutate({ targetId: userId, isFollowing }, { onError: () => toastFollowFailed(isFollowing) })
@@ -80,7 +84,7 @@ export function FollowButton({ userId, className, look = 'desktop', size = 'sm' 
       <button
         type="button"
         onClick={onClick}
-        disabled={toggle.isPending}
+        aria-busy={toggle.isPending || undefined}
         aria-pressed={isFollowing}
         className={cn(
           'flex h-[30px] flex-none items-center rounded-pill px-[14px] text-[12px] font-semibold',
@@ -98,7 +102,7 @@ export function FollowButton({ userId, className, look = 'desktop', size = 'sm' 
       variant={isFollowing ? 'stroke' : 'blue'}
       size={size}
       onClick={onClick}
-      disabled={toggle.isPending}
+      aria-busy={toggle.isPending || undefined}
       className={cn(className)}
     >
       {isFollowing ? 'Following' : 'Follow'}

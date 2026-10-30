@@ -25,6 +25,24 @@ export interface CommunityListMeta {
   scoring: CommunityScoring | null
 }
 
+/** Every list page's "who made it" read (`useMobileCommunityListMeta`). */
+export const COMMUNITY_LIST_META_KEY = ['mobile-community', 'list-meta'] as const
+
+/**
+ * A follow (+1) or unfollow (−1) of `targetId`, on a list page's author line:
+ * "@devpro · 0 follows" reads 1 at the tap when @devpro made the list (never
+ * below 0). Any other author — and an AI expert, who has no follow count —
+ * is left as it was.
+ */
+export function withAuthorFollowerChange(
+  meta: CommunityListMeta | undefined,
+  targetId: string,
+  delta: 1 | -1,
+): CommunityListMeta | undefined {
+  if (!meta || meta.author.profileId !== targetId || meta.author.followers === null) return meta
+  return { ...meta, author: { ...meta.author, followers: Math.max(0, meta.author.followers + delta) } }
+}
+
 export function useMobileCommunityListMeta(list: {
   owner_id: string
   ai_persona_id: string | null
@@ -34,7 +52,7 @@ export function useMobileCommunityListMeta(list: {
   const personaId = list?.ai_persona_id ?? null
   const scoringId = list?.scoring_system_id ?? null
   return useQuery({
-    queryKey: ['mobile-community', 'list-meta', ownerId ?? '', personaId ?? '', scoringId ?? ''],
+    queryKey: [...COMMUNITY_LIST_META_KEY, ownerId ?? '', personaId ?? '', scoringId ?? ''],
     enabled: Boolean(ownerId),
     staleTime: 60 * 1000,
     queryFn: async (): Promise<CommunityListMeta> => {

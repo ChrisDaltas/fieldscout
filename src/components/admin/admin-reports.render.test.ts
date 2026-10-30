@@ -150,6 +150,17 @@ describe('the other states of a row', () => {
     expect(row).not.toContain('data-report-remove="true"')
   })
 
+  it('the Removed badge (a <div>) never sits inside a <p> — valid nesting, no hydration warning', () => {
+    const removed = report({ comment: { body: 'You stink', removed: true } })
+    const row = rowOf(html(createElement(AdminReportsBody, { payload: payload([removed]) })), 'r1')
+    // Every <p> in the row, open tag to close tag: none holds a <div>.
+    const paragraphs = [...row.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)].map((m) => m[1])
+    expect(paragraphs.length).toBeGreaterThan(0)
+    for (const inner of paragraphs) expect(inner).not.toMatch(/<div\b/)
+    // The line it was on still reads "Removed · On “RB sleepers”".
+    expect(row).toMatch(/<div[^>]*data-report-on="true"[^>]*><div[^>]*data-report-removed="true"[^>]*>Removed<\/div>On <span[^>]*>“RB sleepers”/)
+  })
+
   it('a deleted list (or a gone one): said so, and no Open', () => {
     for (const state of ['deleted', 'missing'] as const) {
       const r = report({ kind: 'list', comment: null, list: { id: LIST, title: state === 'missing' ? null : 'RB sleepers', own: false, state } })

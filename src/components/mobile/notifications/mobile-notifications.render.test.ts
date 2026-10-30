@@ -60,12 +60,15 @@ describe('mobile Notifications', () => {
     expect(out).toContain('href="/app/lists/x"')
   })
 
-  it('213: a new comment on your list — the bubble glyph, the title, a link to the list', () => {
+  // WPO-1 (Community sweep) DELIBERATELY changes the link C2 pinned here
+  // (the bare list, where the phone showed no comment): it now opens the
+  // List view with its Comments sheet up.
+  it('213: a new comment on your list — the bubble glyph, the title, a link to the list’s comments', () => {
     const out = render([
       { id: 'c1', type: 'list_comment', title: '@sam commented on Waiver sleepers', body: null, data: { list_id: 'L9', actor_id: 'u2' }, read: false, created_at: AT },
     ])
     expect(out).toContain('@sam commented on Waiver sleepers')
-    expect(out).toMatch(/<a [^>]*data-notif-row="c1"[^>]*href="\/app\/lists\/L9"/)
+    expect(out).toMatch(/<a [^>]*data-notif-row="c1"[^>]*href="\/app\/lists\?list=L9&(amp;)?comments=1"/)
     expect(out).toContain(`d="${NOTIF_PATH.comment}"`)
   })
 

@@ -3,8 +3,14 @@
 import { type QueryClient, type QueryKey, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/hooks/use-auth'
+import {
+  COMMUNITY_LIST_META_KEY,
+  withAuthorFollowerChange,
+  type CommunityListMeta,
+} from '@/hooks/use-mobile-community-detail'
 import { SCOUTS_TO_FOLLOW_KEY, withFollowerChange, type ScoutToFollow } from '@/hooks/use-scouts-to-follow'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { pageAll } from '@/lib/supabase/page-all'
 
 // Follow/unfollow for real user profiles. The `follows` table (follower_id,
 // following_id) already carries RLS — SELECT is public, and a user may only
@@ -43,6 +49,9 @@ export function refreshAfterFollowToggle(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: followKeys.all, predicate: (q) => q.queryKey[1] !== listRoot })
   qc.invalidateQueries({ queryKey: followKeys.personFollowsAll, refetchType: 'none' })
   qc.invalidateQueries({ queryKey: SCOUTS_TO_FOLLOW_KEY, refetchType: 'none' })
+  // A Community list page's author line: the toggle already moved its
+  // count (`moveListMetaFollowers`); the next visit reads the server's.
+  qc.invalidateQueries({ queryKey: COMMUNITY_LIST_META_KEY, refetchType: 'none' })
   qc.invalidateQueries({ queryKey: ['explore-feed'] })
 }
 
@@ -70,6 +79,50 @@ export function putBackScouts(qc: QueryClient, prev: ScoutsSnapshot) {
   for (const [scoutsKey, rows] of prev) qc.setQueryData(scoutsKey, rows)
 }
 
+type ListMetaSnapshot = Array<[QueryKey, CommunityListMeta | undefined]>
+
+/**
+ * The same step on a Community list page's author line ("@devpro · 0
+ * follows" — the phone's, `useMobileCommunityListMeta`): the count beside
+ * the name moves with the tap on every loaded page that person made
+ * (`withAuthorFollowerChange`). Returns what was there, for
+ * `putBackListMeta` if the toggle fails. Not cancelled first, as above.
+ */
+export function moveListMetaFollowers(qc: QueryClient, targetId: string, isFollowing: boolean): ListMetaSnapshot {
+  const prev = qc.getQueriesData<CommunityListMeta>({ queryKey: COMMUNITY_LIST_META_KEY })
+  qc.setQueriesData<CommunityListMeta>({ queryKey: COMMUNITY_LIST_META_KEY }, (meta) =>
+    withAuthorFollowerChange(meta, targetId, isFollowing ? -1 : 1),
+  )
+  return prev
+}
+
+/** A failed toggle: the list pages' author lines back to what they showed. */
+export function putBackListMeta(qc: QueryClient, prev: ListMetaSnapshot) {
+  for (const [metaKey, meta] of prev) qc.setQueryData(metaKey, meta)
+}
+
+/**
+ * Every profile id `followerId` follows — paged past PostgREST's 1000-row
+ * cap (`pageAll`, with an exact count), so someone who follows more than
+ * 1000 people never has the ones past the 1000th silently dropped (CLAUDE.md
+ * "exactly 1000 rows"). `following_id` is unique for one follower (the
+ * table's key is the pair), so it ends the sort. A failed page throws.
+ */
+export async function readFollowingIds(
+  supabase: ReturnType<typeof createBrowserClient>,
+  followerId: string,
+): Promise<string[]> {
+  const rows = await pageAll<{ following_id: string }>((from, to) =>
+    supabase
+      .from('follows')
+      .select('following_id', { count: 'exact' })
+      .eq('follower_id', followerId)
+      .order('following_id', { ascending: true })
+      .range(from, to),
+  )
+  return rows.map((r) => r.following_id)
+}
+
 /**
  * The set of profile ids the signed-in user follows. Every FollowButton reads
  * from this one cached query so a single fetch drives all buttons, and an
@@ -83,13 +136,8 @@ export function useFollowingIds() {
     queryKey: followKeys.followingSet(user?.id ?? 'anon'),
     enabled: Boolean(user?.id),
     queryFn: async (): Promise<Set<string>> => {
-      const { data, error } = await supabase
-        .from('follows')
-        .select('following_id')
-        .eq('follower_id', user!.id)
-
-      if (error) throw error
-      return new Set((data ?? []).map((r) => r.following_id as string))
+      const rows = await readFollowingIds(supabase, user!.id)
+      return new Set(rows)
     },
     // A follow graph changes rarely within a session; keep it warm.
     staleTime: 60_000,
@@ -105,8 +153,8 @@ interface ToggleFollowVars {
 /**
  * Follow or unfollow a profile. Optimistically flips the cached following-set
  * so every button for that user updates instantly — and moves that person's
- * "N followers" on any Scouts to follow already loaded — and rolls both back
- * on error.
+ * "N followers" on any Scouts to follow already loaded, and the count on any
+ * of their Community list pages — and rolls all of it back on error.
  */
 export function useToggleFollow() {
   const qc = useQueryClient()
@@ -146,11 +194,16 @@ export function useToggleFollow() {
       if (isFollowing) next.delete(targetId)
       else next.add(targetId)
       qc.setQueryData(key, next)
-      return { prev, prevScouts: moveScoutFollowers(qc, targetId, isFollowing) }
+      return {
+        prev,
+        prevScouts: moveScoutFollowers(qc, targetId, isFollowing),
+        prevListMeta: moveListMetaFollowers(qc, targetId, isFollowing),
+      }
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(key, ctx.prev)
       if (ctx?.prevScouts) putBackScouts(qc, ctx.prevScouts)
+      if (ctx?.prevListMeta) putBackListMeta(qc, ctx.prevListMeta)
     },
     onSettled: () => refreshAfterFollowToggle(qc),
   })

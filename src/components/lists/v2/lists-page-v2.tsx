@@ -9,6 +9,7 @@ import { AttachListToLeagueModal } from '@/components/leagues/attach-list-modal'
 import { FolderFormDialog } from '@/components/lists/folder-form-dialog'
 import { GenerateAiButton } from '@/components/lists/generate-ai-button'
 import { TRASH_HREF, toastMovedToTrash } from '@/components/lists/trash-door'
+import { LIST_COMMENTS_PARAM, withoutCommentsFlag } from '@/components/mobile/lists/lists-routes'
 import { Button } from '@/components/ui/button'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
@@ -119,6 +120,28 @@ export function ListsPageV2() {
   // §7.4 (M2 L.B4.2): the gallery card's "Attach to league" target.
   const [attachList, setAttachList] = React.useState<ListWithTags | null>(null)
   const tabSeededRef = React.useRef(false)
+  /**
+   * **"@x commented on your list"** (`listCommentsHref`, migration 213's
+   * alert): `comments=1` beside `?list=` opens that list on its Comments
+   * tab. One effect takes the request — also when the alert is clicked with
+   * this page already open (the rail's Notifications), so it selects the
+   * list as well — and takes the flag out of the address, so Back and a
+   * reload show the list as usual. `commentsFor` holds the request until
+   * the list's panel has opened the tab (`onCommentsShown`).
+   */
+  const commentsAsked = useSearchParams().get(LIST_COMMENTS_PARAM) === '1'
+  const commentsLinkId = commentsAsked ? deepLinkId : null
+  const [commentsFor, setCommentsFor] = React.useState<string | null>(null)
+  React.useEffect(() => {
+    if (!commentsLinkId) return
+    // Side by side has no open list to show it in.
+    setMode((current) => (current === 'compare' ? 'rail' : current))
+    setSelectedId(commentsLinkId)
+    setOpenedId(commentsLinkId)
+    setCommentsFor(commentsLinkId)
+    window.history.replaceState(null, '', withoutCommentsFlag(window.location.pathname + window.location.search))
+  }, [commentsLinkId])
+  const commentsShown = React.useCallback(() => setCommentsFor(null), [])
 
   const lists = useLists(1, 50)
   const duplicateList = useDuplicateList()
@@ -478,6 +501,8 @@ export function ListsPageV2() {
               onToggleExpanded={() => setOpenedId(null)}
               onClose={() => setOpenedId(null)}
               onDeleted={() => setOpenedId(null)}
+              openComments={commentsFor === openedId}
+              onCommentsShown={commentsShown}
             />
           </div>
         ) : (
@@ -555,6 +580,8 @@ export function ListsPageV2() {
                   setSelectedId(null)
                   setExpanded(false)
                 }}
+                openComments={commentsFor === detailId}
+                onCommentsShown={commentsShown}
               />
             ) : (
               <EmptyDetail loading={!loaded} onNew={() => openCreateList(true)} />
