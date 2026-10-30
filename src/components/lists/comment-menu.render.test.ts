@@ -120,7 +120,8 @@ import {
 import type { ListWithDetails } from '@/hooks/use-lists'
 
 import { commentMenuItems, confirmCommentDelete, DELETE_COMMENT } from './comment-menu-ops'
-import { DeleteCommentDialog, ListCommentsTab } from './v2/list-comments-tab'
+import { DeleteCommentDialog } from './v2/delete-comment-dialog'
+import { ListCommentsTab } from './v2/list-comments-tab'
 
 const noop = () => {}
 

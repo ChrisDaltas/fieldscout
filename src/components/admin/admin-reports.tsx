@@ -3,11 +3,11 @@
 import Link from 'next/link'
 import { useState } from 'react'
 
+import { DeleteCommentDialog, type CommentConfirmCopy } from '@/components/lists/v2/delete-comment-dialog'
 import { inAppListHref } from '@/components/mobile/community/community-ops'
 import { UsernameLink } from '@/components/shared/username-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Icon } from '@/components/ui/icon'
 import { useAdminReportAction, type AdminReportActionAnswer } from '@/hooks/use-admin-report-action'
 import { useAdminReports } from '@/hooks/use-admin-reports'
@@ -89,6 +89,19 @@ const LIST_STATE_LABEL: Record<Exclude<AdminReportListState, 'live'>, string> = 
   missing: 'No longer there',
 }
 
+/**
+ * Remove's confirm, in the comment row's own Delete dialog (C1): the comment
+ * quoted, what happens, Cancel, and Remove in the soft red tint — never a
+ * bright red fill.
+ */
+export const REMOVE_COMMENT: CommentConfirmCopy = {
+  title: 'Remove this comment?',
+  body: 'It comes off the list for everyone, and every open report on it is marked reviewed by you. You can’t undo this.',
+  cancel: 'Cancel',
+  confirm: 'Remove',
+  busyLabel: 'Removing…',
+}
+
 /** "1 new report" / "3 new reports". */
 export function newReportsWords(n: number): string {
   return `${n} new ${n === 1 ? 'report' : 'reports'}`
@@ -112,14 +125,17 @@ export function reportOpenHref(report: Pick<AdminReport, 'list'>): string | null
 /** Presentational — exported for the render tests. */
 export function AdminReportsBody({ payload }: { payload: AdminReportsPayload }) {
   const action = useAdminReportAction()
+  // The report whose comment Remove is confirming, and whether its confirm is
+  // open — kept apart so the quote stays put while the dialog closes.
   const [removing, setRemoving] = useState<AdminReport | null>(null)
+  const [removeOpen, setRemoveOpen] = useState(false)
 
   const act = (report: AdminReport, kind: 'review' | 'remove') =>
     action.mutate(
       { reportId: report.id, action: kind },
       {
         onSuccess: (answer) => {
-          setRemoving(null)
+          if (kind === 'remove') setRemoveOpen(false)
           toast(actionToast(kind, answer))
         },
         onError: (error) =>
@@ -152,7 +168,10 @@ export function AdminReportsBody({ payload }: { payload: AdminReportsPayload }) 
               report={report}
               busy={action.isPending && action.variables?.reportId === report.id}
               onReview={() => act(report, 'review')}
-              onRemove={() => setRemoving(report)}
+              onRemove={() => {
+                setRemoving(report)
+                setRemoveOpen(true)
+              }}
             />
           ))}
         </ol>
@@ -162,12 +181,16 @@ export function AdminReportsBody({ payload }: { payload: AdminReportsPayload }) 
           Showing the newest {payload.reports.length} of {payload.total} reports.
         </p>
       )}
-      <RemoveCommentDialog
-        report={removing}
-        busy={action.isPending}
-        onCancel={() => setRemoving(null)}
-        onConfirm={() => removing && act(removing, 'remove')}
-      />
+      {removing?.comment && (
+        <DeleteCommentDialog
+          open={removeOpen}
+          onOpenChange={setRemoveOpen}
+          body={removing.comment.body}
+          copy={REMOVE_COMMENT}
+          busy={action.isPending}
+          onConfirm={() => act(removing, 'remove')}
+        />
+      )}
     </AdminSection>
   )
 }
@@ -304,48 +327,5 @@ function Person({ username }: { username: string | null }) {
     <UsernameLink username={username} className="font-semibold text-ink" />
   ) : (
     <span className="text-n-6">a deleted account</span>
-  )
-}
-
-/**
- * Remove's confirm: the comment quoted, what happens, Cancel, and Remove in
- * the soft red tint. A dialog is a true overlay, so it keeps the primitive's
- * resting shadow.
- */
-export function RemoveCommentDialog({
-  report,
-  busy,
-  onCancel,
-  onConfirm,
-}: {
-  report: AdminReport | null
-  busy: boolean
-  onCancel: () => void
-  onConfirm: () => void
-}) {
-  return (
-    <Dialog open={report !== null} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="max-w-sm" data-report-remove-confirm>
-        <DialogHeader>
-          <DialogTitle>Remove this comment?</DialogTitle>
-          <DialogDescription>
-            It comes off the list for everyone, and every open report on it is marked reviewed by you. You can’t undo this.
-          </DialogDescription>
-        </DialogHeader>
-        {report?.comment && (
-          <p className="line-clamp-3 rounded-xl bg-surface-sunken px-3 py-2 text-[12px] font-medium leading-snug text-n-2 [overflow-wrap:anywhere]">
-            {report.comment.body}
-          </p>
-        )}
-        <div className="flex justify-end gap-[5px]">
-          <Button variant="stroke" size="md" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button variant="destructive" size="md" className="bg-negative-soft" disabled={busy} onClick={onConfirm} data-report-remove-go>
-            {busy ? 'Removing…' : 'Remove'}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   )
 }

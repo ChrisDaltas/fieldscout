@@ -8,7 +8,8 @@
  *    for a list that's deleted, gone, or private and not yours;
  *  - Mark reviewed on an open report only; a reviewed one says by whom;
  *  - Remove only on a reported comment that's still up — the soft red tint,
- *    never a bright red fill, and it asks first;
+ *    never a bright red fill, and it asks first, in the comment row's own
+ *    Delete confirm (C1) with Remove's words;
  *  - before migration 214 is pushed the page says reports aren't available
  *    yet (a rounded notice), never a fake "no reports";
  *  - Admin home's Needs attention says "N new reports", linking here; the
@@ -48,7 +49,9 @@ import type { AdminReport, AdminReportsPayload } from '@/lib/admin/content-repor
 import type { OpPlatformState } from './admin-console-ops'
 import { AdminHomeBody } from './admin-home'
 import { adminTabs } from './admin-parts'
-import { actionToast, AdminReportsBody, newReportsWords, RemoveCommentDialog, reportOpenHref, ReportsUnavailable } from './admin-reports'
+import { DeleteCommentDialog } from '@/components/lists/v2/delete-comment-dialog'
+
+import { actionToast, AdminReportsBody, newReportsWords, REMOVE_COMMENT, reportOpenHref, ReportsUnavailable } from './admin-reports'
 
 const LIST = 'a2140000-0000-4000-8000-000000000010'
 const html = (el: ReactElement) =>
@@ -191,15 +194,47 @@ describe('the page’s states', () => {
 })
 
 describe('Remove asks first', () => {
+  const confirm = (over: { open?: boolean; busy?: boolean } = {}) =>
+    html(
+      createElement(DeleteCommentDialog, {
+        open: over.open ?? true,
+        onOpenChange: noop,
+        body: 'You stink',
+        copy: REMOVE_COMMENT,
+        busy: over.busy ?? false,
+        onConfirm: noop,
+      }),
+    )
+  /** The confirm button's markup. */
+  const goOf = (out: string) =>
+    out.slice(out.lastIndexOf('<button', out.indexOf('data-comment-confirm-delete')), out.indexOf('</button>', out.indexOf('data-comment-confirm-delete')))
+
   it('the confirm quotes the comment, says what happens, and its Remove is the soft tint', () => {
-    const out = html(createElement(RemoveCommentDialog, { report: report(), busy: false, onCancel: noop, onConfirm: noop }))
+    const out = confirm()
     expect(out).toContain('Remove this comment?')
     expect(out).toContain('You stink')
     expect(out).toContain('marked reviewed by you')
-    const go = out.slice(out.lastIndexOf('<button', out.indexOf('data-report-remove-go')), out.indexOf('</button>', out.indexOf('data-report-remove-go')))
+    const go = goOf(out)
+    expect(go).toMatch(/>Remove$/)
     expect(go).toContain('bg-negative-soft')
     expect(go).not.toMatch(/bg-negative-strong|bg-destructive/)
-    expect(html(createElement(RemoveCommentDialog, { report: null, busy: false, onCancel: noop, onConfirm: noop }))).toBe('')
+    expect(confirm({ open: false })).toBe('')
+  })
+
+  it('running, it says Removing… and can’t be pressed twice', () => {
+    const go = goOf(confirm({ busy: true }))
+    expect(go).toContain('Removing…')
+    expect(go).toMatch(/disabled=""/)
+  })
+
+  it('is the comment row’s own Delete confirm (C1) with its own words — not a second dialog', () => {
+    const src = readFileSync(path.resolve(process.cwd(), 'src/components/admin/admin-reports.tsx'), 'utf8')
+    expect(src).toContain('<DeleteCommentDialog')
+    expect(src).toContain('copy={REMOVE_COMMENT}')
+    expect(src).not.toMatch(/function \w*Dialog\b/)
+    expect(src).not.toContain("from '@/components/ui/dialog'")
+    // Nothing on the page opens it until Remove comment is pressed.
+    expect(html(createElement(AdminReportsBody, { payload: payload([report()]) }))).not.toContain('Remove this comment?')
   })
 
   it('the toasts say what the database did', () => {

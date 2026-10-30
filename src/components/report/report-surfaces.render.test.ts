@@ -21,12 +21,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   send: vi.fn(),
+  useReport: vi.fn(),
   reported: false,
   sending: false,
 }))
 
 vi.mock('@/hooks/use-report', () => ({
-  useReport: () => ({ reported: h.reported, send: h.send, sending: h.sending }),
+  useReport: (target: unknown) => {
+    h.useReport(target)
+    return { reported: h.reported, send: h.send, sending: h.sending }
+  },
 }))
 // Radix portals don't render on the server: draw dialogs, sheets and menus inline.
 vi.mock('@/components/ui/dialog', () => {
@@ -78,6 +82,7 @@ function find(node: ReactNode, match: (props: Record<string, unknown>) => boolea
 
 beforeEach(() => {
   h.send.mockReset()
+  h.useReport.mockReset()
   h.reported = false
   h.sending = false
 })
@@ -127,6 +132,14 @@ describe('the desktop Report dialog', () => {
 
   it('closed, nothing is drawn', () => {
     expect(html(createElement(ReportDialog, { open: false, onOpenChange: noop, target: { type: 'list', id: 'l1' }, quote: 'x' }))).toBe('')
+  })
+
+  it('closing it mid-send still lands the answer: the report’s controller outlives the open-only form', () => {
+    // TanStack Query drops a mutate call's own callbacks once its observer
+    // unmounts, so the controller is held by the dialog itself — present
+    // while closed — not by the body that's only drawn while open.
+    html(createElement(ReportDialog, { open: false, onOpenChange: noop, target: { type: 'list', id: 'l1' }, quote: 'x' }))
+    expect(h.useReport).toHaveBeenCalledWith({ type: 'list', id: 'l1' })
   })
 })
 

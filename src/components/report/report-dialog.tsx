@@ -67,6 +67,13 @@ export function ReportMenuItem({
  * (the comment's words, or the list's title). Its form starts fresh on every
  * open. A dialog is a true overlay, so it keeps the primitive's resting
  * shadow.
+ *
+ * The report's controller (`useReport`) lives here, not in the open-only
+ * body: closing the dialog mid-send (Cancel, the X, Esc, a click outside)
+ * unmounts the body, and TanStack Query drops a `mutate` call's own
+ * onSuccess / onError once nothing is listening — the report would be
+ * written with no thanks, no error and no "Reported". Held here, the answer
+ * still lands after the dialog has closed.
  */
 export function ReportDialog({
   open,
@@ -79,31 +86,39 @@ export function ReportDialog({
   target: { type: ReportableType; id: string }
   quote: string
 }) {
+  const report = useReport(target)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open && (
-        <ReportDialogBody key={`${target.type}:${target.id}`} target={target} quote={quote} onClose={() => onOpenChange(false)} />
+        <ReportDialogBody
+          key={`${target.type}:${target.id}`}
+          report={report}
+          type={target.type}
+          quote={quote}
+          onClose={() => onOpenChange(false)}
+        />
       )}
     </Dialog>
   )
 }
 
 function ReportDialogBody({
-  target,
+  report,
+  type,
   quote,
   onClose,
 }: {
-  target: { type: ReportableType; id: string }
+  report: ReturnType<typeof useReport>
+  type: ReportableType
   quote: string
   onClose: () => void
 }) {
-  const report = useReport(target)
   const [reason, setReason] = React.useState<ReportReason | null>(null)
   const [note, setNote] = React.useState('')
-  const copy = REPORT_COPY[target.type]
+  const copy = REPORT_COPY[type]
 
   return (
-    <DialogContent className="max-w-sm" data-report-dialog={target.type}>
+    <DialogContent className="max-w-sm" data-report-dialog={type}>
       <DialogHeader>
         <DialogTitle>{copy.title}</DialogTitle>
         <DialogDescription>{REPORT_HELP}</DialogDescription>

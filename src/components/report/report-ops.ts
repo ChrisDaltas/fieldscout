@@ -67,7 +67,14 @@ export const REPORT_NOT_SENT = 'That report wasn’t sent'
 export interface ReportToast {
   title: string
   description?: string
-  variant?: 'destructive'
+  /**
+   * Never left to the default: on desktop the default toast leads with the
+   * green success check, which only a report that went through may wear
+   * (`reported` / `already_reported`). A wait or a not-yet is `caution` (the
+   * amber info mark on the same ink toast, not the error glyph); a refusal or
+   * a failure is `destructive`.
+   */
+  variant?: 'destructive' | 'caution'
 }
 
 export interface ReportResult {
@@ -83,9 +90,10 @@ export interface ReportResult {
  *  - a new report: "Thanks — we'll take a look.", then Reported;
  *  - already reported: says so, then Reported — no second report;
  *  - before 214 is pushed: "Reporting isn't available yet." — never a
- *    pretend thanks, and the control stays Report;
- *  - over the hourly limit: the database's own reason in the normal toast,
- *    and the form stays open so the note isn't lost;
+ *    pretend thanks (nor the success check), and the control stays Report;
+ *  - over the hourly limit: the database's own reason in the normal ink
+ *    toast with the amber caution mark, and the form stays open so the note
+ *    isn't lost;
  *  - refused (gone, or your own after all): the database's words, the form
  *    closes; a bad note keeps it open.
  */
@@ -96,9 +104,13 @@ export function reportResult(outcome: ReportOutcome): ReportResult {
     case 'already_reported':
       return { toast: { title: outcome.message }, reported: true, close: true }
     case 'unavailable':
-      return { toast: { title: REPORT_UNAVAILABLE }, reported: false, close: true }
+      return { toast: { title: REPORT_UNAVAILABLE, variant: 'caution' }, reported: false, close: true }
     case 'rate_limited':
-      return { toast: { title: REPORT_NOT_SENT, description: outcome.message }, reported: false, close: false }
+      return {
+        toast: { title: REPORT_NOT_SENT, description: outcome.message, variant: 'caution' },
+        reported: false,
+        close: false,
+      }
     case 'refused':
       return {
         toast: { title: REPORT_NOT_SENT, description: outcome.message, variant: 'destructive' },

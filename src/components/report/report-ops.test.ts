@@ -9,10 +9,13 @@
  *  - a new report: "Thanks — we'll take a look.", then Reported;
  *  - a repeat: "already reported", then Reported — nothing pretends to be new;
  *  - before 214 is pushed (PGRST202): "Reporting isn't available yet." and
- *    the control stays Report — never a pretend thanks;
- *  - over the hourly limit: the database's reason in the normal toast, the
- *    form kept open with its note;
+ *    the control stays Report — never a pretend thanks, nor the desktop
+ *    toast's green success check (the amber caution mark instead);
+ *  - over the hourly limit: the database's reason in the normal ink toast
+ *    with the caution mark, the form kept open with its note;
  *  - refused: the database's words.
+ * Only an answer that went through (reported / already reported) may wear
+ * the default toast and its success check.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -95,7 +98,8 @@ describe('what each answer shows', () => {
       details: null,
       hint: null,
     })
-    expect(s.notify).toHaveBeenCalledWith({ title: REPORT_UNAVAILABLE })
+    // The caution mark, never the default toast's green success check.
+    expect(s.notify).toHaveBeenCalledWith({ title: REPORT_UNAVAILABLE, variant: 'caution' })
     expect(REPORT_UNAVAILABLE).toBe('Reporting isn’t available yet.')
     expect(s.markReported).not.toHaveBeenCalled()
     expect(s.close).toHaveBeenCalledTimes(1)
@@ -108,12 +112,13 @@ describe('what each answer shows', () => {
       details: 'retry_after_seconds=700',
       hint: null,
     })
+    // The normal ink toast with the amber caution mark — no error glyph for a
+    // wait, and not the success check either.
     expect(s.notify).toHaveBeenCalledWith({
       title: REPORT_NOT_SENT,
       description: 'You’ve sent a lot of reports — you can report again in 12 minutes.',
+      variant: 'caution',
     })
-    // The normal ink toast — no error glyph for a wait.
-    expect(s.notify.mock.calls[0]![0]).not.toHaveProperty('variant')
     expect(s.markReported).not.toHaveBeenCalled()
     expect(s.close).not.toHaveBeenCalled()
   })
@@ -134,6 +139,23 @@ describe('what each answer shows', () => {
     const s = settle(null, { code: '22001', message: 'Keep the note to 500 characters or fewer.', details: null, hint: null })
     expect(s.close).not.toHaveBeenCalled()
     expect(s.markReported).not.toHaveBeenCalled()
+  })
+
+  it('only an answer that went through wears the default toast (desktop: the green success check)', () => {
+    const answers: Array<[unknown, Parameters<typeof reportOutcome>[1]]> = [
+      [{ status: 'reported', report_id: ID, target_type: 'list', target_id: LIST }, null],
+      [{ status: 'already_reported', report_id: ID, target_type: 'list', target_id: LIST }, null],
+      [null, { code: 'PGRST202', message: 'Could not find the function public.report_content(p_note, p_reason, p_target_id, p_target_type) in the schema cache', details: null, hint: null }],
+      [null, { code: 'rate_limited', message: 'You’ve sent a lot of reports.', details: 'retry_after_seconds=700', hint: null }],
+      [null, { code: 'P0002', message: 'That isn’t there to report — it may have been removed.', details: null, hint: null }],
+      [null, { code: '22001', message: 'Keep the note to 500 characters or fewer.', details: null, hint: null }],
+      [{ status: 'weird' }, null],
+    ]
+    for (const [data, error] of answers) {
+      const { toast, reported } = reportResult(reportOutcome(data, error))
+      // The default variant (no variant at all) is the success mark: only for a report that's in.
+      expect(toast.variant === undefined, `${JSON.stringify(error ?? data)}`).toBe(reported)
+    }
   })
 
   it('an answer nobody knows is never shown as sent', () => {

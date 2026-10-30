@@ -13,10 +13,10 @@ import {
   type CommentMenuItem,
 } from '@/components/lists/comment-menu-ops'
 import { signInHref } from '@/components/explore/follow-button'
+import { DeleteCommentDialog } from '@/components/lists/v2/delete-comment-dialog'
 import { ReportDialog, ReportMenuItem } from '@/components/report/report-dialog'
 import { UsernameLink } from '@/components/shared/username-link'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -356,44 +356,5 @@ export function CommentRowMenu({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
-  )
-}
-
-/**
- * Delete's confirm: the comment quoted, Cancel, and Delete in the soft red
- * tint (bright red is for words, never a fill). A dialog is a true overlay,
- * so it keeps the primitive's resting shadow. Hookless: the tab holds it.
- */
-export function DeleteCommentDialog({
-  open,
-  onOpenChange,
-  body,
-  onConfirm,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  body: string
-  onConfirm: () => void
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm" data-comment-confirm>
-        <DialogHeader>
-          <DialogTitle>{DELETE_COMMENT.title}</DialogTitle>
-          <DialogDescription>{DELETE_COMMENT.body}</DialogDescription>
-        </DialogHeader>
-        <p className="line-clamp-3 rounded-xl bg-surface-sunken px-3 py-2 text-[12px] font-medium leading-snug text-n-2 [overflow-wrap:anywhere]">
-          {body}
-        </p>
-        <div className="flex justify-end gap-[5px]">
-          <Button variant="stroke" size="md" onClick={() => onOpenChange(false)} data-comment-confirm-cancel>
-            {DELETE_COMMENT.cancel}
-          </Button>
-          <Button variant="destructive" size="md" className="bg-negative-soft" onClick={onConfirm} data-comment-confirm-delete>
-            {DELETE_COMMENT.confirm}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   )
 }
