@@ -63,6 +63,12 @@ interface HeroShellProps {
    * nobody rather than the wrong person.
    */
   owner: HeroOwner | null
+  /**
+   * Said in the byline in place of a name when `owner` is `null` because the
+   * owner couldn't be read — so a failed read never passes for a list with no
+   * author. Absent while the read is still running (no name, no note).
+   */
+  ownerNote?: string
   /** Inline rename (owner only). Without `onRename` the pencil never renders. */
   canRename: boolean
   onRename?: (title: string) => void
@@ -88,6 +94,7 @@ interface HeroShellProps {
 export function ListHeroShell({
   list,
   owner,
+  ownerNote,
   canRename,
   onRename,
   heading = 'h3',
@@ -181,8 +188,14 @@ export function ListHeroShell({
               <UsernameLink username={owner.username} className="text-[11px] font-semibold text-ink" />
             </>
           )}
+          {!owner && ownerNote && (
+            // An error's words: red text, never a fill.
+            <span data-owner-note className="whitespace-nowrap text-[11px] font-semibold text-negative-strong">
+              {ownerNote}
+            </span>
+          )}
           <span className="whitespace-nowrap text-[11px] font-semibold text-n-6">
-            {owner ? 'created' : 'Created'} {formatCreated(list.created_at)}
+            {owner ? 'created' : !ownerNote ? 'Created' : '· Created'} {formatCreated(list.created_at)}
           </span>
           <span className="whitespace-nowrap text-[11px] font-semibold text-n-6">
             · {list.players.length} {list.players.length === 1 ? 'player' : 'players'}
@@ -199,6 +212,8 @@ export function ListHeroShell({
 interface HeroProps {
   list: ListWithDetails
   owner: HeroOwner | null
+  /** The byline's word when the owner couldn't be read (`ListHeroShell`). */
+  ownerNote?: string
   canEdit: boolean
   expanded: boolean
   onToggleExpanded: () => void
@@ -275,6 +290,7 @@ interface HeroProps {
 export function ListDetailHero({
   list,
   owner,
+  ownerNote,
   canEdit,
   expanded,
   onToggleExpanded,
@@ -301,6 +317,7 @@ export function ListDetailHero({
     <ListHeroShell
       list={list}
       owner={owner}
+      ownerNote={ownerNote}
       canRename={canEdit}
       onRename={onRename}
       actions={

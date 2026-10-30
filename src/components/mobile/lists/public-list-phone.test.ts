@@ -111,15 +111,16 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
-/** A share page address built in code: `/u/${…}/lists/${…}`, or a profile
- *  href with `/lists/${…}` after it. */
-const SHARE_ADDRESS = /(\/u\/|ProfileHref\().*\/lists\/\$\{/
+/** A share page address built in code: `/u/${…}/lists/${…}`, a profile
+ *  href with `/lists/${…}` after it, or the shared builder that makes one
+ *  (`listShareLink`, `lists/v2/list-owner.ts`). */
+const SHARE_ADDRESS = /(\/u\/|ProfileHref\().*\/lists\/\$\{|listShareLink\(/
 
 /** Phone files that may build the share page's address — only to copy it. */
 const SHARE_ADDRESS_ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = [
   {
     file: 'src/components/mobile/lists/list-actions-sheet.tsx',
-    contains: 'const link = `${window.location.origin}/u/${username}/lists/${list.slug}`',
+    contains: 'const link = listShareLink(window.location.origin, linkAs, list.slug)',
     why: 'List options › Copy link — the address someone else opens, so the public page',
   },
   {

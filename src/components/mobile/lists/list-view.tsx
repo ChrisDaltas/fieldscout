@@ -3,6 +3,7 @@
 import * as React from 'react'
 
 import { budgetShare } from '@/components/lists/v2/list-buckets'
+import { needsOwnerLookup, resolveListOwner } from '@/components/lists/v2/list-owner'
 import { playerCost } from '@/components/lists/v2/list-stats'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
@@ -95,7 +96,7 @@ import { createSidewaysSync } from './sideways-sync'
  */
 export function ListView({ listId }: { listId: string }) {
   const nav = useListsNav()
-  const { profile } = useAuth()
+  const { user, profile } = useAuth()
   const detail = useList(listId)
   const lists = useLists(1, 50)
   const aiBuild = useAiListBuild(listId)
@@ -110,10 +111,19 @@ export function ListView({ listId }: { listId: string }) {
 
   const list = detail.data
   const summary = lists.data?.lists.find((l) => l.id === listId)
-  const owner = useListOwner(list?.owner_id, Boolean(list && !list.is_owner && !summary?.owner))
-  const ownerUsername = list?.is_owner
-    ? (profile?.username ?? null)
-    : (summary?.owner?.username ?? owner.data?.username ?? null)
+  // Whose list this is — the desktop panel's rule (`list-owner.ts`): yours →
+  // you, saved → the collection's owner, anyone else's → read. The byline and
+  // Copy link carry only a known handle: never yours standing in for theirs.
+  const owner = useListOwner(list?.owner_id, Boolean(list && needsOwnerLookup(list, summary, user?.id)))
+  const resolved = list
+    ? resolveListOwner({
+        list,
+        summary,
+        viewer: { id: user?.id, username: profile?.username ?? null, avatarUrl: profile?.avatar_url ?? null },
+        lookup: { data: owner.data, isError: owner.isError },
+      })
+    : null
+  const ownerUsername = resolved?.shareAs ?? null
   const canEdit = Boolean(list?.is_owner) && !aiBuild.building
   const loaded = Boolean(list) && !detail.isError
   const coverOff = useMobileListsCoverPassed(coverRef, barRef, loaded)
@@ -220,6 +230,14 @@ export function ListView({ listId }: { listId: string }) {
             <>
               <UsernameLink username={ownerUsername} className="text-m-t3" /> ·{' '}
             </>
+          ) : resolved?.ownerNote ? (
+            // A failed read says so rather than passing for a list with no author.
+            <>
+              <span data-owner-note className="text-m-tr">
+                {resolved.ownerNote}
+              </span>{' '}
+              ·{' '}
+            </>
           ) : null}
           {playersLabel(count)} · {ranked ? 'Ranked' : tiersOn ? 'Tiers' : 'Unranked'}
           {list.is_owner && list.is_private ? ' · Private' : ''} · Updated {updatedLabel(list.updated_at)}
@@ -281,6 +299,7 @@ export function ListView({ listId }: { listId: string }) {
         onOpenChange={setOptionsOpen}
         list={list}
         ownerUsername={ownerUsername}
+        linkUnavailable={resolved?.shareUnavailable}
         canEdit={canEdit}
         viewer={{ username: profile?.username ?? null, avatarUrl: profile?.avatar_url ?? null }}
         onEditDetails={() => nav.openDetails(list.id)}

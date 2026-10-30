@@ -58,7 +58,7 @@ import { useListDropCommit } from './use-list-drop'
 import { ListCommentsTab } from './list-comments-tab'
 import { ListDetailHero } from './list-detail-hero'
 import { ListDetailsTab } from './list-details-tab'
-import { listShareLink, needsOwnerLookup, panelOwner } from './list-owner'
+import { listShareLink, needsOwnerLookup, resolveListOwner } from './list-owner'
 import { formatCount, resolveStats } from './list-stats'
 import { AddPlayersPopover, ListToolbar } from './list-toolbar'
 
@@ -429,8 +429,9 @@ export function ListDetailPanel({
   }
 
   // Saved → the collection's owner; yours → you; anyone else's → the real
-  // owner once read, and no name (Share disabled) until then (`list-owner.ts`).
-  const { owner, shareAs, shareUnavailable } = panelOwner({
+  // owner once read, and no name (Share disabled) until then; a read that
+  // failed says so in the byline (`ownerNote`, `list-owner.ts`).
+  const { owner, shareAs, shareUnavailable, ownerNote } = resolveListOwner({
     list,
     summary,
     viewer: { id: user?.id, username: viewer.username, avatarUrl: viewer.avatarUrl },
@@ -473,6 +474,7 @@ export function ListDetailPanel({
       <ListDetailHero
         list={list}
         owner={owner}
+        ownerNote={ownerNote}
         canEdit={canEdit}
         expanded={expanded}
         onToggleExpanded={onToggleExpanded}

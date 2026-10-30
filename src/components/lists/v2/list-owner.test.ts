@@ -1,10 +1,11 @@
 /**
- * Lists v2 — whose list the open panel shows (walk-off-1). Someone else's
- * list you haven't saved used to name *you* as its author, link your profile,
- * and Share a `/u/<you>/lists/<slug>` link that 404s. Pinned here: you are the
- * author only of your own list; a saved list keeps the collection's owner;
- * anyone else's list shows its real owner once read, and no name (Share
- * disabled) until then.
+ * Lists — whose list is open (walk-off-1), one rule for the desktop panel and
+ * the phone's list view. Someone else's list you haven't saved used to name
+ * *you* as its author, link your profile, and Share a `/u/<you>/lists/<slug>`
+ * link that 404s. Pinned here: you are the author only of your own list; a
+ * saved list keeps the collection's owner; anyone else's list shows its real
+ * owner once read, and no name (Share disabled) until then; a read that fails
+ * says so (`ownerNote`) instead of passing for a list with no author.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -12,16 +13,17 @@ import {
   isViewersList,
   listShareLink,
   needsOwnerLookup,
-  panelOwner,
+  OWNER_UNREADABLE,
+  resolveListOwner,
   SHARE_LINK_FAILED,
   SHARE_LINK_LOADING,
-  type PanelOwnerInput,
+  type ListOwnerInput,
 } from './list-owner'
 
 const ME = { id: 'u-me', username: 'me', avatarUrl: 'me.png' }
 const PENDING = { data: undefined, isError: false }
 
-const input = (over: Partial<PanelOwnerInput> = {}): PanelOwnerInput => ({
+const input = (over: Partial<ListOwnerInput> = {}): ListOwnerInput => ({
   list: { is_owner: false, owner_id: 'u-devpro' },
   summary: undefined,
   viewer: ME,
@@ -29,47 +31,68 @@ const input = (over: Partial<PanelOwnerInput> = {}): PanelOwnerInput => ({
   ...over,
 })
 
-describe('panelOwner — someone else’s list you haven’t saved', () => {
+describe('resolveListOwner — someone else’s list you haven’t saved', () => {
   it('while the owner is being read: no name, Share disabled — never you', () => {
-    const got = panelOwner(input())
+    const got = resolveListOwner(input())
     expect(got.owner).toBeNull()
     expect(got.shareAs).toBeNull()
     expect(got.shareUnavailable).toBe(SHARE_LINK_LOADING)
+    // Still loading is not a failure: no note, just no name yet.
+    expect(got.ownerNote).toBeUndefined()
   })
 
   it('once read: the real owner, and Share carries their handle', () => {
-    const got = panelOwner(input({ lookup: { data: { username: 'devpro', avatarUrl: 'd.png' }, isError: false } }))
+    const got = resolveListOwner(input({ lookup: { data: { username: 'devpro', avatarUrl: 'd.png' }, isError: false } }))
     expect(got.owner).toEqual({ username: 'devpro', avatarUrl: 'd.png' })
     expect(got.shareAs).toBe('devpro')
     expect(got.shareUnavailable).toBeUndefined()
+    expect(got.ownerNote).toBeUndefined()
   })
 
-  it('a failed read: no name, Share disabled with the reason — never you', () => {
-    const got = panelOwner(input({ lookup: { data: undefined, isError: true } }))
-    expect(got).toEqual({ owner: null, shareAs: null, shareUnavailable: SHARE_LINK_FAILED })
+  it('a failed read: no name, Share disabled with the reason, and the byline says so — never you', () => {
+    const got = resolveListOwner(input({ lookup: { data: undefined, isError: true } }))
+    expect(got).toEqual({
+      owner: null,
+      shareAs: null,
+      shareUnavailable: SHARE_LINK_FAILED,
+      ownerNote: OWNER_UNREADABLE,
+    })
   })
 
   it('read and empty (no profile, or no handle) is final too — never you', () => {
-    expect(panelOwner(input({ lookup: { data: null, isError: false } })).shareUnavailable).toBe(SHARE_LINK_FAILED)
-    const noHandle = panelOwner(input({ lookup: { data: { username: null, avatarUrl: null }, isError: false } }))
+    const none = resolveListOwner(input({ lookup: { data: null, isError: false } }))
+    expect(none.shareUnavailable).toBe(SHARE_LINK_FAILED)
+    expect(none.ownerNote).toBe(OWNER_UNREADABLE)
+    const noHandle = resolveListOwner(input({ lookup: { data: { username: null, avatarUrl: null }, isError: false } }))
     expect(noHandle.owner).toBeNull()
     expect(noHandle.shareAs).toBeNull()
     expect(noHandle.shareUnavailable).toBe(SHARE_LINK_FAILED)
+    expect(noHandle.ownerNote).toBe(OWNER_UNREADABLE)
+  })
+
+  it('a list with no owner id can never be read: final, not loading forever', () => {
+    const got = resolveListOwner(input({ list: { is_owner: false, owner_id: null } }))
+    expect(got).toEqual({
+      owner: null,
+      shareAs: null,
+      shareUnavailable: SHARE_LINK_FAILED,
+      ownerNote: OWNER_UNREADABLE,
+    })
   })
 
   it('the viewer’s name never appears, whatever the lookup says', () => {
     for (const lookup of [PENDING, { data: undefined, isError: true }, { data: null, isError: false }]) {
-      const got = panelOwner(input({ lookup }))
+      const got = resolveListOwner(input({ lookup }))
       expect(got.owner?.username).not.toBe('me')
       expect(got.shareAs).not.toBe('me')
     }
   })
 })
 
-describe('panelOwner — your own and saved lists are unchanged', () => {
+describe('resolveListOwner — your own and saved lists are unchanged', () => {
   it('your own list (is_owner): you, as before — no lookup', () => {
     const own = input({ list: { is_owner: true, owner_id: 'u-me' }, summary: { owner: null } })
-    expect(panelOwner(own)).toEqual({
+    expect(resolveListOwner(own)).toEqual({
       owner: { username: 'me', avatarUrl: 'me.png' },
       shareAs: 'me',
       shareUnavailable: undefined,
@@ -78,18 +101,19 @@ describe('panelOwner — your own and saved lists are unchanged', () => {
   })
 
   it('your own list before your profile has loaded: the byline is as before, Share waits', () => {
-    const got = panelOwner(input({
+    const got = resolveListOwner(input({
       list: { is_owner: true, owner_id: 'u-me' },
       viewer: { id: 'u-me', username: null, avatarUrl: null },
     }))
     expect(got.owner).toEqual({ username: 'you', avatarUrl: null })
     expect(got.shareAs).toBeNull()
     expect(got.shareUnavailable).toBe(SHARE_LINK_LOADING)
+    expect(got.ownerNote).toBeUndefined()
   })
 
   it('a saved list: the collection’s owner, as before — no lookup', () => {
     const saved = input({ summary: { owner: { username: 'kelly', avatar_url: 'k.png' } } })
-    expect(panelOwner(saved)).toEqual({ owner: { username: 'kelly', avatarUrl: 'k.png' }, shareAs: 'kelly' })
+    expect(resolveListOwner(saved)).toEqual({ owner: { username: 'kelly', avatarUrl: 'k.png' }, shareAs: 'kelly' })
     expect(needsOwnerLookup(saved.list, saved.summary, ME.id)).toBe(false)
   })
 })

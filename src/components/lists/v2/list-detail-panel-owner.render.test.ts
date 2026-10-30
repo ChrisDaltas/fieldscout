@@ -12,6 +12,8 @@
  *     `/u/<owner>/lists/<slug>`;
  *   - until that read answers — or if it fails — there is no name at all and
  *     Share is disabled, so no wrong link can be copied;
+ *   - if it fails, the byline says "Couldn’t load who made this list" rather
+ *     than passing for a list with no author (while loading: no note);
  *   - your own list and a saved list look exactly as they did, with no lookup.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -95,7 +97,7 @@ vi.mock('@/components/lists/v2/list-detail-hero', async (importOriginal) => {
 })
 
 import { ListDetailPanel } from './list-detail-panel'
-import { SHARE_LINK_FAILED, SHARE_LINK_LOADING } from './list-owner'
+import { OWNER_UNREADABLE, SHARE_LINK_FAILED, SHARE_LINK_LOADING } from './list-owner'
 
 const ORIGIN = 'https://fieldscout.gg'
 const noop = () => {}
@@ -147,6 +149,8 @@ function render(l: ListWithDetails, summary?: Partial<ListWithTags>): string {
 
 /** The byline names (`UsernameLink` marks each with its username). */
 const names = (out: string) => [...out.matchAll(/data-username-link="([^"]+)"/g)].map((m) => m[1])
+/** The byline's word for an owner who couldn't be read, if it shows one. */
+const ownerNote = (out: string) => out.match(/data-owner-note="[^"]*"[^>]*>([^<]*)</)?.[1] ?? null
 /** Whether Share's `<button>` carries the `disabled` attribute. */
 const shareDisabled = (out: string) => {
   const at = out.lastIndexOf('<button', out.indexOf('Share</button>'))
@@ -186,6 +190,7 @@ describe('someone else’s public list you haven’t saved (⌘K / ?list=<id>)',
     expect(names(out)).toEqual(['devpro'])
     expect(out).toContain('>@devpro<')
     expect(out).not.toContain('@me')
+    expect(ownerNote(out)).toBeNull()
     expect(shareDisabled(out)).toBe(false)
   })
 
@@ -200,15 +205,21 @@ describe('someone else’s public list you haven’t saved (⌘K / ?list=<id>)',
     expect(names(out)).toEqual([])
     expect(out).not.toContain('@me')
     expect(out).toContain('Created ')
+    // Still loading is not a failure: no note in the byline.
+    expect(ownerNote(out)).toBeNull()
     expect(shareDisabled(out)).toBe(true)
     expect(out).toContain(`title="${SHARE_LINK_LOADING}"`)
     expect(await pressShare()).toEqual([])
   })
 
-  it('if the owner can’t be read: still never you, Share disabled with the reason', async () => {
+  it('if the owner can’t be read: still never you, the byline says so, Share disabled with the reason', async () => {
     h.lookup = { data: undefined, isError: true }
     const out = render(list())
     expect(names(out)).toEqual([])
+    expect(out).not.toContain('@me')
+    expect(ownerNote(out)).toBe(OWNER_UNREADABLE)
+    // The note leads the byline, then the date and the count.
+    expect(out.indexOf(OWNER_UNREADABLE)).toBeLessThan(out.indexOf('· Created '))
     expect(shareDisabled(out)).toBe(true)
     expect(out).toContain(`title="${SHARE_LINK_FAILED}"`)
     expect(await pressShare()).toEqual([])
@@ -221,6 +232,7 @@ describe('your own and saved lists are unchanged', () => {
     expect(h.lookupCalls.every(([, enabled]) => !enabled)).toBe(true)
     expect(names(out)).toEqual(['me'])
     expect(out).toContain('created ')
+    expect(ownerNote(out)).toBeNull()
     expect(shareDisabled(out)).toBe(false)
     expect(await pressShare()).toEqual([`${ORIGIN}/u/me/lists/my-board`])
   })
@@ -232,6 +244,7 @@ describe('your own and saved lists are unchanged', () => {
     expect(h.lookupCalls.every(([, enabled]) => !enabled)).toBe(true)
     expect(names(out)).toEqual(['kelly'])
     expect(out).not.toContain('@me')
+    expect(ownerNote(out)).toBeNull()
     expect(await pressShare()).toEqual([`${ORIGIN}/u/kelly/lists/kelly-board`])
   })
 })

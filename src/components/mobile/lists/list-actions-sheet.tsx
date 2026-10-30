@@ -4,6 +4,7 @@ import * as React from 'react'
 
 import { commentControlsOn } from '@/components/lists/comment-menu-ops'
 import { toastMovedToTrash } from '@/components/lists/trash-door'
+import { listShareLink, SHARE_LINK_LOADING } from '@/components/lists/v2/list-owner'
 import { offersDuplicate } from '@/components/mobile/community/community-ops'
 import { ReportRow, ReportSheet } from '@/components/mobile/community/report-sheet'
 import { MIcon } from '@/components/mobile/ui/m-icon'
@@ -68,6 +69,7 @@ export function ListActionsSheet({
   onOpenChange,
   list,
   ownerUsername,
+  linkUnavailable,
   canEdit,
   viewer,
   onEditDetails,
@@ -77,7 +79,11 @@ export function ListActionsSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
   list: ListWithDetails
+  /** The list's owner's handle — `null` while it isn't known (still being
+   *  read, or unreadable), and then Copy link can't copy. */
   ownerUsername: string | null
+  /** Why Copy link can't copy yet, shown under it (`list-owner.ts`). */
+  linkUnavailable?: string
   canEdit: boolean
   viewer: { username: string | null; avatarUrl: string | null }
   onEditDetails: () => void
@@ -107,6 +113,11 @@ export function ListActionsSheet({
   // is inside the app, so the viewer is signed in.
   const canReport = !owned && reportAccess({ viewerId: user?.id, ownerId: list.owner_id }) === 'report'
   const commentCount = comments.data?.pagination.total
+  // The handle Copy link carries: on your list, yours; on anyone else's, only
+  // its owner's — never yours standing in while theirs is still being read
+  // (that copied `/u/<you>/lists/<slug>`, a 404). Unknown → the row is
+  // disabled and says why (prevent, don't refuse).
+  const linkAs = owned ? (ownerUsername ?? viewer.username) : ownerUsername
 
   return (
     <>
@@ -217,9 +228,11 @@ export function ListActionsSheet({
           <SheetRow
             icon={<LIcon name="share" size={15} />}
             label="Copy link"
+            disabled={!linkAs}
+            sub={linkAs ? undefined : (linkUnavailable ?? SHARE_LINK_LOADING)}
             onClick={then(() => {
-              const username = ownerUsername ?? viewer.username ?? 'you'
-              const link = `${window.location.origin}/u/${username}/lists/${list.slug}`
+              if (!linkAs) return
+              const link = listShareLink(window.location.origin, linkAs, list.slug)
               void navigator.clipboard
                 ?.writeText(link)
                 .then(() => toast({ title: 'Link copied', description: link }))
