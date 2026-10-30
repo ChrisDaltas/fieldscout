@@ -38,11 +38,14 @@ interface FeedListRow {
 async function loadFeed(slug: string, page: number, sort: 'recent' | 'popular') {
   const supabase = await createServerClient()
 
-  const { data: tag } = await supabase
+  // A failed read throws (error.tsx says it couldn't load) — never a false
+  // 404 or "No lists" (plan C4, readiness S13).
+  const { data: tag, error: tagError } = await supabase
     .from('tags')
     .select('id, name, slug, is_system_tag, use_count')
     .eq('slug', slug)
     .maybeSingle()
+  if (tagError) throw new Error(`Couldn't load the tag: ${tagError.message}`)
 
   if (!tag) return null
 
@@ -50,7 +53,7 @@ async function loadFeed(slug: string, page: number, sort: 'recent' | 'popular') 
   const to = from + PAGE_SIZE - 1
   const orderColumn = sort === 'popular' ? 'like_count' : 'updated_at'
 
-  const { data: rows, count } = await supabase
+  const { data: rows, count, error: listsError } = await supabase
     .from('list_tags')
     .select(
       `list:lists!inner(
@@ -66,6 +69,7 @@ async function loadFeed(slug: string, page: number, sort: 'recent' | 'popular') 
     .is('list.deleted_at', null)
     .order(`list(${orderColumn})`, { ascending: false })
     .range(from, to)
+  if (listsError) throw new Error(`Couldn't load the lists tagged ${tag.name}: ${listsError.message}`)
 
   const lists: FeedListRow[] = (
     (rows ?? []) as unknown as Array<{ list: FeedListRow | null }>

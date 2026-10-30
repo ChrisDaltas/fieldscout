@@ -16,7 +16,9 @@ import { commitDraft } from '@/hooks/use-mobile-lists-commit'
 import { thumbnailProblem, useMobileListsThumbnail } from '@/hooks/use-mobile-lists-thumbnail'
 import { toast } from '@/hooks/use-toast'
 import { useYouTubeTitle, youTubeTitleKey } from '@/hooks/use-youtube-title'
+import { featureFlags } from '@/lib/feature-flags'
 import { coverColorOf, hasCoverColorColumn, type CoverColor } from '@/lib/lists/cover-color'
+import { emptyListShareHint } from '@/lib/lists/share-hint'
 import { cn } from '@/lib/utils'
 import { MAX_DESCRIPTION_LEN, MAX_TAGS_PER_LIST, MAX_TITLE_LEN, listTitleSchema, tagNameSchema } from '@/types/schemas/lists'
 
@@ -331,7 +333,7 @@ export function NewListScreen({ currentWeek = 0 }: { currentWeek?: number }) {
   const saved = () => {
     const made = created.current
     if (!made) return
-    toast(createdToast(made))
+    toast(createdToast(made, emptyListShareHint({ players: draft?.entries.length ?? 0, isPrivate: !d.isPublic }, featureFlags.community)))
     carryListSession(draftKey, made.id)
     if (from === 'community') {
       refreshCommunity(qc)

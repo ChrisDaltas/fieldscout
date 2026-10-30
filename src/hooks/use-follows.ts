@@ -1,8 +1,9 @@
 'use client'
 
-import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, type QueryKey, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/hooks/use-auth'
+import { SCOUTS_TO_FOLLOW_KEY, withFollowerChange, type ScoutToFollow } from '@/hooks/use-scouts-to-follow'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 // Follow/unfollow for real user profiles. The `follows` table (follower_id,
@@ -32,13 +33,41 @@ export const followKeys = {
  * unfollowing someone from your own Following leaves their row in place,
  * now showing Follow, so a mis-tap can be undone (as on Twitter / Instagram,
  * and the desktop /u page until a reload). The lists are only marked stale,
- * so the next visit to one reads it fresh.
+ * so the next visit to one reads it fresh. Scouts to follow is the same: the
+ * toggle already moved the tapped row's "N followers" (`useToggleFollow`),
+ * and a re-read now could reorder the rows under the pointer — so it is only
+ * marked stale, and the next visit reads the true counts and order.
  */
 export function refreshAfterFollowToggle(qc: QueryClient) {
   const listRoot = followKeys.personFollowsAll[1]
   qc.invalidateQueries({ queryKey: followKeys.all, predicate: (q) => q.queryKey[1] !== listRoot })
   qc.invalidateQueries({ queryKey: followKeys.personFollowsAll, refetchType: 'none' })
+  qc.invalidateQueries({ queryKey: SCOUTS_TO_FOLLOW_KEY, refetchType: 'none' })
   qc.invalidateQueries({ queryKey: ['explore-feed'] })
+}
+
+type ScoutsSnapshot = Array<[QueryKey, ScoutToFollow[] | undefined]>
+
+/**
+ * A follow or unfollow's optimistic step on Scouts to follow: the tapped
+ * person's "N followers" moves at once on every loaded copy (desktop card,
+ * phone shelf), nobody changes place (`withFollowerChange`). Returns what
+ * was there, for `putBackScouts` if the toggle fails. Its reads aren't
+ * cancelled first: cancelling a first read would leave the card loading with
+ * nothing left to fetch. A read that lands afterwards just shows the
+ * server's count.
+ */
+export function moveScoutFollowers(qc: QueryClient, targetId: string, isFollowing: boolean): ScoutsSnapshot {
+  const prev = qc.getQueriesData<ScoutToFollow[]>({ queryKey: SCOUTS_TO_FOLLOW_KEY })
+  qc.setQueriesData<ScoutToFollow[]>({ queryKey: SCOUTS_TO_FOLLOW_KEY }, (rows) =>
+    withFollowerChange(rows, targetId, isFollowing ? -1 : 1),
+  )
+  return prev
+}
+
+/** A failed toggle: Scouts to follow back to what it showed before. */
+export function putBackScouts(qc: QueryClient, prev: ScoutsSnapshot) {
+  for (const [scoutsKey, rows] of prev) qc.setQueryData(scoutsKey, rows)
 }
 
 /**
@@ -75,7 +104,9 @@ interface ToggleFollowVars {
 
 /**
  * Follow or unfollow a profile. Optimistically flips the cached following-set
- * so every button for that user updates instantly, and rolls back on error.
+ * so every button for that user updates instantly — and moves that person's
+ * "N followers" on any Scouts to follow already loaded — and rolls both back
+ * on error.
  */
 export function useToggleFollow() {
   const qc = useQueryClient()
@@ -115,10 +146,11 @@ export function useToggleFollow() {
       if (isFollowing) next.delete(targetId)
       else next.add(targetId)
       qc.setQueryData(key, next)
-      return { prev }
+      return { prev, prevScouts: moveScoutFollowers(qc, targetId, isFollowing) }
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(key, ctx.prev)
+      if (ctx?.prevScouts) putBackScouts(qc, ctx.prevScouts)
     },
     onSettled: () => refreshAfterFollowToggle(qc),
   })

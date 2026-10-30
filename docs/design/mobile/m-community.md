@@ -1015,7 +1015,7 @@ Leagues have one season each, so G4's all-time view, G5, and team avatar colour 
 | Toast (ink pill, bottom 100, 1800ms, replace-on-new) | restyle-only | `src/components/ui/toast.tsx`, `use-toast.ts` | Exists as an ink pill. Timing and position differ. |
 | FSHeadshot (team-colour ring, initials fallback, D/ST rule, scale/offset crop) | restyle-only | `src/components/players/player-image.tsx` (`PlayerAvatarImage`), `src/lib/nfl-team-colors` | Has the initials fallback but no team ring. |
 | Author avatars (colour circle + handle initial) | out-of-scope-or-question | `src/components/ui/user-avatar.tsx`, `profiles.avatar_url` (no colour column) | The app shows photo avatars with 2-letter initials on grey. Should authors get a colour (stored or hashed)? |
-| Likes and comment counts, top scouts, trending tags aside | out-of-scope-or-question | `explore-feed.tsx` `LikeButton`, `top-scouts-card.tsx`, `trending-tags-card.tsx`, list comments tab | The design shows none of these. Drop them on mobile, or keep them? |
+| Likes and comment counts, top scouts, trending tags aside | out-of-scope-or-question | `explore-feed.tsx` `LikeButton`, `scouts-to-follow-card.tsx` (was top-scouts-card), `trending-tags-card.tsx`, list comments tab | The design shows none of these. Drop them on mobile, or keep them? |
 | Dock / bottom tab bar (Home / Community / Players / Profile avatar, `barA` translucency, content scrolls under) | new-ui-on-existing-data | `src/components/layout/bottom-tabs.tsx` (Home / Lists / Players / Search / More), `more-sheet.tsx` | IA question below. The Profile avatar comes from existing profile data. |
 | Tab bar IA change (Lists, Search and More removed; Community added) | out-of-scope-or-question | `bottom-tabs.tsx`, `featureFlags.community` / `startOrSit` (off at launch) | The go-live scope has Community hidden. |
 | Global search routing (person → Community filtered by handle; poll → Start or sit tab; list → detail; ranking → view) | out-of-scope-or-question | `command-palette.tsx` (list → `/app/lists/{id}`, user → profile) | Memory rule "usernames always link to profile" conflicts with person → feed filter. Poll results depend on the poll backend. |
@@ -1032,7 +1032,7 @@ Leagues have one season each, so G4's all-time view, G5, and team avatar colour 
 
 **Files checked:**
 - **Community:** `src/app/app/(shell)/explore/{page,layout}.tsx`, `src/components/explore/*`
-- **Hooks:** `src/hooks/{use-explore-feed,use-follows,use-favorites,use-top-scouts,use-rename-own-team,use-layout-mode}.ts`
+- **Hooks:** `src/hooks/{use-explore-feed,use-follows,use-favorites,use-scouts-to-follow,use-rename-own-team,use-layout-mode}.ts`
 - **API:** `src/app/api/search/community/route.ts`, `src/app/api/lists/[id]/{favorite,like,links,comments}`
 - **Search:** `src/components/shared/command-palette.tsx`
 - **Layout:** `src/components/layout/{bottom-tabs,more-sheet,top-nav,app-shell,layout-mode-frame,sidebar}.tsx`

@@ -25,6 +25,7 @@ import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useListCoverColorSupport } from '@/hooks/use-list-cover-color-support'
 import { useCreateList, useUpdateList } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
+import { featureFlags } from '@/lib/feature-flags'
 import {
   COVER_COLORS,
   COVER_COLOR_LABEL,
@@ -33,6 +34,7 @@ import {
   type CoverColor,
 } from '@/lib/lists/cover-color'
 import { isNumbered } from '@/lib/lists/ranking-mode'
+import { emptyListShareHint } from '@/lib/lists/share-hint'
 import { cn } from '@/lib/utils'
 import type { List, ListRosterSettings } from '@/types/database'
 
@@ -191,7 +193,13 @@ export function ListFormDialog({
             body: JSON.stringify({ player_id: seedPlayerId }),
           }).catch(() => {})
         }
-        toast({ title: 'List created', description: created.title })
+        // An empty public list never shows in Community: say how to share
+        // it (plan C4). With a player or two, the toast names the list.
+        const hint = emptyListShareHint(
+          { players: seedPlayerId ? 1 : 0, isPrivate: form.isPrivate },
+          featureFlags.community,
+        )
+        toast({ title: 'List created', description: hint ?? created.title })
         onOpenChange(false)
         router.push(`/app/lists/${created.id}`)
       } else if (list) {

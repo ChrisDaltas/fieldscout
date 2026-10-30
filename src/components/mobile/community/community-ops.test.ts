@@ -45,7 +45,9 @@ import {
   recentUpdates,
   scoringFormatOf,
   scoringLabel,
+  searchPlaceholder,
   shownInCommunityQuery,
+  shownItems,
   sortPopular,
   topLine,
   topicAwaitingServer,
@@ -443,6 +445,39 @@ describe('filters', () => {
     expect(deriveTopics(full, INJURIES_TOPIC).filter((t) => t.kind === 'injuries')).toHaveLength(1)
   })
 
+  it('topics come only from what Community shows: while rankings are off, never a tag or player only a ranking carries (plan C4, S10)', () => {
+    const expertTag = { id: 't-expert', name: 'Expert pick', slug: 'expert-pick' }
+    const listTag = { id: 't-sleep', name: 'Sleepers', slug: 'sleepers' }
+    const pa = player('pa', 'A Player')
+    const pb = player('pb', 'B Player')
+    const shared = [
+      item({ id: 'rk1', kind: 'rank', tags: [expertTag], heads: [pb] }),
+      item({ id: 'rk2', kind: 'rank', tags: [expertTag], heads: [pb] }),
+      item({ id: 'ls1', kind: 'list', tags: [listTag], heads: [pa] }),
+      item({ id: 'ls2', kind: 'list', tags: [], heads: [pa] }),
+    ]
+    const off = deriveTopics(shownItems(shared, false), null).map((t) => t.label)
+    expect(off).toEqual(['Sleepers', 'A Player', 'Injuries'])
+    expect(off).not.toContain('Expert pick')
+    expect(off).not.toContain('B Player')
+    // Rankings on: they're shown, so their topics are offered.
+    const on = deriveTopics(shownItems(shared, true), null).map((t) => t.label)
+    expect(on).toContain('Expert pick')
+    expect(on).toContain('B Player')
+  })
+
+  it('shownItems: everything while rankings are on, lists only while they are off (a new array either way)', () => {
+    const shared = [item({ id: 'r', kind: 'rank' }), item({ id: 'l', kind: 'list' })]
+    expect(shownItems(shared, true).map((i) => i.id)).toEqual(['r', 'l'])
+    expect(shownItems(shared, true)).not.toBe(shared)
+    expect(shownItems(shared, false).map((i) => i.id)).toEqual(['l'])
+  })
+
+  it('the search box promises only what is switched on (plan C4, S5)', () => {
+    expect(searchPlaceholder(false)).toBe('Lists, people or players')
+    expect(searchPlaceholder(true)).toBe('Lists, rankings, people or players')
+  })
+
   it('Injuries topic: exactly the server’s lists (with a player on the injury report) — no client guess', () => {
     expect(filterItems(pool, { ...base, topic: INJURIES_TOPIC })).toEqual([])
     expect(filterItems(pool, { ...base, topic: INJURIES_TOPIC, topicListIds: new Set(['r2', 'l1']) }).map((i) => i.id)).toEqual([
@@ -489,6 +524,38 @@ describe('filters', () => {
     })
     expect(emptyCopy('list', null, 'zz', false).message).toBe('Nothing matches your search')
     expect(emptyCopy('rank', null, '', true)).toMatchObject({ message: 'Nothing matches these filters', kind: 'rank' })
+  })
+
+  it('empty states promise only what is switched on (plan C4, S5)', () => {
+    const launch = { ranks: false, startOrSit: false }
+    // Launch day: Community on, Rankings and Start or sit off.
+    expect(emptyCopy('following', null, '', false, launch).message).toBe('Follow people to see their lists here')
+    expect(emptyCopy('following', null, '', false, { ...launch, followsAnyone: true }).message).toBe(
+      'People you follow haven’t shared lists yet',
+    )
+    expect(emptyCopy('all', null, '', false, launch)).toMatchObject({ message: 'No lists yet', action: 'Create a list' })
+    expect(emptyCopy('list', null, '', false, launch).message).toBe('No lists yet')
+    // Each switch adds only its own words.
+    expect(emptyCopy('following', null, '', false, { ranks: true, startOrSit: false }).message).toBe(
+      'Follow people to see their lists and rankings here',
+    )
+    expect(emptyCopy('following', null, '', false, { ranks: false, startOrSit: true }).message).toBe(
+      'Follow people to see their lists and start/sit questions here',
+    )
+    expect(emptyCopy('following', null, '', false, { ranks: true, startOrSit: true }).message).toBe(
+      'Follow people to see their lists, rankings and start/sit questions here',
+    )
+    expect(emptyCopy('following', null, '', false, { ranks: true, followsAnyone: true }).message).toBe(
+      'People you follow haven’t shared lists or rankings yet',
+    )
+    expect(emptyCopy('all', null, '', false, { ranks: true }).message).toBe('No lists or rankings yet')
+    // Never a word for a switched-off feature.
+    for (const tab of ['following', 'all', 'list'] as const) {
+      for (const followsAnyone of [false, true]) {
+        const msg = emptyCopy(tab, null, '', false, { ...launch, followsAnyone }).message
+        expect(msg).not.toMatch(/ranking|start\/sit|start or sit/i)
+      }
+    }
   })
 })
 

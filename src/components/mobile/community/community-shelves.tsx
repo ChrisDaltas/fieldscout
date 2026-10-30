@@ -6,14 +6,14 @@ import { trendingTagTopics, type CommunityTopic } from '@/components/mobile/comm
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import type { CommunityItem } from '@/hooks/use-mobile-community-feed'
+import { followersLabel, useScoutsToFollow } from '@/hooks/use-scouts-to-follow'
 import { useTags } from '@/hooks/use-tags'
-import { useTopScouts } from '@/hooks/use-top-scouts'
 import { cn } from '@/lib/utils'
 
 /**
  * FieldScout Mobile — For you's people and tag shelves (gap list §3 #26).
  * The handoff draws neither; both are desktop Community's right-hand cards
- * (`top-scouts-card.tsx`, `trending-tags-card.tsx`) brought to the phone in
+ * (`scouts-to-follow-card.tsx`, `trending-tags-card.tsx`) brought to the phone in
  * its shelf language: the 18/700 shelf header, then rows or pills on the m-*
  * tokens. Same reads as desktop. An empty shelf isn't drawn; a failed read
  * says so, with a retry — never an empty-looking shelf.
@@ -22,43 +22,41 @@ import { cn } from '@/lib/utils'
 const SHELF_HEADER = 'mb-[6px] mt-[22px]'
 
 /**
- * "Top scouts": desktop's leaderboard (`useTopScouts` — the five highest cred
- * scores; there's no accuracy measure yet, so a row reads "N cred"). Nothing
- * awards cred yet, so every row reads the start — "7 cred", everyone starts
- * at 7 (Chris 2026-10-18, `CRED_START`, after the gap list §3 #26 review
- * found it read "0 cred") — and the order is only the hook's fixed
- * tiebreak, not merit. Each row
- * opens that person's profile (the handle is the link, stretched over the
- * row); Follow sits above it, and your own row says "You" instead.
+ * "Scouts to follow" (plan C4 — it was "Top scouts", ranked by a cred that
+ * nothing awards yet): desktop's card (`useScoutsToFollow`, one read for both
+ * layouts) — people with public lists, most followed first, each row saying
+ * how many followers they have. Each row opens that person's profile (the
+ * handle is the link, stretched over the row); Follow sits above it, and
+ * your own row says "You" instead.
  */
-export function TopScoutsShelf() {
-  const scouts = useTopScouts()
+export function ScoutsToFollowShelf() {
+  const scouts = useScoutsToFollow()
   const { user } = useAuth()
 
   if (scouts.isSuccess && scouts.data.length === 0) return null
 
   return (
-    <section aria-labelledby="community-top-scouts">
-      <ShelfHeader id="community-top-scouts" title="Top scouts" className={SHELF_HEADER} />
+    <section aria-labelledby="community-scouts-to-follow">
+      <ShelfHeader id="community-scouts-to-follow" title="Scouts to follow" className={SHELF_HEADER} />
       {scouts.isPending ? (
-        <div className="flex flex-col" aria-busy="true" aria-label="Loading top scouts">
+        <div className="flex flex-col" aria-busy="true" aria-label="Loading scouts to follow">
           {[0, 1, 2].map((i) => (
             <span key={i} className="my-2 h-[34px] animate-pulse rounded-[14px] bg-m-b1" />
           ))}
         </div>
       ) : scouts.isError ? (
-        <ShelfError message="Couldn’t load top scouts." onRetry={() => void scouts.refetch()} />
+        <ShelfError message="Couldn’t load scouts to follow." onRetry={() => void scouts.refetch()} />
       ) : (
         <ol className="flex flex-col">
           {scouts.data.map((scout, i) => (
-            <li key={scout.id} className="relative flex items-center gap-3 py-2" data-top-scout>
+            <li key={scout.id} className="relative flex items-center gap-3 py-2" data-scout>
               <span className="w-4 flex-none text-center text-[13px] font-semibold tabular-nums text-m-t3">{i + 1}</span>
               <AuthorAvatar
                 author={{
                   profileId: scout.id,
                   username: scout.username,
                   avatarUrl: scout.avatar_url,
-                  followers: null,
+                  followers: scout.followers,
                   isPersona: false,
                 }}
                 size={34}
@@ -68,9 +66,7 @@ export function TopScoutsShelf() {
                   username={scout.username}
                   className="truncate text-[14px] font-semibold text-m-t1 after:absolute after:inset-0"
                 />
-                <span className="text-[12px] font-medium tabular-nums text-m-t3">
-                  {scout.cred_score.toLocaleString('en-US')} cred
-                </span>
+                <span className="text-[12px] font-medium tabular-nums text-m-t3">{followersLabel(scout.followers)}</span>
               </span>
               {scout.id === user?.id ? (
                 <span className="relative z-10 flex h-[30px] flex-none items-center rounded-pill bg-m-gb px-[14px] text-[12px] font-semibold text-m-tb">

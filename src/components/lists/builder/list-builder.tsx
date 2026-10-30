@@ -29,6 +29,8 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
+import { featureFlags } from '@/lib/feature-flags'
+import { emptyListShareHint } from '@/lib/lists/share-hint'
 import {
   DEFAULT_SCORING_PRESET,
   SCORING_PRESETS,
@@ -171,7 +173,10 @@ export function ListBuilder() {
         }
       }
 
-      toast({ title: 'List created', description: newList.title })
+      // An empty public list never shows in Community: say how to share
+      // it (plan C4).
+      const hint = emptyListShareHint({ players: added.length, isPrivate }, featureFlags.community)
+      toast({ title: 'List created', description: hint ?? newList.title })
       router.push(`/app/lists/${newList.id}`)
     } catch (err) {
       toast({

@@ -4,6 +4,7 @@ import { FollowButton } from '@/components/explore/follow-button'
 import { UsernameLink } from '@/components/shared/username-link'
 import { Badge } from '@/components/ui/badge'
 import { UserAvatar } from '@/components/ui/user-avatar'
+import { PRO_UPSELL_ENABLED } from '@/lib/pro-upsell'
 
 interface ProfileListRowProps {
   /** Profile id — drives the follow control. */
@@ -43,7 +44,8 @@ export function ProfileListRow({
             username={username}
             className="truncate text-[12px] font-semibold leading-tight text-ink after:absolute after:inset-0"
           />
-          {isPro && <Badge variant="accent">Pro</Badge>}
+          {/* No Pro badge while the app offers no Pro (`PRO_UPSELL_ENABLED`). */}
+          {PRO_UPSELL_ENABLED && isPro && <Badge variant="accent">Pro</Badge>}
         </div>
         {bio && (
           <p className="mt-0.5 truncate text-[10px] font-medium text-n-6">

@@ -85,7 +85,17 @@ export interface ExploreFeedItem {
   author_id: string | null
   /** Whether the signed-in viewer has already liked this list. */
   is_liked: boolean
+  /** The tag the row shows beside the author: the list's first. */
   tag: { name: string; slug: string } | null
+  /** Every tag the list carries. The topic chips are drawn from these, so a
+   *  chip is only ever a tag a list on the feed carries (plan C4). */
+  tags: FeedTag[]
+}
+
+export interface FeedTag {
+  id: string
+  name: string
+  slug: string
 }
 
 interface EmbeddedProfile {
@@ -113,9 +123,7 @@ export interface FeedRowShape {
   owner: EmbeddedProfile | EmbeddedProfile[] | null
   persona: EmbeddedPersona | EmbeddedPersona[] | null
   comments: { count: number }[] | null
-  tag_links:
-    | { tag: { name: string; slug: string } | { name: string; slug: string }[] | null }[]
-    | null
+  tag_links: { tag: FeedTag | FeedTag[] | null }[] | null
 }
 
 /** Every column here has been on production for months — none a migration
@@ -124,7 +132,7 @@ export const FEED_SELECT = `id, title, slug, is_big_board, ai_persona_id, like_c
   owner:profiles!lists_owner_id_fkey(id, username, avatar_url),
   persona:ai_personas!lists_ai_persona_id_fkey(username, display_name, avatar_url),
   comments:list_comments(count),
-  tag_links:list_tags(tag:tags(name, slug))`
+  tag_links:list_tags(tag:tags(id, name, slug))`
 
 /**
  * Where a page starts.
@@ -161,6 +169,10 @@ export function mapFeedRows(rows: FeedRowShape[], likedIds: ReadonlySet<string>)
     const owner = firstEmbed(row.owner)
     if (!owner) return []
     const persona = row.ai_persona_id ? firstEmbed(row.persona) : null
+    const tags = (row.tag_links ?? []).flatMap((link) => {
+      const tag = firstEmbed(link.tag)
+      return tag ? [tag] : []
+    })
 
     return [
       {
@@ -193,7 +205,8 @@ export function mapFeedRows(rows: FeedRowShape[], likedIds: ReadonlySet<string>)
           : userProfileHref(owner.username),
         author_id: persona ? null : owner.id,
         is_liked: likedIds.has(row.id),
-        tag: firstEmbed(row.tag_links?.[0]?.tag ?? null),
+        tag: tags[0] ? { name: tags[0].name, slug: tags[0].slug } : null,
+        tags,
       },
     ]
   })

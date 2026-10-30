@@ -56,21 +56,25 @@ interface PageProps {
 async function loadListHeader(username: string, slug: string) {
   const supabase = await createServerClient()
 
-  const { data: profile } = await supabase
+  // A failed read throws (the segment's error.tsx says it couldn't load) —
+  // never a false 404 (plan C4, readiness S13).
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('id, username, avatar_url')
     .eq('username', username)
     .maybeSingle()
+  if (profileError) throw new Error(`Couldn't load the profile: ${profileError.message}`)
 
   if (!profile) return null
 
-  const { data: list } = await supabase
+  const { data: list, error: listError } = await supabase
     .from('lists')
     .select('*')
     .eq('owner_id', profile.id)
     .eq('slug', slug)
     .is('deleted_at', null)
     .maybeSingle()
+  if (listError) throw new Error(`Couldn't load the list: ${listError.message}`)
 
   // Private lists are unreachable here by two independent mechanisms: RLS on
   // `lists` hides them from everyone but the owner, and this check hides them
@@ -91,8 +95,12 @@ async function loadList(username: string, slug: string) {
     tag: { id: string; name: string; slug: string; is_system_tag: boolean } | null
   }
 
-  const [{ data: players }, { data: tagRows }, { count: commentCount }, links] =
-    await Promise.all([
+  const [
+    { data: players, error: playersError },
+    { data: tagRows, error: tagsError },
+    { count: commentCount, error: commentsError },
+    links,
+  ] = await Promise.all([
       supabase
         .from('list_players')
         // `*` on the row so `tier` and `notes` come through, and the embedded
@@ -121,6 +129,10 @@ async function loadList(username: string, slug: string) {
       // list, rendering an empty state instead of an error".
       fetchListLinks(supabase, list.id),
     ])
+  // Any of these failing throws, never a board with no players, no tags or
+  // "0 comments" (plan C4, readiness S13).
+  const readError = playersError ?? tagsError ?? commentsError
+  if (readError) throw new Error(`Couldn't load the list: ${readError.message}`)
 
   const flatTags = ((tagRows ?? []) as unknown as TagJoin[])
     .map((r) => r.tag)
@@ -145,13 +157,15 @@ async function loadList(username: string, slug: string) {
   // FieldScout AI" footer + disclaimer (spec-ai-expert-personas.md).
   let persona: { username: string; display_name: string } | null = null
   if (list.ai_persona_id) {
-    const { data: personaRow } = await supabase
+    const { data: personaRow, error: personaError } = await supabase
       .from('ai_personas')
       .select('username, display_name')
       .eq('id', list.ai_persona_id)
       .eq('is_active', true)
       .is('deleted_at', null)
       .maybeSingle()
+    // Never drop the "made by FieldScout AI" note because a read failed.
+    if (personaError) throw new Error(`Couldn't load the list: ${personaError.message}`)
     persona = personaRow ?? null
   }
 
@@ -169,9 +183,9 @@ async function loadList(username: string, slug: string) {
     avatarUrl: null,
   }
   if (user) {
-    const [{ data: fav }, { data: viewerProfile }] = await Promise.all([
+    const [{ data: fav, error: favError }, { data: viewerProfile, error: viewerError }] = await Promise.all([
       isOwner
-        ? Promise.resolve({ data: null })
+        ? Promise.resolve({ data: null, error: null })
         : supabase
             .from('list_favorites')
             .select('list_id')
@@ -184,6 +198,9 @@ async function loadList(username: string, slug: string) {
         .eq('id', user.id)
         .maybeSingle(),
     ])
+    // Never "not pinned" because the read failed.
+    const viewerReadError = favError ?? viewerError
+    if (viewerReadError) throw new Error(`Couldn't load the list: ${viewerReadError.message}`)
     initialPinned = Boolean(fav)
     viewer = {
       username: viewerProfile?.username ?? null,

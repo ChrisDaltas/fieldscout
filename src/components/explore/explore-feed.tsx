@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query'
 
 import { FollowButton } from '@/components/explore/follow-button'
+import { trendingTagTopics, type CommunityTopic } from '@/components/mobile/community/community-ops'
 import { UsernameLink } from '@/components/shared/username-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -26,9 +27,29 @@ import {
 import { useToggleLike } from '@/hooks/use-lists'
 import { useTags } from '@/hooks/use-tags'
 import { toast } from '@/hooks/use-toast'
+import { ranksOn } from '@/lib/rankings/ranks-on'
 import { useUIStore } from '@/stores/ui-store'
 
 const TOPIC_CHIP_COUNT = 6
+
+/**
+ * The topic chips: the most used tags (`/api/tags?trending=true`) that a
+ * list on the feed carries (`shown`: the unfiltered Popular feed's loaded
+ * rows) — the phone's Trending tags rule (`trendingTagTopics`), so a chip
+ * never opens an empty feed (plan C4: topic pills come only from what's
+ * visible). The chip that's on stays, even if the rows that carried it
+ * have since changed, so it can be seen and cleared.
+ */
+export function feedTopics(
+  trending: readonly { id: string; name: string }[],
+  shown: readonly Pick<ExploreFeedItem, 'tags'>[],
+  activeId: string | null,
+): CommunityTopic[] {
+  const topics = trendingTagTopics(trending, shown, TOPIC_CHIP_COUNT)
+  if (!activeId || topics.some((t) => t.id === activeId)) return topics
+  const active = trending.find((t) => t.id === activeId)
+  return active ? [...topics, { kind: 'tag', id: active.id, label: active.name }] : topics
+}
 
 /** "1.2k"-style compact count, mono via .fs-num at the call site. */
 function formatCount(n: number): string {
@@ -185,7 +206,8 @@ function FeedSkeleton() {
 
 /**
  * Community feed (package screen 08, left column): Popular / Newest /
- * Following tabs, topic chips from real trending tags, and a flush-row card
+ * Following tabs, topic chips from the trending tags its lists carry
+ * (`feedTopics`), and a flush-row card
  * of public lists (and rankings, once they're switched on), a page at a time
  * with "Load more" (`use-explore-feed.ts` — what shows, and Popular's
  * order, are the phone's).
@@ -195,11 +217,16 @@ export function ExploreFeed() {
   const [tagId, setTagId] = useState<string | null>(null)
   const openCreateList = useUIStore((s) => s.setCreateListOpen)
 
-  const { data: tagData } = useTags({ trending: true })
-  const topics = (tagData?.tags ?? []).slice(0, TOPIC_CHIP_COUNT)
-
   const feed = useExploreFeed(tab, tagId)
   const items = feed.data ? exploreFeedItems(feed.data.pages) : []
+
+  // The chips are drawn from the unfiltered Popular feed — the screen's
+  // first view, so this reads nothing more; it stays loaded while a chip or
+  // another tab is on, so the chips don't change under the pointer.
+  const { data: tagData } = useTags({ trending: true })
+  const unfiltered = useExploreFeed('popular', null)
+  const shown = unfiltered.data ? exploreFeedItems(unfiltered.data.pages) : []
+  const topics = feedTopics(tagData?.tags ?? [], shown, tagId)
   // Nothing read (the first page failed) says so; a later page failing
   // keeps the rows already read, with the failure beside Load more.
   const failed = feed.isError && !feed.data
@@ -244,7 +271,7 @@ export function ExploreFeed() {
               active={tagId === topic.id}
               onClick={() => setTagId(tagId === topic.id ? null : topic.id)}
             >
-              {topic.name}
+              {topic.label}
             </SegmentItem>
           ))}
         </Segment>
@@ -267,11 +294,12 @@ export function ExploreFeed() {
             <p className="text-[15px] font-bold tracking-[-0.02em] text-ink">
               {tab === 'following'
                 ? 'Nothing from your follows yet'
-                : `No ${activeTopic ? activeTopic.name.toLowerCase() : 'public'} lists yet`}
+                : `No ${activeTopic ? activeTopic.label.toLowerCase() : 'public'} lists yet`}
             </p>
             <p className="mt-1 text-[11px] font-medium text-n-6">
               {tab === 'following'
-                ? 'Lists and rankings from scouts you follow will show up here.'
+                ? // Only what's switched on is promised (plan C4, readiness S5).
+                  `${ranksOn() ? 'Lists and rankings' : 'Lists'} from scouts you follow will show up here.`
                 : 'Be the first — make a list and add a few players to it.'}
             </p>
             {tab !== 'following' && (

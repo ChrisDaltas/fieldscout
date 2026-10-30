@@ -55,7 +55,7 @@ vi.mock('@/components/mobile/community/community-cards', async (importOriginal) 
 })
 vi.mock('@/components/mobile/community/community-detail', () => ({ CommunityDetail: () => null }))
 vi.mock('@/components/mobile/community/community-shelves', () => ({
-  TopScoutsShelf: () => null,
+  ScoutsToFollowShelf: () => null,
   TrendingTagsShelf: () => null,
 }))
 vi.mock('@/hooks/use-follows', () => ({ useFollowingIds: () => ({ data: new Set<string>(), isLoading: false, isError: false }) }))
@@ -309,5 +309,50 @@ describe('Community past the pool (gap list §3 #30)', () => {
     expect(h.olderArgs).toContainEqual(
       expect.objectContaining({ spec: { kind: 'rank', following: null, topic: null, q: '', rankType: 'all', rankPos: 'all' } }),
     )
+  })
+})
+
+describe('Community copy follows the switches (plan C4, readiness S5 / S10)', () => {
+  it('the search box: "Lists, people or players" while rankings are off', () => {
+    useCommunityStore.setState({ tab: 'all', searchOpen: true, query: '' })
+    h.flags.weeklyRanks = false
+    expect(render()).toContain('placeholder="Lists, people or players"')
+    h.flags.weeklyRanks = true
+    expect(render()).toContain('placeholder="Lists, rankings, people or players"')
+  })
+
+  it('Following, following nobody: "Follow people to see their lists here" — no rankings or start/sit promised', () => {
+    h.flags.weeklyRanks = false
+    useCommunityStore.setState({ tab: 'following' })
+    const out = render()
+    expect(out).toContain('Follow people to see their lists here')
+    expect(out).not.toMatch(/rankings|start\/sit/)
+  })
+
+  it('For you with nothing posted: "No lists yet" while rankings are off', () => {
+    h.flags.weeklyRanks = false
+    useCommunityStore.setState({ tab: 'all' })
+    setFeed([], null)
+    const out = render()
+    expect(out).toContain('No lists yet')
+    expect(out).not.toContain('No lists or rankings yet')
+  })
+
+  it('topic pills come only from what shows: a tag only a hidden ranking carries is not offered', () => {
+    const expert = { id: 't-expert', name: 'Expert pick', slug: 'expert-pick' }
+    const sleepers = { id: 't-sleep', name: 'Sleepers', slug: 'sleepers' }
+    setFeed(
+      [item('r1', { kind: 'rank', rankType: 'season', tags: [expert] }), item('l1', { tags: [sleepers] })],
+      null,
+    )
+    useCommunityStore.setState({ tab: 'all' })
+    h.flags.weeklyRanks = false
+    const topics = (out: string) => out.split('aria-label="Topics"')[1]?.split('</div>')[0] ?? ''
+    let out = render()
+    expect(topics(out)).toContain('Sleepers')
+    expect(topics(out)).not.toContain('Expert pick')
+    h.flags.weeklyRanks = true
+    out = render()
+    expect(topics(out)).toContain('Expert pick')
   })
 })

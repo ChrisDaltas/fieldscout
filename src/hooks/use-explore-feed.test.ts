@@ -162,6 +162,37 @@ describe('what the feed shows — filtered in the read', () => {
   })
 })
 
+describe('the tags a row carries (the topic chips are drawn from them)', () => {
+  it('every tag, with its id; the row shows the first', async () => {
+    answer = (call) =>
+      call.table === 'lists'
+        ? {
+            data: [
+              row('two', {
+                tag_links: [
+                  { tag: { id: 't-sleep', name: 'Sleepers', slug: 'sleepers' } },
+                  { tag: [{ id: 't-dyn', name: 'Dynasty', slug: 'dynasty' }] },
+                  { tag: null },
+                ],
+              }),
+              row('none'),
+            ],
+            error: null,
+          }
+        : { data: [], error: null }
+    const page = await readExploreFeedPage('newest', null, EXPLORE_FEED_START, NOW)
+    const byId = Object.fromEntries(page.items.map((i) => [i.id, i]))
+    expect(byId.two!.tags).toEqual([
+      { id: 't-sleep', name: 'Sleepers', slug: 'sleepers' },
+      { id: 't-dyn', name: 'Dynasty', slug: 'dynasty' },
+    ])
+    expect(byId.two!.tag).toEqual({ name: 'Sleepers', slug: 'sleepers' })
+    expect(byId.none!.tags).toEqual([])
+    expect(byId.none!.tag).toBeNull()
+    expect(FEED_SELECT).toContain('tag_links:list_tags(tag:tags(id, name, slug))')
+  })
+})
+
 describe('the badge', () => {
   it('"Ranking" only for a ranking product — a numbered list is a list', async () => {
     h.flags.weeklyRanks = true

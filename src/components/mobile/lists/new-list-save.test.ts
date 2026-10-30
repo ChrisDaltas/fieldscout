@@ -42,6 +42,7 @@ import {
   type NewListSaveIO,
   type NewListSaveInput,
 } from './new-list-save'
+import { ADD_PLAYERS_TO_SHARE } from '@/lib/lists/share-hint'
 
 function entry(id: string, position: number): ListPlayerWithPlayer {
   return {
@@ -321,6 +322,18 @@ describe('the "List created" toast', () => {
     })
     expect(createdToast(made({ coverError: 'Too big', videoFailures: ['a', 'b'] }))).toEqual({
       title: 'List created, but the cover image and 2 videos couldn’t be added',
+      description: 'Too big',
+    })
+  })
+
+  it('a list saved with no players says how to share it: "List created. Add players to share it." (plan C4)', () => {
+    expect(createdToast(made(), ADD_PLAYERS_TO_SHARE)).toEqual({
+      title: 'List created',
+      description: 'Add players to share it.',
+    })
+    // What didn't make it is still the one toast that shows.
+    expect(createdToast(made({ coverError: 'Too big' }), ADD_PLAYERS_TO_SHARE)).toEqual({
+      title: 'List created, but the cover image didn’t upload',
       description: 'Too big',
     })
   })

@@ -526,6 +526,41 @@ export function recentUpdates(items: CommunityItem[], followingIds: ReadonlySet<
 }
 
 /**
+ * The switches an empty state words itself by (plan C4, readiness S5):
+ * whether rankings (`ranksOn()`) and Start or sit (`featureFlags.startOrSit`)
+ * are on. Unset reads as on — the full wording — so every caller on a
+ * launch screen passes the live switches.
+ */
+export interface CommunityEmptyContext {
+  /** Following: does the viewer follow anyone yet. */
+  followsAnyone?: boolean
+  ranks?: boolean
+  startOrSit?: boolean
+}
+
+/** "lists" / "lists and rankings" / "lists, rankings and start/sit questions". */
+function wordList(words: readonly string[]): string {
+  if (words.length <= 1) return words[0] ?? ''
+  return `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`
+}
+
+/** The phone Community search box's hint: only what search can find while
+ *  rankings are switched off (plan C4, readiness S5). */
+export function searchPlaceholder(ranks: boolean): string {
+  return ranks ? 'Lists, rankings, people or players' : 'Lists, people or players'
+}
+
+/**
+ * What of a read Community shows: everything while rankings are on, lists
+ * only while they're off (the same split as `classifyCommunityList`). Topic
+ * pills and the Trending tags shelf are drawn from it, so a pill never leads
+ * to a ranking you can't see (readiness S10).
+ */
+export function shownItems<T extends Pick<CommunityItem, 'kind'>>(items: readonly T[], ranks: boolean): T[] {
+  return ranks ? [...items] : items.filter((i) => i.kind !== 'rank')
+}
+
+/**
  * The empty-state copy (handoff §2.12). The Following tab's "Follow people…"
  * is only true when the viewer follows nobody; someone who follows people
  * who haven't shared anything gets a line that says so. An empty state is
@@ -538,13 +573,16 @@ export function emptyCopy(
   topic: CommunityTopic | null,
   q: string,
   rankFiltered: boolean,
-  ctx: { followsAnyone: boolean } = { followsAnyone: false },
+  ctx: CommunityEmptyContext = {},
 ) {
+  const { followsAnyone = false, ranks = true, startOrSit = true } = ctx
   if (rankFiltered) return { message: 'Nothing matches these filters', action: 'Clear filters', kind: 'rank' as const }
   if (tab === 'following' && !q && !topic) {
-    const message = !ctx.followsAnyone
-      ? 'Follow people to see their lists, rankings and start/sit questions here'
-      : 'People you follow haven’t shared lists or rankings yet'
+    // Only what's switched on is promised (plan C4, readiness S5).
+    const kinds = ['lists', ...(ranks ? ['rankings'] : []), ...(startOrSit ? ['start/sit questions'] : [])]
+    const message = !followsAnyone
+      ? `Follow people to see their ${wordList(kinds)} here`
+      : `People you follow haven’t shared ${ranks ? 'lists or rankings' : 'lists'} yet`
     return { message, action: 'Browse For you', kind: 'reset' as const }
   }
   if (!q && !topic) {
@@ -555,7 +593,7 @@ export function emptyCopy(
         ? 'No start or sit questions yet'
         : tab === 'rank'
           ? 'No rankings yet'
-          : tab === 'list'
+          : tab === 'list' || !ranks
             ? 'No lists yet'
             : 'No lists or rankings yet'
     return tab === 'all'

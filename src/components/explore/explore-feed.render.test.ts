@@ -8,6 +8,8 @@
  *  - the empty feed offers New list (the shell's New list dialog);
  *  - a failed first read says "Couldn't load", never an empty feed;
  *  - the badge reads the item's kind: an ordinary list is a "List";
+ *  - the topic chips are only trending tags a list on the feed carries
+ *    (plan C4), so a chip never opens an empty feed;
  *  - a failed Like or Follow shows the error toast (the toast is checked as
  *    what it hands the toaster; the wiring is a source pin, as the click
  *    can't run in a static render).
@@ -23,6 +25,7 @@ import type { ExploreFeedItem, ExploreFeedPage } from '@/hooks/use-explore-feed'
 
 const h = vi.hoisted(() => ({
   feed: {} as Record<string, unknown>,
+  tags: [] as { id: string; name: string; slug: string }[],
   toast: vi.fn(),
 }))
 
@@ -39,7 +42,7 @@ vi.mock('@/hooks/use-explore-feed', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/hooks/use-explore-feed')>()),
   useExploreFeed: () => h.feed,
 }))
-vi.mock('@/hooks/use-tags', () => ({ useTags: () => ({ data: { tags: [] } }) }))
+vi.mock('@/hooks/use-tags', () => ({ useTags: () => ({ data: { tags: h.tags } }) }))
 vi.mock('@/hooks/use-lists', () => ({ useToggleLike: () => ({ mutate: () => {}, isPending: false }) }))
 vi.mock('@/hooks/use-auth', () => ({ useAuth: () => ({ user: { id: 'viewer' }, profile: null }) }))
 vi.mock('@/hooks/use-follows', () => ({
@@ -50,7 +53,7 @@ vi.mock('@/hooks/use-profile-href', () => ({ useProfileHref: (u: string) => `/u/
 vi.mock('@/hooks/use-toast', () => ({ toast: (arg: unknown) => h.toast(arg) }))
 
 import { toastFollowFailed } from './follow-button'
-import { ExploreFeed, toastLikeFailed } from './explore-feed'
+import { ExploreFeed, feedTopics, toastLikeFailed } from './explore-feed'
 
 function item(id: string, over: Partial<ExploreFeedItem> = {}): ExploreFeedItem {
   return {
@@ -69,6 +72,7 @@ function item(id: string, over: Partial<ExploreFeedItem> = {}): ExploreFeedItem 
     author_id: `u-${id}`,
     is_liked: false,
     tag: null,
+    tags: [],
     ...over,
   }
 }
@@ -96,6 +100,7 @@ const code = (file: string) =>
 
 beforeEach(() => {
   h.toast.mockClear()
+  h.tags = []
   setFeed([{ items: [item('a'), item('b')], next: null }])
 })
 
@@ -177,6 +182,61 @@ describe('empty and error', () => {
     expect(out).toContain('>Try again<')
     expect(out).not.toContain('No public lists yet')
     expect(out).not.toContain('New list')
+  })
+})
+
+describe('the topic chips: only tags a list on the feed carries (plan C4)', () => {
+  const tag = (id: string, name: string) => ({ id, name, slug: name.toLowerCase() })
+  const SLEEPERS = tag('t-sleep', 'Sleepers')
+  const BUSTS = tag('t-busts', 'Busts')
+  const ROOKIES = tag('t-rook', 'Rookies')
+  const DFS = tag('t-dfs', 'DFS')
+  /** Most used first, as /api/tags?trending=true answers. */
+  const TRENDING = [SLEEPERS, BUSTS, ROOKIES, DFS]
+  const chips = (out: string) =>
+    (out.match(/aria-label="Filter by topic"[\s\S]*?<\/div>/)?.[0] ?? '')
+      .split('<button')
+      .slice(1)
+      .map((b) => b.replace(/<[^>]+>/g, '').replace(/^[^>]*>/, '').trim())
+
+  it('a trending tag that no list on the feed carries gets no chip; the rest keep the trending order', () => {
+    h.tags = TRENDING
+    setFeed([{ items: [item('a', { tags: [ROOKIES] }), item('b', { tags: [DFS, SLEEPERS] })], next: null }])
+    expect(chips(render())).toEqual(['All', 'Sleepers', 'Rookies', 'DFS'])
+  })
+
+  it('no list carries a trending tag: no chip row at all (not an "All" alone)', () => {
+    h.tags = TRENDING
+    setFeed([{ items: [item('a'), item('b')], next: null }])
+    expect(render()).not.toContain('Filter by topic')
+  })
+
+  it('the feed not read yet: no chips (never a guess)', () => {
+    h.tags = TRENDING
+    setFeed(undefined, { isPending: true })
+    expect(render()).not.toContain('Filter by topic')
+  })
+
+  it('six at most', () => {
+    const many = Array.from({ length: 9 }, (_, i) => tag(`t${i}`, `Tag ${i}`))
+    expect(feedTopics(many, [{ tags: many }], null).map((t) => t.label)).toEqual([
+      'Tag 0',
+      'Tag 1',
+      'Tag 2',
+      'Tag 3',
+      'Tag 4',
+      'Tag 5',
+    ])
+  })
+
+  it('the chip that is on stays, so it can be seen and cleared, even once no row carries it', () => {
+    expect(feedTopics(TRENDING, [{ tags: [ROOKIES] }], 't-busts').map((t) => t.id)).toEqual(['t-rook', 't-busts'])
+    // Already among the chips: not added twice.
+    expect(feedTopics(TRENDING, [{ tags: [ROOKIES] }], 't-rook').map((t) => t.id)).toEqual(['t-rook'])
+  })
+
+  it('the chips read the unfiltered Popular feed, whatever tab or chip is on', () => {
+    expect(code('src/components/explore/explore-feed.tsx')).toMatch(/useExploreFeed\('popular', null\)/)
   })
 })
 
