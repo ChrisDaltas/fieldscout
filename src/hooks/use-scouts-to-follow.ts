@@ -61,6 +61,24 @@ export function hiddenFromScouts(username: string): boolean {
   return handle.endsWith('-ai') || PLACEHOLDER_HANDLE.test(handle)
 }
 
+/** The cache key every Scouts to follow read lives under — a follow or
+ *  unfollow (`useToggleFollow`) changes the counts it shows. */
+export const SCOUTS_TO_FOLLOW_KEY = ['scouts-to-follow'] as const
+
+/**
+ * A follow (`delta` 1) or unfollow (-1) of `targetId`, on the rows already
+ * shown: that person's count moves at once, nobody moves place — the row
+ * stays under the pointer that tapped it. The true count and order load on
+ * the next visit.
+ */
+export function withFollowerChange(
+  rows: ScoutToFollow[] | undefined,
+  targetId: string,
+  delta: 1 | -1,
+): ScoutToFollow[] | undefined {
+  return rows?.map((row) => (row.id === targetId ? { ...row, followers: Math.max(0, row.followers + delta) } : row))
+}
+
 /** "1 follower" / "12 followers" / "1,204 followers". */
 export function followersLabel(n: number): string {
   return `${n.toLocaleString('en-US')} ${n === 1 ? 'follower' : 'followers'}`
@@ -138,7 +156,7 @@ export async function fetchScoutsToFollow(
 export function useScoutsToFollow() {
   const ranks = ranksOn()
   return useQuery({
-    queryKey: ['scouts-to-follow', SCOUTS_TO_FOLLOW_SIZE, ranks],
+    queryKey: [...SCOUTS_TO_FOLLOW_KEY, SCOUTS_TO_FOLLOW_SIZE, ranks],
     staleTime: 5 * 60 * 1000,
     queryFn: () => fetchScoutsToFollow(createBrowserClient(), { ranks }),
   })
