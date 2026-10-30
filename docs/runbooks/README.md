@@ -15,6 +15,7 @@ runbook through does not count as rehearsing it.
 | [restore-league-from-pitr.md](restore-league-from-pitr.md) | One league's data is lost or damaged and nothing smaller fixes it |
 | [postponed-game.md](postponed-game.md) | An NFL game is postponed or cancelled |
 | [beta-ladder.md](beta-ladder.md) | Running the 2026 test-league beta ladder, rung by rung (L.F2.11) |
+| [community-takedowns.md](community-takedowns.md) | Someone reported a list, comment, tag, bio, picture or AI board on Community, and it has to come down |
 
 ## The tools these pages use
 
@@ -27,6 +28,10 @@ runbook through does not count as rehearsing it.
     user** or **One league's members**. In-app bell only.
   - `/app/admin/log`: the operator log. Every change you made, never
     editable.
+  - `/app/admin/reports` (while Community is on): every report people made
+    on Community, newest first, with **Mark reviewed**, and **Remove
+    comment** on a reported comment. See
+    [community-takedowns.md](community-takedowns.md).
 - **Job buttons:** **Pause**, **Resume** and **Run now** for **Waivers**,
   **Week advance** and **Week finalize**. **Lineup locking** has **Run now**
   only. **Run now** is hidden while that job is paused: resume it first.

@@ -54,6 +54,8 @@ export const L_ICON = {
   clear: 'M4.5 6H10a3 3 0 0 1 0 6H6.5M6.5 3.5L4 6l2.5 2.5',
   note: 'M3.5 2.5h6.5L12.5 5v8.5h-9zM6 7.5h4M6 10h2.5',
   columns: 'M2.5 3h4.5v10H2.5zM9 3h4.5v10H9z',
+  // Report (Community launch plan C10) — the design has none.
+  flag: 'M3.5 14V2.5M3.5 3h8.5l-2 3 2 3H3.5',
 } as const
 
 export type LIconName = keyof typeof L_ICON
@@ -494,7 +496,8 @@ export function SlimBar({
   shown: boolean
   title: string
   onBack: () => void
-  /** Absent where the cover has no ⋯ (the Community list page). */
+  /** Absent where the cover has no ⋯ (the Community list page on your own
+   *  list — on someone else's, its ⋯ holds Report). */
   onOptions?: () => void
   /** Absent when the viewer can't edit (as the cover's Edit). */
   onEdit?: () => void

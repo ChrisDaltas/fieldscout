@@ -219,39 +219,78 @@ beforeEach(() => {
   h.rows.clear()
 })
 
-describe('who sees Delete', () => {
-  it('the comment’s author and the list’s owner; nobody else; nobody signed out', () => {
+/** One comment row's markup, by id. */
+const rowOf = (out: string, id: string) => {
+  const start = out.indexOf(`data-comment="${id}"`)
+  const next = out.indexOf('data-comment="', start + 1)
+  return out.slice(start, next === -1 ? undefined : next)
+}
+
+// C10 (Community launch plan) DELIBERATELY changes what C1 pinned here: the
+// ⋯ now also carries Report on everyone else's comment, so a reader gets a ⋯
+// on every comment (Report on others', Delete on his own), and a signed-out
+// reader gets one too — its Report sends him to sign in. Delete's rule is
+// unchanged: the author and the list's owner, nobody else.
+describe('who sees Delete and Report', () => {
+  it('Delete: the comment’s author and the list’s owner. Report: everyone else’s — signed out too (it signs you in)', () => {
     expect(commentMenuItems({ viewerId: 'u-me', authorId: 'u-me', listOwned: false })).toEqual(['delete'])
-    expect(commentMenuItems({ viewerId: 'u-me', authorId: 'u-kelly', listOwned: true })).toEqual(['delete'])
-    expect(commentMenuItems({ viewerId: 'u-me', authorId: 'u-kelly', listOwned: false })).toEqual([])
-    expect(commentMenuItems({ viewerId: null, authorId: 'u-kelly', listOwned: false })).toEqual([])
+    expect(commentMenuItems({ viewerId: 'u-me', authorId: 'u-me', listOwned: true })).toEqual(['delete'])
+    expect(commentMenuItems({ viewerId: 'u-me', authorId: 'u-kelly', listOwned: true })).toEqual(['report', 'delete'])
+    expect(commentMenuItems({ viewerId: 'u-me', authorId: 'u-kelly', listOwned: false })).toEqual(['report'])
+    expect(commentMenuItems({ viewerId: null, authorId: 'u-kelly', listOwned: false })).toEqual(['report'])
   })
 
-  it('phone: a reader gets ⋯ on his own comment only', () => {
-    expect(menuRows(phone())).toEqual(['c-mine'])
+  it('never Report on your own comment (prevent, don’t refuse)', () => {
+    for (const listOwned of [false, true]) {
+      expect(commentMenuItems({ viewerId: 'u-me', authorId: 'u-me', listOwned })).not.toContain('report')
+    }
+  })
+
+  it('phone: a reader gets ⋯ on every comment — his own (Delete) and everyone else’s (Report)', () => {
+    expect(menuRows(phone())).toEqual(['c-kelly', 'c-mine'])
   })
 
   it('phone: the list’s owner gets ⋯ on every comment', () => {
     expect(menuRows(phone({ listOwned: true }))).toEqual(['c-kelly', 'c-mine'])
   })
 
-  it('desktop: the same — reader on his own, owner on all', () => {
-    expect(menuRows(desktop())).toEqual(['c-mine'])
-    expect(menuRows(desktop({ listOwned: true }))).toEqual(['c-kelly', 'c-mine'])
+  it('desktop: Report on someone else’s comment, Delete on your own — and both for the list’s owner', () => {
+    let out = desktop()
+    expect(menuRows(out)).toEqual(['c-kelly', 'c-mine'])
+    expect(rowOf(out, 'c-kelly')).toContain('Report comment')
+    expect(rowOf(out, 'c-kelly')).not.toContain(DELETE_COMMENT.item)
+    expect(rowOf(out, 'c-mine')).toContain(DELETE_COMMENT.item)
+    expect(rowOf(out, 'c-mine')).not.toContain('Report comment')
+    out = desktop({ listOwned: true })
+    expect(rowOf(out, 'c-kelly')).toMatch(/Report comment[\s\S]*Delete comment/)
   })
 
-  it('someone else’s comment on someone else’s list: no ⋯ at all (hidden, not disabled)', () => {
+  it('someone else’s comment on someone else’s list: Report only — never Delete (hidden, not disabled)', () => {
     h.thread = thread([KELLYS])
     for (const out of [phone(), desktop()]) {
-      expect(out).not.toContain('data-comment-menu')
+      expect(menuRows(out)).toEqual(['c-kelly'])
       expect(out).not.toContain(DELETE_COMMENT.item)
     }
   })
 
-  it('signed out: no ⋯ on either layout', () => {
+  it('signed out: a ⋯ with Report only, which sends you to sign in and back', () => {
     h.user = null
-    expect(phone()).not.toContain('data-comment-menu')
-    expect(desktop({ signedIn: false })).not.toContain('data-comment-menu')
+    const out = desktop({ signedIn: false })
+    expect(menuRows(out)).toEqual(['c-kelly', 'c-mine'])
+    expect(out).not.toContain(DELETE_COMMENT.item)
+    for (const file of ['src/components/lists/v2/list-comments-tab.tsx', 'src/components/mobile/lists/comments-sheet.tsx']) {
+      const src = readFileSync(path.resolve(process.cwd(), file), 'utf8')
+      expect(src).toContain('router.push(signInHref(window.location.pathname + window.location.search, featureFlags.community))')
+    }
+  })
+
+  it('while Community is off: no ⋯ and no Report anywhere (the comment boxes are as they were)', () => {
+    h.community = false
+    expect(commentMenuItems({ viewerId: 'u-me', authorId: 'u-kelly', listOwned: false })).toEqual([])
+    for (const out of [phone({ listOwned: true }), desktop({ listOwned: true })]) {
+      expect(out).not.toContain('data-comment-menu')
+      expect(out).not.toContain('Report comment')
+    }
   })
 
   it('a thread still showing the last list’s comments (placeholder): no ⋯ yet', () => {
@@ -262,6 +301,20 @@ describe('who sees Delete', () => {
 
   it('desktop’s menu holds Delete comment', () => {
     expect(desktop()).toContain(DELETE_COMMENT.item)
+  })
+
+  it('phone: the comment’s sheet holds Report — and "Reported" once sent, which can’t be tapped', () => {
+    const onReport = vi.fn()
+    let tree = CommentMenuSheet({ open: true, onOpenChange: noop, comment: KELLYS, items: ['report'], step: 'menu', onStep: noop, onReport, onDelete: noop })
+    expect(html(tree)).toContain('Report comment')
+    h.rows.get('Report comment')!.onClick()
+    expect(onReport).toHaveBeenCalledTimes(1)
+    tree = CommentMenuSheet({ open: true, onOpenChange: noop, comment: KELLYS, items: ['report'], step: 'menu', onStep: noop, reported: true, onReport, onDelete: noop })
+    const out = html(tree)
+    expect(out).toContain('data-reported="comment"')
+    expect(out).toContain('>Reported<')
+    expect(out).not.toContain('Report comment')
+    expect(out.slice(out.indexOf('data-reported'))).not.toMatch(/^[^>]*<button/)
   })
 })
 
@@ -484,6 +537,40 @@ describe('the owner’s Comments on / off', () => {
     const out = html(createElement(ListDetailHero, heroProps(list({ is_owner: false }))))
     expect(out).toContain('</svg>Pin<') // the menu rendered
     expect(out).not.toContain('</svg>Comments<')
+  })
+
+  // Plan C10: Report on a list — the phone List options sheet and desktop's
+  // list menu, on someone else's list only.
+  it('phone List options: someone else’s list ends with Report list; your own has none', () => {
+    const onOpenChange = vi.fn()
+    const theirs = sheet(list({ is_owner: false, owner_id: 'u-kelly' }), onOpenChange)
+    expect(theirs).toContain('data-row="Report list"')
+    // Last, after the rest of the sheet.
+    expect(theirs.lastIndexOf('data-row=')).toBe(theirs.indexOf('data-row="Report list"'))
+    // Tapping it closes the options; the Report sheet opens.
+    h.rows.get('Report list')!.onClick()
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(sheet(list())).not.toContain('Report list')
+    h.community = false
+    expect(sheet(list({ is_owner: false, owner_id: 'u-kelly' }))).not.toContain('Report list')
+  })
+
+  it('desktop list menu: Report list when the panel passes it (someone else’s list), after a divider; none otherwise', () => {
+    const onReport = vi.fn()
+    const theirs = list({ is_owner: false, owner_id: 'u-kelly' })
+    const out = html(createElement(ListDetailHero, { ...heroProps(theirs), report: { reported: false, onReport } }))
+    expect(out).toContain('Report list')
+    expect(out).not.toContain('Delete list')
+    const tree = ListDetailHero({ ...heroProps(theirs), report: { reported: false, onReport } })
+    const item = find(tree, (p) => p.type === 'list' && typeof p.onSelect === 'function')
+    expect(item).toHaveLength(1)
+    ;(item[0]!.props.onSelect as () => void)()
+    expect(onReport).toHaveBeenCalledTimes(1)
+    expect(html(createElement(ListDetailHero, heroProps(list())))).not.toContain('Report list')
+    // The panel passes it only for someone else's list, and only on the
+    // Community switch (`reportAccess`).
+    const panel = readFileSync(path.resolve(process.cwd(), 'src/components/lists/v2/list-detail-panel.tsx'), 'utf8')
+    expect(panel).toContain("!list.is_owner && reportAccess({ viewerId: user?.id, ownerId: list.owner_id }) === 'report'")
   })
 
   it('comments off: no comment box, and a plain note — the owner’s says only he sees them', () => {

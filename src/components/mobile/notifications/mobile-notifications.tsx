@@ -9,7 +9,7 @@ import { toast } from '@/hooks/use-toast'
 import { useMarkNotificationsRead, useNotifications, type NotificationItem } from '@/hooks/use-notifications'
 import { cn } from '@/lib/utils'
 
-import { mobileNotificationHref } from './mobile-notification-href'
+import { mobileNotificationBody, mobileNotificationHref } from './mobile-notification-href'
 import { NOTIF_TONE_CLASS, notificationVisual, shortTime, subLine } from './notification-visual'
 
 /**
@@ -141,7 +141,7 @@ function NotificationRow({ n, read, time, onOpen }: { n: NotificationItem; read:
           {n.title}
           {!read && <span className="sr-only"> (unread)</span>}
         </span>
-        <span className="text-[12px] font-medium leading-[15px] text-m-t3">{subLine(n.body, time)}</span>
+        <span className="text-[12px] font-medium leading-[15px] text-m-t3">{subLine(mobileNotificationBody(n), time)}</span>
       </span>
       {!read && <span className="mt-1.5 size-[9px] flex-none rounded-full bg-accent" aria-hidden />}
     </>

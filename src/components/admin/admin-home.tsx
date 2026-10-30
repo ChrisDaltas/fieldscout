@@ -4,6 +4,10 @@ import Link from 'next/link'
 import { useState } from 'react'
 
 import { useAdminPlatformState } from '@/hooks/use-admin-platform-state'
+import { useAdminReports } from '@/hooks/use-admin-reports'
+import { AdminApiError } from '@/lib/admin/admin-api'
+import { REPORTS_UNAVAILABLE } from '@/lib/admin/content-reports'
+import { featureFlags } from '@/lib/feature-flags'
 
 import {
   AdminEmpty,
@@ -18,34 +22,73 @@ import {
   type ConfirmSpec,
 } from './admin-parts'
 import { heldWeeks, markedGames, overdueWeeks, overdueWords, stalledJobs, stalledWhy, type OpPlatformState } from './admin-console-ops'
+import { newReportsWords } from './admin-reports'
 
 /**
  * `/app/admin` — what needs the operator's attention, from `op_platform_state`
  * (186; 194 adds weeks stuck past Wednesday, F600): weeks a game is holding open, paused jobs, stalled jobs and marked
  * games; then the every-league job knobs and the scheduler's last runs.
+ * While Community is on, Needs attention also says how many reports nobody
+ * has reviewed yet, linking to Admin › Reports (plan C10).
  */
 export function AdminHome() {
   const q = useAdminPlatformState()
+  const reportsRead = useAdminReports({ enabled: featureFlags.community })
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null)
+  const reports: ReportsAttention | null = !featureFlags.community
+    ? null
+    : reportsRead.data
+      ? { kind: 'open', count: reportsRead.data.open }
+      : reportsRead.error instanceof AdminApiError && reportsRead.error.status === 503
+        ? { kind: 'unavailable' }
+        : reportsRead.error
+          ? { kind: 'failed', message: reportsRead.error.message }
+          : null
 
   return (
     <div className="flex flex-col gap-5" data-admin-page="home">
       <AdminHeader title="Admin" />
       {q.isLoading && <AdminLoading rows={4} label="platform" />}
       {q.error && <AdminError error={q.error} onRetry={() => q.refetch()} what="the platform view" />}
-      {q.data && <AdminHomeBody state={q.data} onConfirm={setConfirm} />}
+      {q.data && <AdminHomeBody state={q.data} onConfirm={setConfirm} reports={reports} />}
       <ConfirmActionDialog spec={confirm} onClose={() => setConfirm(null)} />
     </div>
   )
 }
 
+/**
+ * Reports for Needs attention (plan C10): how many are new, or why that
+ * can't be said — before migration 214 is pushed, or a failed read (loud,
+ * never a quiet zero). `null`: Community is off, or the read hasn't landed.
+ */
+export type ReportsAttention =
+  | { kind: 'open'; count: number }
+  | { kind: 'unavailable' }
+  | { kind: 'failed'; message: string }
+
 /** Presentational — exported for the render tests. */
-export function AdminHomeBody({ state, onConfirm }: { state: OpPlatformState; onConfirm: (s: ConfirmSpec) => void }) {
+export function AdminHomeBody({
+  state,
+  onConfirm,
+  reports = null,
+}: {
+  state: OpPlatformState
+  onConfirm: (s: ConfirmSpec) => void
+  reports?: ReportsAttention | null
+}) {
   const overdue = overdueWeeks(state)
   const held = heldWeeks(state)
   const marked = markedGames(state)
   const stalled = stalledJobs(state.cron)
-  const calm = overdue.length === 0 && held.length === 0 && state.pauses.length === 0 && stalled.length === 0 && marked.length === 0
+  const newReports = reports?.kind === 'open' ? reports.count : 0
+  const calm =
+    overdue.length === 0 &&
+    held.length === 0 &&
+    state.pauses.length === 0 &&
+    stalled.length === 0 &&
+    marked.length === 0 &&
+    newReports === 0 &&
+    reports?.kind !== 'failed'
 
   return (
     <>
@@ -55,6 +98,26 @@ export function AdminHomeBody({ state, onConfirm }: { state: OpPlatformState; on
         data-admin-section="attention"
       >
         {calm && <AdminEmpty label="attention">Nothing needs you. Every job ran, nothing is paused and no game is holding a week.</AdminEmpty>}
+
+        {newReports > 0 && (
+          <div className="flex flex-col gap-1" data-attention="reports">
+            <h3 className="text-[12px] font-bold text-ink">Reports</h3>
+            <p className="text-[11px] font-medium text-n-3">
+              <Link href="/app/admin/reports" className="font-semibold text-accent hover:underline" data-attention-reports-link>
+                {newReportsWords(newReports)}
+              </Link>{' '}
+              to review.
+            </p>
+          </div>
+        )}
+        {reports?.kind === 'failed' && (
+          <p className="text-[11px] font-medium text-n-3" data-attention="reports-failed">
+            <span className="font-semibold text-negative-strong">Couldn’t load reports.</span> {reports.message}{' '}
+            <Link href="/app/admin/reports" className="font-semibold text-accent hover:underline">
+              Open Reports
+            </Link>
+          </p>
+        )}
 
         {overdue.length > 0 && (
           <div role="alert" className="flex flex-col gap-1 border border-caution-strong bg-caution-soft px-3 py-2" data-attention="overdue-weeks">
@@ -113,6 +176,11 @@ export function AdminHomeBody({ state, onConfirm }: { state: OpPlatformState; on
           Waiting: <span className="fs-num">{state.pending.waiver_claims}</span> waiver claims ·{' '}
           <span className="fs-num">{state.pending.players_waiting_to_be_rescored}</span> players to re-score.
         </p>
+        {reports?.kind === 'unavailable' && (
+          <p className="text-[10px] font-medium text-n-6" data-attention="reports-unavailable">
+            {REPORTS_UNAVAILABLE}
+          </p>
+        )}
       </AdminSection>
 
       <AdminSection

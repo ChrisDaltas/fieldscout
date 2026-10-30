@@ -16,6 +16,8 @@
  *    cancelling or reordering a claim on your team
  *    (`league_waiver_claim_commissioner`, migration 145), whose pending
  *    claims are listed there.
+ *  - An admin's "New reports to review" (`content_report`, 214) → none:
+ *    Admin › Reports is desktop only.
  *  - Everything else: the shared target, or none — including a commissioner
  *    note change (`league_commissioner_note`, migration 192), whose shared
  *    target is the league home: on the phone, the League tab with the note
@@ -39,5 +41,16 @@ export function mobileNotificationHref(n: Pick<NotificationItem, 'type' | 'data'
   if (leagueId && (n.type === 'league_waiver_claim' || n.type === 'league_waiver_claim_commissioner')) {
     return transactionsHref(leagueId, { mine: true })
   }
+  // Community launch plan C10: an admin's "New reports to review" — Admin ›
+  // Reports is desktop only (the phone has no Admin screen), so on the phone
+  // the row is plain text and says where to look (`mobileNotificationBody`).
+  if (n.type === 'content_report') return null
   return notificationHref(n)
+}
+
+/** The row's grey line: the notification's own body — or, for an admin's
+ *  "New reports to review" (which carries none), where to review them. */
+export function mobileNotificationBody(n: Pick<NotificationItem, 'type' | 'body'>): string | null {
+  if (n.type === 'content_report' && !n.body?.trim()) return 'Review them in Admin, on desktop'
+  return n.body
 }

@@ -6,8 +6,7 @@
  *    Share, Pin — plus Like with its count, Follow beside the author (a
  *    person's list only), the AI note on an expert's board, and Back;
  *  - Share copies the public share link, not the app's address;
- *  - the list menu's slot is there for Report (C10) and empty until then, so
- *    there is no ⋯;
+ *  - the list's ⋯ holds Report (C10);
  *  - your own list goes to your Lists (ruling #20);
  *  - a failed read says so with Try again; a gone list says it's gone;
  *    loading is a skeleton, never an empty list;
@@ -184,9 +183,14 @@ describe('someone else’s list, inside the app', () => {
     expect(button).toContain('const url = href ? new URL(href, window.location.origin).toString() : window.location.href')
   })
 
-  it('the list menu waits for Report (plan C10): no item yet, so no ⋯', () => {
-    expect(code(PAGE_SRC)).toContain('menu: null,')
-    expect(page()).not.toContain('title="List options"')
+  // Plan C10 fills the slot C5 left empty (this pinned "no item yet, so no
+  // ⋯" until Report existed): the list's ⋯ now holds Report.
+  it('the list’s ⋯ holds Report (plan C10) — the Report dialog, then "Reported"', () => {
+    expect(page()).toContain('title="List options"')
+    const src = code(PAGE_SRC)
+    expect(src).toContain("reportAccess({ viewerId: user?.id, ownerId: list.owner_id }) === 'report' ? <ListMenu list={list} /> : null")
+    expect(src).toContain('<ReportMenuItem type="list" reported={reported} onSelect={() => setReportOpen(true)} />')
+    expect(src).toContain("<ReportDialog open={reportOpen} onOpenChange={setReportOpen} target={{ type: 'list', id: list.id }} quote={list.title} />")
   })
 
   it('Like, Pin and Follow say so when they don’t go through', () => {

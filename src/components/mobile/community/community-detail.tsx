@@ -16,14 +16,18 @@ import {
   type CommunityScoring,
 } from '@/components/mobile/community/community-ops'
 import { ListActions } from '@/components/mobile/community/list-actions'
+import { ReportRow, ReportSheet } from '@/components/mobile/community/report-sheet'
 import { ListAiAttribution } from '@/components/mobile/lists/list-ai-attribution'
 import { tierChipClass, viewSections, youTubeId, youTubeThumb } from '@/components/mobile/lists/lists-model'
-import { SlimBar, YouTubeBadge } from '@/components/mobile/lists/lists-parts'
+import { LIcon, SlimBar, YouTubeBadge } from '@/components/mobile/lists/lists-parts'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
+import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { M_PROJ_TEXT, SEASON_PROJ_LABEL } from '@/components/players/projected-points'
+import { reportAccess } from '@/components/report/report-ops'
 import { UsernameLink } from '@/components/shared/username-link'
+import { useAuth } from '@/hooks/use-auth'
 import { useListPersona } from '@/hooks/use-list-persona'
 import { useList, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
 import { useMobileCommunityListMeta } from '@/hooks/use-mobile-community-detail'
@@ -33,6 +37,7 @@ import { featureFlags } from '@/lib/feature-flags'
 import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
+import { useReportedStore, wasReported } from '@/stores/reported-store'
 
 /**
  * FieldScout Mobile — Community list detail (handoff m-community §2.14, D).
@@ -41,7 +46,9 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
  * pill, title, author + Follow, description, Save / Share, the Videos shelf
  * and the players. Once the cover has scrolled off, the List view's slim
  * Back · title bar (`SlimBar`, gap list #25) takes over at the top, so Back
- * never scrolls out of reach on a long list (plan C7, readiness S16). A
+ * never scrolls out of reach on a long list (plan C7, readiness S16). On
+ * someone else's list the cover's top right has a ⋯ (the List view's), and
+ * so does the slim bar: its sheet holds Report (plan C10). A
  * ranking (big board, weekly board, AI expert's board) is the handoff's
  * ranking variant ("Ranking · PPR", "Ranked players · N", always the collage
  * cover). The players carry
@@ -165,6 +172,58 @@ function PersonaHandle({ username }: { username: string }) {
   return featureFlags.personas ? <Link href={`/personas/${encodeURIComponent(username)}`}>{handle}</Link> : <>{handle}</>
 }
 
+/** The cover's ⋯ — the List view's, in the same place (top right). */
+function OptionsOnCover({ onOptions }: { onOptions: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOptions}
+      aria-label="List options"
+      aria-haspopup="dialog"
+      className="absolute right-3 top-[10px] flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white"
+      data-cover-options
+    >
+      <LIcon name="dots" size={16} stroke={2.6} />
+    </button>
+  )
+}
+
+/**
+ * The ⋯'s sheet on someone else's list (plan C10): Report — the Report
+ * sheet, then "Reported". The page's own row already has Like, Comments,
+ * Save and Share, so they aren't repeated here.
+ */
+function CommunityListOptions({
+  list,
+  open,
+  onOpenChange,
+}: {
+  list: ListWithDetails
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [reportOpen, setReportOpen] = useState(false)
+  const { user } = useAuth()
+  const reportedMarks = useReportedStore((state) => state.reported)
+  return (
+    <>
+      <MobileSheet bodyClassName="leading-[normal]" open={open} onOpenChange={onOpenChange} title="List options" subtitle={list.title} showClose>
+        <div className="flex flex-col px-3 pb-2" data-community-list-options>
+          <ReportRow
+            type="list"
+            reported={wasReported(reportedMarks, user?.id, 'list', list.id)}
+            onReport={() => {
+              onOpenChange(false)
+              setReportOpen(true)
+            }}
+          />
+        </div>
+      </MobileSheet>
+      <ReportSheet open={reportOpen} onOpenChange={setReportOpen} target={{ type: 'list', id: list.id }} quote={list.title} />
+    </>
+  )
+}
+
 function BackOnCover({ buttonRef, onBack }: { buttonRef: React.Ref<HTMLButtonElement>; onBack: () => void }) {
   return (
     <button
@@ -241,6 +300,11 @@ function DetailBody({
     scoring_system_id: null,
   })
   const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
+  const { user } = useAuth()
+  // The ⋯ (plan C10): someone else's list only — its one item is Report,
+  // which is never offered on your own (prevent, don't refuse).
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const hasOptions = !list.is_owner && reportAccess({ viewerId: user?.id, ownerId: list.owner_id }) === 'report'
   // The slim bar shows once the cover has gone up under it (the List view's
   // watcher: it hears this dialog's own scroller too).
   const coverRef = useRef<HTMLDivElement>(null)
@@ -284,7 +348,14 @@ function DetailBody({
   return (
     <>
       {/* The dialog already pads its scroller clear of the notch. */}
-      <SlimBar barRef={barRef} shown={coverOff} title={list.title} onBack={onBack} safeArea={false} />
+      <SlimBar
+        barRef={barRef}
+        shown={coverOff}
+        title={list.title}
+        onBack={onBack}
+        onOptions={hasOptions ? () => setOptionsOpen(true) : undefined}
+        safeArea={false}
+      />
       <div ref={coverRef} className="relative">
         <ListCover
           item={{
@@ -300,7 +371,9 @@ function DetailBody({
           variant="detail"
         />
         <BackOnCover buttonRef={backRef} onBack={onBack} />
+        {hasOptions && <OptionsOnCover onOptions={() => setOptionsOpen(true)} />}
       </div>
+      {hasOptions && <CommunityListOptions list={list} open={optionsOpen} onOpenChange={setOptionsOpen} />}
 
       <div className="flex flex-col gap-3 p-4">
         <span
