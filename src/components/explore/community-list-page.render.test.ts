@@ -227,6 +227,39 @@ describe('an AI expert’s board', () => {
   it('has no Follow — the board’s owner is the FieldScout AI account, not a person', () => {
     expect(page()).not.toContain('>Follow<')
   })
+
+  // XPR-1 / WDO-4: the byline named the owning account, as a link to its
+  // profile — in production @fieldscout-ai, which has a Follow button.
+  it('the byline names the expert, as plain text — never the account that owns the board, never a profile link (plan E2)', () => {
+    const out = page()
+    expect(out).toMatch(/<span data-persona-handle="bathew"[^>]*>@bathew<\/span>/)
+    expect(out).not.toContain('fieldscout-ai')
+    expect(out).not.toContain('data-username-link')
+    expect(out).not.toMatch(/href="\/(app\/)?u\//)
+  })
+
+  it('…while Share still copies the owning account’s public link (the share URL needs it)', () => {
+    expect(code(PAGE_SRC)).toContain('shareHref={`${userProfileHref(ownerUsername)}/lists/${encodeURIComponent(list.slug)}`}')
+    expect(code(PAGE_SRC)).toContain('{ username: author.username, avatarUrl: author.avatarUrl, isPersona: true }')
+  })
+})
+
+describe('the list hero’s byline outside Community is unchanged', () => {
+  it('your own Lists panel and the share page pass no persona form: the owner stays a profile link', () => {
+    const hero = code('src/components/lists/v2/list-detail-hero.tsx')
+    expect(hero).toContain('{owner.isPersona ? (')
+    expect(hero).toContain('<UsernameLink username={owner.username} className="text-[11px] font-semibold text-ink" />')
+    expect(code('src/components/lists/v2/list-detail-panel.tsx')).not.toContain('isPersona')
+    expect(code('src/app/u/[username]/lists/[listSlug]/page.tsx')).not.toContain('isPersona')
+  })
+})
+
+describe('a list with nobody on it says so (WPO-4)', () => {
+  it('“No players on this list yet.” — never a count over blank space', () => {
+    const out = text(page())
+    expect(out).toContain('No players on this list yet.')
+    expect(out).toContain('The owner has not added anyone yet.')
+  })
 })
 
 describe('a person’s list has no AI note', () => {

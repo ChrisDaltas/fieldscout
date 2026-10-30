@@ -30,6 +30,7 @@ const h = vi.hoisted(() => ({
   feed: {} as Record<string, unknown>,
   tags: [] as { id: string; name: string; slug: string }[],
   toast: vi.fn(),
+  topic: null as string | null,
 }))
 
 vi.mock('next/navigation', () => ({
@@ -54,6 +55,12 @@ vi.mock('@/hooks/use-follows', () => ({
 }))
 vi.mock('@/hooks/use-profile-href', () => ({ useProfileHref: (u: string) => `/u/${u}` }))
 vi.mock('@/hooks/use-toast', () => ({ toast: (arg: unknown) => h.toast(arg) }))
+// The topic the feed is filtered by — shared with the Trending tags card
+// (a static render reads a store's initial state, so the test hands it in).
+vi.mock('@/stores/community-topic-store', () => ({
+  useCommunityTopicStore: (pick: (s: { tagId: string | null; setTagId: () => void }) => unknown) =>
+    pick({ tagId: h.topic, setTagId: () => {} }),
+}))
 
 import { toastFollowFailed } from './follow-button'
 import { ExploreFeed, feedTopics, toastLikeFailed } from './explore-feed'
@@ -71,7 +78,6 @@ function item(id: string, over: Partial<ExploreFeedItem> = {}): ExploreFeedItem 
     created_at: '2026-10-01T00:00:00Z',
     author: { name: null, handle: `user${id}`, avatar_url: null },
     href: `/u/user${id}/lists/${id}`,
-    author_href: `/u/user${id}`,
     author_id: `u-${id}`,
     is_liked: false,
     tag: null,
@@ -103,6 +109,7 @@ const code = (file: string) =>
 
 beforeEach(() => {
   h.toast.mockClear()
+  h.topic = null
   h.tags = []
   setFeed([{ items: [item('a'), item('b')], next: null }])
 })
@@ -240,6 +247,20 @@ describe('the topic chips: only tags a list on the feed carries (plan C4)', () =
 
   it('the chips read the unfiltered Popular feed, whatever tab or chip is on', () => {
     expect(code('src/components/explore/explore-feed.tsx')).toMatch(/useExploreFeed\('popular', null\)/)
+  })
+
+  // WDO-2: the topic is the one the Trending tags card sets, too.
+  it('the topic is the shared one — a tag picked on the Trending tags card shows as this chip, on', () => {
+    h.tags = TRENDING
+    h.topic = 't-rook'
+    setFeed([{ items: [item('a', { tags: [ROOKIES] }), item('b', { tags: [DFS] })], next: null }])
+    const out = render()
+    expect(out).toMatch(/<button[^>]*aria-pressed="true"[^>]*>(<[^>]+>)*Rookies/)
+    expect(out).toMatch(/<button[^>]*aria-pressed="false"[^>]*>(<[^>]+>)*All/)
+  })
+
+  it('…and leaving Community puts it back to All, as when it was the feed’s own', () => {
+    expect(code('src/components/explore/explore-feed.tsx')).toContain('useEffect(() => () => setTagId(null), [setTagId])')
   })
 })
 
