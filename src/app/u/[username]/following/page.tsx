@@ -6,6 +6,7 @@ import { GuestShell } from '@/components/layout/guest-shell'
 import { PhoneHandoff } from '@/components/shared/phone-handoff'
 import { ProfileListRow } from '@/components/profile/profile-list-row'
 import { credOrStart } from '@/lib/cred-tiers'
+import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
 import { createServerClient } from '@/lib/supabase/server'
 import { phoneFollowsHref, userProfileHref } from '@/components/shared/username-link-ops'
 
@@ -25,22 +26,32 @@ interface FollowingProfile {
 async function loadFollowing(username: string) {
   const supabase = await createServerClient()
 
-  const { data: profile } = await supabase
+  // A failed read throws (the segment's error.tsx says it couldn't load) —
+  // never a false 404 or "Not following anyone yet" (plan C4, S13).
+  const { data: profile, error } = await supabase
     .from('profiles')
     .select('id, username')
     .eq('username', username)
     .maybeSingle()
+  if (error) throw new Error(`Couldn't load the profile: ${error.message}`)
   if (!profile) return null
 
-  const { data: rows } = await supabase
-    .from('follows')
-    .select(
-      'following:profiles!follows_following_id_fkey(id, username, avatar_url, bio, cred_score, is_pro)',
-    )
-    .eq('follower_id', profile.id)
-    .order('created_at', { ascending: false })
+  // Every row, past PostgREST's 1000-row cap (`pageAll`, with an exact
+  // count) — the same read as the phone's screen (`usePersonFollows`). The
+  // other id is unique within the filter, so it ends the sort.
+  const rows = await pageAll<{ following: FollowingProfile | null }>((from, to) =>
+    supabase
+      .from('follows')
+      .select('following:profiles!follows_following_id_fkey(id, username, avatar_url, bio, cred_score, is_pro)', {
+        count: 'exact',
+      })
+      .eq('follower_id', profile.id)
+      .order('created_at', { ascending: false })
+      .order('following_id', { ascending: true })
+      .range(from, to) as unknown as PageResponse<{ following: FollowingProfile | null }>,
+  )
 
-  const following = ((rows ?? []) as unknown as Array<{ following: FollowingProfile | null }>)
+  const following = rows
     .map((r) => r.following)
     .filter((p): p is FollowingProfile => Boolean(p))
 

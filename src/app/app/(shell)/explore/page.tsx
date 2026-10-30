@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 
 import { ExploreFeed } from '@/components/explore/explore-feed'
-import { TopScoutsCard } from '@/components/explore/top-scouts-card'
+import { ScoutsToFollowCard } from '@/components/explore/scouts-to-follow-card'
 import { TrendingTagsCard } from '@/components/explore/trending-tags-card'
 import { PageHeader } from '@/components/layout/app-header'
 import { TwoColumnLayout } from '@/components/layout/two-column-layout'
@@ -12,7 +12,7 @@ import { getCurrentNflWeek } from '@/lib/sports-data/nfl-state'
 /**
  * Community (package screen 08) — the social surface: explore other users'
  * public lists and rankings (moved here from Home). Feed fills the main
- * column; the top-scouts leaderboard + trending tags sit in the capped
+ * column; Scouts to follow + trending tags sit in the capped
  * context column. The mobile layout is its own screen (FieldScout Mobile
  * handoff, m-community).
  */
@@ -27,7 +27,7 @@ export default function ExplorePage() {
             main={<ExploreFeed />}
             aside={
               <>
-                <TopScoutsCard />
+                <ScoutsToFollowCard />
                 <TrendingTagsCard />
               </>
             }

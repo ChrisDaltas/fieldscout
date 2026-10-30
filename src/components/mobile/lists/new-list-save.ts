@@ -180,8 +180,13 @@ export async function saveNewList(input: NewListSaveInput, io: NewListSaveIO): P
 }
 
 /** The toast once a new list is saved: "List created", and what of its
- *  cover and videos didn't make it (only one toast shows at a time). */
-export function createdToast(created: Pick<CreatedList, 'coverError' | 'videoFailures'>): {
+ *  cover and videos didn't make it (only one toast shows at a time). A list
+ *  saved with no players says how to share it (`hint` —
+ *  `emptyListShareHint`, plan C4): "List created. Add players to share it." */
+export function createdToast(
+  created: Pick<CreatedList, 'coverError' | 'videoFailures'>,
+  hint: string | null = null,
+): {
   title: string
   description?: string
 } {
@@ -192,5 +197,5 @@ export function createdToast(created: Pick<CreatedList, 'coverError' | 'videoFai
   }
   if (created.coverError) return { title: 'List created, but the cover image didn’t upload', description: created.coverError }
   if (videos > 0) return { title: `List created, but ${videoWords} couldn’t be added`, description: created.videoFailures[0] }
-  return { title: 'List created' }
+  return hint ? { title: 'List created', description: hint } : { title: 'List created' }
 }

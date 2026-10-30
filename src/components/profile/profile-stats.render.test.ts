@@ -17,12 +17,19 @@ import { join } from 'node:path'
 
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { CredExplainer } from '@/components/stats/cred-info-popover'
 import { CRED_START, CRED_TIERS } from '@/lib/cred-tiers'
 
+import { ProfileHeader } from './profile-header'
 import { ProfileStats } from './profile-stats'
+
+// Every switch the accuracy block could ride on, flippable per test.
+const h = vi.hoisted(() => ({
+  flags: { weeklyRanks: false, bigBoard: false, startOrSit: false, consensus: false, community: true },
+}))
+vi.mock('@/lib/feature-flags', () => ({ featureFlags: h.flags }))
 
 /** Rendered text with the tags stripped and the escapes React adds undone. */
 function text(html: string): string {
@@ -83,6 +90,20 @@ describe('ProfileStats — My stats and the public profile', () => {
     expect(stats(false)).not.toContain('How cred')
   })
 
+  it.each([true, false])(
+    'Ranking accuracy stays out with every rankings switch on — it is placeholder text with no data behind it (plan C4; info button: %s)',
+    (own) => {
+      Object.assign(h.flags, { weeklyRanks: true, bigBoard: true, startOrSit: true, consensus: true })
+      try {
+        const t = text(stats(own))
+        expect(t).not.toMatch(/accuracy/i)
+        expect(t).not.toMatch(/Tracks from week|kicked off|Best week|vs consensus|Spearman/i)
+      } finally {
+        Object.assign(h.flags, { weeklyRanks: false, bigBoard: false, startOrSit: false, consensus: false })
+      }
+    },
+  )
+
   it('a top-tier score still reads as the top tier', () => {
     const t = text(stats(false, 9400))
     expect(t).toContain('Top tier reached')
@@ -113,8 +134,39 @@ describe('CredExplainer — the "How cred works" popover body', () => {
 })
 
 describe('the public profile page', () => {
+  const src = readFileSync(join(process.cwd(), 'src/app/u/[username]/page.tsx'), 'utf8')
+
   it("its search description no longer promises an accuracy record", () => {
-    const src = readFileSync(join(process.cwd(), 'src/app/u/[username]/page.tsx'), 'utf8')
     expect(src).not.toMatch(/accuracy/i)
+  })
+
+  it('its search description is "@x\'s lists on FieldScout." (plan C4)', () => {
+    expect(src).toContain("profile.bio ?? `${handle}'s lists on FieldScout.`")
+    expect(src).not.toMatch(/cred and public lists/)
+  })
+})
+
+describe('ProfileHeader — no Pro badge while the app offers no Pro (plan C4, readiness F8)', () => {
+  const header = (isOwn: boolean) =>
+    text(
+      renderToStaticMarkup(
+        createElement(ProfileHeader, {
+          username: 'fieldscout-ai',
+          bio: null,
+          avatarUrl: null,
+          isPro: true,
+          credScore: CRED_START,
+          followerCount: 3,
+          followingCount: 0,
+          isOwn,
+        }),
+      ),
+    )
+
+  it.each([true, false])('a Pro account shows no "Pro" (own page: %s); the tier badge stays', (own) => {
+    const t = header(own)
+    expect(t).not.toMatch(/\bPro\b/)
+    expect(t).toContain('Freshie')
+    expect(t).toContain('@fieldscout-ai')
   })
 })

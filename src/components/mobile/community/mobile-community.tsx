@@ -31,6 +31,8 @@ import {
   normQuery,
   olderSpecs,
   rankTypeChips,
+  searchPlaceholder,
+  shownItems,
   topicAwaitingServer,
   withOlder,
   type CommunityTopic,
@@ -38,7 +40,7 @@ import {
   type OlderSpec,
 } from '@/components/mobile/community/community-ops'
 import { useCommunityStore } from '@/components/mobile/community/community-store'
-import { TopScoutsShelf, TrendingTagsShelf } from '@/components/mobile/community/community-shelves'
+import { ScoutsToFollowShelf, TrendingTagsShelf } from '@/components/mobile/community/community-shelves'
 import { CreateSheet } from '@/components/mobile/community/create-sheet'
 import { activeWeekOf } from '@/components/mobile/rankings/rankings-ops'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
@@ -151,7 +153,9 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
     injuries: injuryMatches.isLoading,
   })
 
-  const topics = useMemo(() => deriveTopics(items, topic), [items, topic])
+  // Topic pills come only from what Community shows: never a tag or a player
+  // that only a switched-off ranking carries (readiness S10).
+  const topics = useMemo(() => deriveTopics(shownItems(items, ranksOn()), topic), [items, topic])
   // "Now" for the relative times and the For you order is when the feed was
   // read (the order holds still until the next read).
   const now = feed.dataUpdatedAt
@@ -203,7 +207,7 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
     : `Couldn’t load the ${ranksReading && listsReading ? 'lists and rankings' : ranksReading ? 'rankings' : 'lists'}.`
   // What For you can show — the lists a Trending tag may filter to.
   const forYouShown = useMemo(
-    () => [...items, ...(feed.data?.popularExtra ?? [])].filter((i) => ranksOn() || i.kind !== 'rank'),
+    () => shownItems([...items, ...(feed.data?.popularExtra ?? [])], ranksOn()),
     [items, feed.data],
   )
   const topRef = useRef<HTMLDivElement>(null)
@@ -245,7 +249,11 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
   const followingPending = tab === 'following' && following.isLoading
   // Rankings tab: the chips can exclude every ranking — say so (the
   // prototype went blank here; its empty test ran before the chips).
-  const copy = emptyCopy(tab, topic, q, results.rankFilteredEmpty, { followsAnyone: followingIds.size > 0 })
+  const copy = emptyCopy(tab, topic, q, results.rankFilteredEmpty, {
+    followsAnyone: followingIds.size > 0,
+    ranks: ranksOn(),
+    startOrSit: featureFlags.startOrSit,
+  })
   const onEmptyAction = () => {
     if (copy.kind === 'rank') resetRankFilters()
     else if (copy.kind === 'create') router.push(CREATE_LIST_HREF)
@@ -368,7 +376,7 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
                 {/* Desktop's right-hand cards as For you shelves (gap list
                     §3 #26) — people, then topics, before the long Lists
                     shelf. */}
-                <TopScoutsShelf />
+                <ScoutsToFollowShelf />
                 <TrendingTagsShelf shown={forYouShown} onPick={pickTag} />
                 {shelfLists.length > 0 ? (
                   <>
@@ -382,7 +390,7 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
                     <>
                       <ShelfHeader title="Lists for you" onSeeAll={() => setTab('list')} className="mb-[10px] mt-[22px]" />
                       <EmptyBlock
-                        message={ranks.length > 0 ? 'No lists yet' : 'No lists or rankings yet'}
+                        message={ranks.length > 0 || !ranksOn() ? 'No lists yet' : 'No lists or rankings yet'}
                         action="Create a list"
                         onAction={() => router.push(CREATE_LIST_HREF)}
                       />
@@ -527,7 +535,7 @@ function SearchRow() {
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Lists, rankings, people or players"
+          placeholder={searchPlaceholder(ranksOn())}
           aria-label="Search Community"
           enterKeyHint="search"
           autoComplete="off"

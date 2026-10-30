@@ -1,8 +1,9 @@
 /**
- * For you's "Top scouts" and "Trending tags" shelves (gap list §3 #26 —
+ * For you's "Scouts to follow" and "Trending tags" shelves (gap list §3 #26 —
  * desktop Community's right-hand cards on the phone). Pinned:
- *  - Top scouts: the leaderboard's rows in its order (rank, avatar, the
- *    handle as the profile link stretched over the row, "N cred"), Follow on
+ *  - Scouts to follow (plan C4 — it was "Top scouts", ranked by cred): the
+ *    read's rows in its order (number, avatar, the handle as the profile
+ *    link stretched over the row, "N followers" — never cred), Follow on
  *    others' rows and "You" on yours; loading, a failed read (says so, with
  *    a retry), and no scouts (not drawn);
  *  - Trending tags: desktop's trending read, offered only where a list on
@@ -29,7 +30,10 @@ vi.mock('@/hooks/use-follows', () => ({
   useFollowingIds: () => ({ data: new Set<string>(['u-kelly']) }),
   useToggleFollow: () => ({ mutate: () => {}, isPending: false }),
 }))
-vi.mock('@/hooks/use-top-scouts', () => ({ useTopScouts: () => h.scouts }))
+vi.mock('@/hooks/use-scouts-to-follow', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/use-scouts-to-follow')>()),
+  useScoutsToFollow: () => h.scouts,
+}))
 vi.mock('@/hooks/use-tags', () => ({
   useTags: (arg: unknown) => {
     h.tagsArg = arg
@@ -37,18 +41,18 @@ vi.mock('@/hooks/use-tags', () => ({
   },
 }))
 
-import { TopScoutsShelf, TrendingTagsShelf } from './community-shelves'
+import { ScoutsToFollowShelf, TrendingTagsShelf } from './community-shelves'
 
 const SCOUTS = [
-  { id: 'u-kelly', username: 'kelly', avatar_url: null, cred_score: 1240 },
-  { id: 'u-me', username: 'me', avatar_url: null, cred_score: 980 },
-  { id: 'u-ortiz', username: 'ortiz', avatar_url: null, cred_score: 15 },
+  { id: 'u-kelly', username: 'kelly', avatar_url: null, followers: 1240 },
+  { id: 'u-me', username: 'me', avatar_url: null, followers: 1 },
+  { id: 'u-ortiz', username: 'ortiz', avatar_url: null, followers: 0 },
 ]
 
-const scoutsRender = () => renderToStaticMarkup(createElement(TopScoutsShelf)).replace(/&#x27;/g, "'")
+const scoutsRender = () => renderToStaticMarkup(createElement(ScoutsToFollowShelf)).replace(/&#x27;/g, "'")
 
 /** One `<li>` per scout row. */
-const rows = (out: string) => [...out.matchAll(/<li[^>]*data-top-scout[^>]*>(.*?)<\/li>/g)].map((m) => m[1]!)
+const rows = (out: string) => [...out.matchAll(/<li[^>]*data-scout[^>]*>(.*?)<\/li>/g)].map((m) => m[1]!)
 
 beforeEach(() => {
   h.scouts = { isPending: false, isError: false, isSuccess: true, data: SCOUTS, refetch: () => {} }
@@ -56,19 +60,23 @@ beforeEach(() => {
   h.tagsArg = undefined
 })
 
-describe('Top scouts', () => {
-  it('the leaderboard in its order: rank, the handle linking to the profile over the row, "N cred"', () => {
+describe('Scouts to follow', () => {
+  it('the read in its order: number, the handle linking to the profile over the row, "N followers"', () => {
     const out = scoutsRender()
-    expect(out).toContain('>Top scouts</h2>')
+    expect(out).toContain('>Scouts to follow</h2>')
+    expect(out).not.toMatch(/Top scouts/i)
     const r = rows(out)
     expect(r).toHaveLength(3)
     expect(r[0]).toMatch(/>1<\/span>/)
     const link = r[0]!.match(/<a[^>]*>@kelly<\/a>/)?.[0] ?? ''
     expect(link).toContain('href="/u/kelly"')
     expect(link).toContain('after:absolute after:inset-0')
-    expect(r[0]).toContain('1,240 cred')
+    expect(r[0]).toContain('1,240 followers')
+    expect(r[1]).toContain('1 follower<')
     expect(r[2]).toMatch(/>3<\/span>/)
-    expect(r[2]).toContain('15 cred')
+    expect(r[2]).toContain('0 followers')
+    // Followers, not cred: nothing awards cred yet.
+    expect(out).not.toMatch(/cred/i)
   })
 
   it('Follow on someone else’s row (Following once you do); "You" on your own', () => {
@@ -87,7 +95,7 @@ describe('Top scouts', () => {
   it('loading: placeholders under the title, no rows', () => {
     h.scouts = { isPending: true, isError: false, isSuccess: false, data: undefined }
     const out = scoutsRender()
-    expect(out).toContain('>Top scouts</h2>')
+    expect(out).toContain('>Scouts to follow</h2>')
     expect(out).toContain('aria-busy="true"')
     expect(rows(out)).toEqual([])
   })
@@ -95,7 +103,7 @@ describe('Top scouts', () => {
   it('a failed read says so, with a retry — never an empty-looking shelf', () => {
     h.scouts = { isPending: false, isError: true, isSuccess: false, data: undefined, refetch: () => {} }
     const out = scoutsRender()
-    expect(out).toContain('Couldn’t load top scouts.')
+    expect(out).toContain('Couldn’t load scouts to follow.')
     expect(out).toContain('>Try again</button>')
   })
 })

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { computeCredRank } from '@/lib/cred-tiers'
+import { PRO_UPSELL_ENABLED } from '@/lib/pro-upsell'
 
 interface ProfileHeaderProps {
   username: string
@@ -19,7 +20,7 @@ interface ProfileHeaderProps {
 
 /**
  * Profile header (v7 Profile) — no card: a 65px round avatar beside the
- * 26px handle + tier/Pro badges, and an 11px grey meta line with linked
+ * 26px handle + tier badge (and Pro, once the app offers Pro again), and an 11px grey meta line with linked
  * follower/following counts in tabular numerals.
  *
  * The handle is the only name a person renders under — FieldScout stores no
@@ -63,7 +64,10 @@ export function ProfileHeader({
             />
             {rank.current.name}
           </Badge>
-          {isPro && <Badge variant="accent">Pro</Badge>}
+          {/* No Pro badge while the app offers no Pro (`PRO_UPSELL_ENABLED`,
+              plan C4 / readiness F8): a "Pro" on someone's name means nothing
+              when every account gets everything. */}
+          {PRO_UPSELL_ENABLED && isPro && <Badge variant="accent">Pro</Badge>}
         </div>
 
         <p className="flex flex-wrap items-center gap-x-1.5 text-[11px] font-semibold text-n-3">

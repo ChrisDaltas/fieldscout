@@ -20,13 +20,16 @@ interface PageProps {
 async function loadProfile(username: string) {
   const supabase = await createServerClient()
 
-  const { data: profile } = await supabase
+  // A failed read throws (the segment's error.tsx says it couldn't load) —
+  // never a false "User not found" or an empty profile (plan C4, S13).
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select(
       'id, username, avatar_url, bio, cred_score, is_pro, follower_count, following_count',
     )
     .eq('username', username)
     .maybeSingle()
+  if (profileError) throw new Error(`Couldn't load the profile: ${profileError.message}`)
 
   if (!profile) return null
 
@@ -37,7 +40,7 @@ async function loadProfile(username: string) {
   // hides their lists per spec). Even when the owner is signed in viewing
   // their own /u/[username] page, we still show lists so they see what
   // visitors see.
-  const { data: lists } = await supabase
+  const { data: lists, error: listsError } = await supabase
     .from('lists')
     .select(
       'id, owner_id, title, slug, description, position_filter, like_count, view_count, player_count, updated_at',
@@ -48,6 +51,7 @@ async function loadProfile(username: string) {
     .is('deleted_at', null)
     .order('updated_at', { ascending: false })
     .limit(20)
+  if (listsError) throw new Error(`Couldn't load the profile's lists: ${listsError.message}`)
 
   return { profile, isOwn, lists: lists ?? [] }
 }
@@ -63,7 +67,7 @@ export async function generateMetadata({
   return {
     title: `${handle} · FieldScout`,
     description:
-      profile.bio ?? `${handle}'s cred and public lists on FieldScout.`,
+      profile.bio ?? `${handle}'s lists on FieldScout.`,
   }
 }
 

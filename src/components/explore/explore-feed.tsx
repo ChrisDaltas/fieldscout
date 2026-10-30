@@ -26,6 +26,7 @@ import {
 import { useToggleLike } from '@/hooks/use-lists'
 import { useTags } from '@/hooks/use-tags'
 import { toast } from '@/hooks/use-toast'
+import { ranksOn } from '@/lib/rankings/ranks-on'
 import { useUIStore } from '@/stores/ui-store'
 
 const TOPIC_CHIP_COUNT = 6
@@ -271,7 +272,8 @@ export function ExploreFeed() {
             </p>
             <p className="mt-1 text-[11px] font-medium text-n-6">
               {tab === 'following'
-                ? 'Lists and rankings from scouts you follow will show up here.'
+                ? // Only what's switched on is promised (plan C4, readiness S5).
+                  `${ranksOn() ? 'Lists and rankings' : 'Lists'} from scouts you follow will show up here.`
                 : 'Be the first — make a list and add a few players to it.'}
             </p>
             {tab !== 'following' && (
