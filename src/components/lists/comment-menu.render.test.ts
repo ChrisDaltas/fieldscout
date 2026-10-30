@@ -495,7 +495,7 @@ describe('the owner’s Comments on / off', () => {
     }
     h.thread = thread([KELLYS])
     for (const out of [phone({ enabled: false, listOwned: true }), desktop({ enabled: false, listOwned: true })]) {
-      expect(out).toContain('You turned comments off. Nobody else can see or add comments.')
+      expect(out).toContain('You turned comments off. Only you can see these, and nobody can add new ones.')
       // What was there stays his to read and to delete.
       expect(menuRows(out)).toEqual(['c-kelly'])
     }

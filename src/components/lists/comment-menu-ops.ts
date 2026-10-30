@@ -77,6 +77,6 @@ export function confirmCommentDelete(
 /** "Comments are off" — what a reader sees, and what the owner sees. */
 export function commentsOffCopy(listOwned: boolean): string {
   return listOwned
-    ? 'You turned comments off. Nobody else can see or add comments.'
+    ? 'You turned comments off. Only you can see these, and nobody can add new ones.'
     : 'Comments are turned off on this list.'
 }
