@@ -1,6 +1,7 @@
 'use client'
 
 import { AiExpertShelf } from '@/components/home/ai-expert-shelf'
+import { HomeCommunityCard } from '@/components/home/home-community-card'
 import { HomeQuickActions } from '@/components/home/home-quick-actions'
 import { InjuryNewsCard } from '@/components/home/injury-news-card'
 import { RecentlyViewed } from '@/components/home/recently-viewed'
@@ -15,7 +16,8 @@ import { featureFlags } from '@/lib/feature-flags'
 /**
  * Home — the jump-off hub (v7 account Home). Sections sit 31px apart; inside
  * the hub grid cards sit 10px apart: the viewer's real league cards on the
- * left, trending / injuries on the right. FieldScout-only
+ * left, then — while Community is switched on — "From the Community" (plan
+ * C8), trending / injuries on the right. FieldScout-only
  * surfaces v7 doesn't show (AI experts shelf, recently viewed) keep their data
  * wiring and render full-width below the hub grid in the same card language.
  * The title stays the shell's standard page header (one header per page —
@@ -41,6 +43,7 @@ function DesktopHome() {
           main={
             <div className="flex min-w-0 flex-col gap-[10px]">
               <YourLeagues />
+              {featureFlags.community && <HomeCommunityCard />}
             </div>
           }
           aside={
@@ -57,6 +60,7 @@ function DesktopHome() {
           main={
             <div className="flex min-w-0 flex-col gap-[10px]">
               <TrendingPlayersCard />
+              {featureFlags.community && <HomeCommunityCard />}
             </div>
           }
           aside={<InjuryNewsCard />}

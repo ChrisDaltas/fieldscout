@@ -4,6 +4,7 @@ import { useInfiniteQuery, type InfiniteData } from '@tanstack/react-query'
 
 import {
   classifyCommunityList,
+  HOME_COMMUNITY_SIZE,
   hottestLikedOutside,
   inAppListHref,
   shownInCommunityQuery,
@@ -251,6 +252,25 @@ export function popularOrder(
 export function exploreFeedItems(pages: readonly ExploreFeedPage[]): ExploreFeedItem[] {
   const seen = new Set<string>()
   return pages.flatMap((page) => page.items).filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)))
+}
+
+/**
+ * Home's "From the Community" card on desktop (plan C8): the lists the
+ * Popular tab shows, in its order — the phone's For you order, "popular +
+ * recent" (ruling #35) — the first `size`. Read through Community's own
+ * Popular feed, so the card and the tab its See all opens never disagree.
+ * Real lists only, the feed's rule (plan C3): no list without players, and
+ * no rankings whatever their switch says — Home's way into Rankings comes
+ * with them (plan Stage 2). With rankings on, the card shows the lists
+ * among the rows Popular has read so far, never a ranking in their place.
+ */
+export function homeCommunityItems(
+  pages: readonly ExploreFeedPage[],
+  size: number = HOME_COMMUNITY_SIZE,
+): ExploreFeedItem[] {
+  return exploreFeedItems(pages)
+    .filter((item) => !item.is_ranking && item.player_count > 0)
+    .slice(0, size)
 }
 
 /**

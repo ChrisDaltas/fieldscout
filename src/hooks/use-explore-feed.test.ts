@@ -59,6 +59,7 @@ import {
   EXPLORE_PAGE_SIZE,
   FEED_SELECT,
   exploreFeedItems,
+  homeCommunityItems,
   readExploreFeedPage,
   withLikeCount,
   type ExploreFeedPage,
@@ -467,5 +468,67 @@ describe('where a row opens', () => {
     h.user = null
     const href = await read()
     expect(href.mine).toBe('/app/explore?list=mine')
+  })
+})
+
+/**
+ * Plan C8: desktop Home's "From the Community" card — the Popular feed's
+ * lists in Popular's order (the phone's For you order), real lists only, at
+ * most five.
+ */
+describe('Home’s From the Community card (plan C8)', () => {
+  const feedItem = (id: string, over: Partial<ExploreFeedPage['items'][number]> = {}) =>
+    ({ id, is_ranking: false, player_count: 5, ...over }) as ExploreFeedPage['items'][number]
+  const ids = (items: { id: string }[]) => items.map((i) => i.id)
+
+  it('keeps Popular’s order, the first five lists', () => {
+    const pages: ExploreFeedPage[] = [{ items: ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => feedItem(id)), next: null }]
+    expect(ids(homeCommunityItems(pages))).toEqual(['a', 'b', 'c', 'd', 'e'])
+  })
+
+  it('real lists only: a ranking (rankings switched on) or a list with no players never shows', () => {
+    const pages: ExploreFeedPage[] = [
+      {
+        items: [feedItem('board', { is_ranking: true }), feedItem('a'), feedItem('empty', { player_count: 0 }), feedItem('expert', { is_ranking: true, is_ai: true }), feedItem('b')],
+        next: null,
+      },
+    ]
+    expect(ids(homeCommunityItems(pages))).toEqual(['a', 'b'])
+    expect(homeCommunityItems([{ items: [feedItem('board', { is_ranking: true })], next: null }])).toEqual([])
+  })
+
+  it('reads across the pages loaded, each list once', () => {
+    const pages: ExploreFeedPage[] = [
+      { items: [feedItem('a'), feedItem('b')], next: { at: 'offset', from: 2 } },
+      { items: [feedItem('b'), feedItem('c')], next: null },
+    ]
+    expect(ids(homeCommunityItems(pages))).toEqual(['a', 'b', 'c'])
+  })
+
+  it('is drawn from Popular’s first page as the read orders it — the same rows the Popular tab shows', async () => {
+    const now = NOW
+    answer = (call) => {
+      if (call.table === 'lists') {
+        return {
+          data: [
+            row('new', { updated_at: iso(now - 0.1 * DAY) }),
+            row('old', { updated_at: iso(now - 20 * DAY), like_count: 3 }),
+            row('mid', { updated_at: iso(now - 3 * DAY) }),
+          ],
+          error: null,
+        }
+      }
+      if (isRecentLikes(call)) {
+        return {
+          data: [0, 1, 2].map((n) => ({ list_id: 'old', user_id: `u${n}`, created_at: iso(now - 0.05 * DAY) })),
+          error: null,
+        }
+      }
+      return { data: [], error: null }
+    }
+    const page = await readExploreFeedPage('popular', null, EXPLORE_FEED_START, now)
+    // The old list liked lately rises over the newer ones, as on For you.
+    expect(ids(homeCommunityItems([page]))).toEqual(ids(page.items))
+    expect(ids(page.items)[0]).toBe('old')
   })
 })

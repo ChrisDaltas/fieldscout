@@ -131,7 +131,10 @@ function LikeButton({ item }: { item: ExploreFeedItem }) {
   )
 }
 
-function FeedRow({ item }: { item: ExploreFeedItem }) {
+/** A feed row: the list (the whole row opens it), its author, Like, the
+ *  comment count and Follow. Home's "From the Community" card shows the
+ *  same rows (plan C8). */
+export function FeedRow({ item }: { item: ExploreFeedItem }) {
   return (
     <div className="relative flex items-center gap-[11px] px-[15px] py-[11px] transition-colors hover:bg-surface-sunken">
       <UserAvatar
@@ -202,10 +205,10 @@ function FeedRow({ item }: { item: ExploreFeedItem }) {
   )
 }
 
-function FeedSkeleton() {
+export function FeedSkeleton({ rows = 6 }: { rows?: number }) {
   return (
-    <div className="divide-y divide-n-4">
-      {Array.from({ length: 6 }).map((_, i) => (
+    <div className="divide-y divide-n-4" aria-busy="true" aria-label="Loading lists">
+      {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="flex items-center gap-[11px] px-[15px] py-[11px]">
           <Skeleton className="h-8 w-8 rounded-pill bg-surface-control" />
           <div className="flex-1 space-y-1.5">

@@ -26,6 +26,8 @@ import {
   expertRankingHref,
   filterItems,
   formatFollows,
+  HOME_COMMUNITY_SIZE,
+  homeCommunityLists,
   hottestLikedOutside,
   inAppListHref,
   latestPageItems,
@@ -36,6 +38,7 @@ import {
   personaScoring,
   pickLatest,
   playerMeta,
+  playersAndLikes,
   popularScore,
   postedAgo,
   rankFilterOk,
@@ -842,6 +845,81 @@ describe('what the screen shows (#35, #27)', () => {
  * layouts (C6's profile lists and C8's Home shelves use it next), and the
  * share link's hand-off into it.
  */
+/**
+ * Plan C8: Home's "From the Community" — For you's lists in For you's order
+ * (ruling #35), real lists only, at most HOME_COMMUNITY_SIZE (3–5).
+ */
+describe('Home’s From the Community shelf (plan C8)', () => {
+  const now = Date.parse('2026-10-15T12:00:00Z')
+  const DAY = 24 * 60 * 60 * 1000
+  const daysAgo = (d: number) => new Date(now - d * DAY).toISOString()
+  const likesAgo = (...days: number[]) => days.map((d) => now - d * DAY)
+  const ids = (items: CommunityItem[]) => items.map((i) => i.id)
+
+  const quiet = item({ id: 'quiet', createdAt: daysAgo(30), updatedAt: daysAgo(0.5) })
+  const liked = item({ id: 'liked', createdAt: daysAgo(30), updatedAt: daysAgo(2), likeCount: 5, recentLikes: likesAgo(0, 0, 0) })
+  const fresh = item({ id: 'fresh', createdAt: daysAgo(0.1), updatedAt: daysAgo(0.1) })
+  const stale = item({ id: 'stale', createdAt: daysAgo(60), updatedAt: daysAgo(40) })
+  const bigBoard = item({ id: 'bigBoard', kind: 'rank', rankType: 'season', updatedAt: daysAgo(0.01), likeCount: 40, recentLikes: likesAgo(0, 0, 0, 0, 0) })
+  const weekly = item({ id: 'weekly', kind: 'rank', rankType: 'weekly', rankWeek: 7, updatedAt: daysAgo(0.02) })
+  const expert = item({
+    id: 'expert',
+    kind: 'rank',
+    rankType: 'season',
+    updatedAt: daysAgo(0.03),
+    likeCount: 30,
+    author: { profileId: null, username: 'bathew-merry-ai', avatarUrl: null, followers: null, isPersona: true },
+  })
+  // Edited a month ago (outside the update-ordered pool), liked a lot today.
+  const extra = item({ id: 'extra', createdAt: daysAgo(40), updatedAt: daysAgo(30), likeCount: 12, recentLikes: likesAgo(0, 0, 0, 0, 0, 0) })
+  const pool = [bigBoard, weekly, expert, fresh, quiet, liked, stale]
+
+  it('is For you’s order — popular + recent, the liked lists outside the pool included', () => {
+    const shelf = homeCommunityLists({ items: pool, popularExtra: [extra] }, now)
+    expect(ids(shelf)).toEqual(['extra', 'liked', 'fresh', 'quiet', 'stale'])
+    // Exactly For you's lists, in For you's order (`sortPopular`).
+    const forYou = communityView({
+      pool,
+      popularExtra: [extra],
+      latestRows: [],
+      filter: { tab: 'all', topic: null, q: '', followingIds: new Set() },
+      rk: RANK_FILTERS_ALL,
+      ranksOn: false,
+      currentWeek: 7,
+      now,
+    })
+    expect(ids(shelf)).toEqual(ids(forYou.lists).slice(0, HOME_COMMUNITY_SIZE))
+    expect(ids(shelf)).toEqual(ids(sortPopular([fresh, quiet, liked, stale, extra], now)))
+  })
+
+  it('real lists only — never a big board, a weekly board or an AI expert’s board, however liked', () => {
+    const shelf = homeCommunityLists({ items: pool, popularExtra: [] }, now)
+    expect(ids(shelf)).not.toContain('bigBoard')
+    expect(ids(shelf)).not.toContain('weekly')
+    expect(ids(shelf)).not.toContain('expert')
+    expect(shelf.every((i) => i.kind === 'list')).toBe(true)
+  })
+
+  it('3–5 lists: at most five, fewer when fewer exist, and none when there are none', () => {
+    expect(HOME_COMMUNITY_SIZE).toBe(5)
+    const many = Array.from({ length: 9 }, (_, n) => item({ id: `l${n}`, updatedAt: daysAgo(n) }))
+    expect(homeCommunityLists({ items: many, popularExtra: [] }, now)).toHaveLength(5)
+    expect(ids(homeCommunityLists({ items: [quiet, fresh], popularExtra: [] }, now))).toEqual(['fresh', 'quiet'])
+    expect(homeCommunityLists({ items: [bigBoard, expert], popularExtra: [] }, now)).toEqual([])
+  })
+
+  it('a list in both the pool and the liked extras shows once', () => {
+    const shelf = homeCommunityLists({ items: [liked, quiet], popularExtra: [liked] }, now)
+    expect(ids(shelf)).toEqual(['liked', 'quiet'])
+  })
+
+  it('a card’s last line: players, and likes once there are any', () => {
+    expect(playersAndLikes({ playerCount: 8, likeCount: 0 })).toBe('8 players')
+    expect(playersAndLikes({ playerCount: 1, likeCount: 1 })).toBe('1 player · 1 like')
+    expect(playersAndLikes({ playerCount: 10, likeCount: 2 })).toBe('10 players · 2 likes')
+  })
+})
+
 describe('where a list opens inside the app (plan C5, inAppListHref)', () => {
   const SHARE = '/u/kelly/lists/top-25'
 

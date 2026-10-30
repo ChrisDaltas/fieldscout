@@ -11,6 +11,7 @@ import {
   authorInitials,
   coverHeight,
   formatFollows,
+  playersAndLikes,
   postedAgo,
   topLine,
   updatedAgo,
@@ -59,14 +60,21 @@ function openDetail(e: React.MouseEvent<HTMLAnchorElement>, id: string, from: st
  * here. Everything else opens the detail
  * over this screen (`from`). Rankings exist only while their switch is on;
  * with it off a ranking keeps the detail.
+ *
+ * `away`: the card sits outside Community — Home's "From the Community"
+ * shelf (plan C8) — where there's no feed under the screen to open the
+ * detail over: a plain link to Community's list page, whose Back returns
+ * to where you were.
  */
 function CardLink({
   item,
   from = COMMUNITY_HREF,
+  away = false,
   ...rest
-}: { item: CommunityItem; from?: string } & Omit<ComponentPropsWithoutRef<'a'>, 'href' | 'onClick'>) {
+}: { item: CommunityItem; from?: string; away?: boolean } & Omit<ComponentPropsWithoutRef<'a'>, 'href' | 'onClick'>) {
   const rankings = ranksOn() ? expertRankingHref(item) : null
   if (rankings) return <Link href={rankings} {...rest} />
+  if (away) return <Link href={communityDetailHref(item.id)} {...rest} />
   return <a href={communityDetailHref(item.id, from)} onClick={(e) => openDetail(e, item.id, from)} {...rest} />
 }
 
@@ -335,12 +343,24 @@ export function ListMasonry({ items }: { items: CommunityItem[] }) {
  * card — the cover the detail opens with (a ranking's is always the collage,
  * as on the detail), the title, the author, and what it is and when it was
  * posted ("List · 25m").
+ *
+ * `home`: the same card on Home's "From the Community" shelf (plan C8) — it
+ * opens Community's list page (`away`: no feed under Home), and its last
+ * line says how popular the list is ("8 players · 2 likes",
+ * `playersAndLikes`): the shelf is popular lists, so "List" and the posting
+ * time would say less.
  */
-export function LatestCard({ item, now }: { item: CommunityItem; now: number }) {
+export function LatestCard({ item, now, home = false }: { item: CommunityItem; now: number; home?: boolean }) {
   const rank = item.kind === 'rank'
   const posted = postedAgo(item.createdAt, now)
   return (
-    <CardLink item={item} className="flex w-[150px] flex-none snap-start flex-col gap-[6px]" data-latest-card>
+    <CardLink
+      item={item}
+      away={home}
+      className="flex w-[150px] flex-none snap-start flex-col gap-[6px]"
+      data-latest-card={home ? undefined : true}
+      data-home-community-card={home ? true : undefined}
+    >
       <ListCover
         item={rank ? { ...item, videos: [], thumbnailUrl: null } : item}
         variant="shelf"
@@ -351,8 +371,14 @@ export function LatestCard({ item, now }: { item: CommunityItem; now: number }) 
         <span className="truncate">@{item.author.username}</span>
       </span>
       <span className="truncate text-[11px] font-medium text-m-t3">
-        {rank ? 'Ranking' : 'List'}
-        {posted ? ` · ${posted}` : ''}
+        {home ? (
+          playersAndLikes(item)
+        ) : (
+          <>
+            {rank ? 'Ranking' : 'List'}
+            {posted ? ` · ${posted}` : ''}
+          </>
+        )}
       </span>
     </CardLink>
   )
@@ -362,16 +388,26 @@ export function LatestCard({ item, now }: { item: CommunityItem; now: number }) 
  * For you's "Latest" shelf: one row that scrolls sideways, snapping card by
  * card, edge to edge with the 16px gutter kept at both ends (handoff
  * horizontal shelves: `margin 0 -16px; padding 0 16px; gap 10px`). Only the
- * shelf scrolls sideways, never the page.
+ * shelf scrolls sideways, never the page. `home`: Home's "From the
+ * Community" shelf, the same row of the same cards (`LatestCard`'s `home`).
  */
-export function LatestShelf({ items, now }: { items: readonly CommunityItem[]; now: number }) {
+export function LatestShelf({
+  items,
+  now,
+  home = false,
+}: {
+  items: readonly CommunityItem[]
+  now: number
+  home?: boolean
+}) {
   return (
     <div
       className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-[10px] overflow-x-auto px-4 scrollbar-none"
-      data-latest-shelf
+      data-latest-shelf={home ? undefined : true}
+      data-home-community-shelf={home ? true : undefined}
     >
       {items.map((item) => (
-        <LatestCard key={item.id} item={item} now={now} />
+        <LatestCard key={item.id} item={item} now={now} home={home} />
       ))}
     </div>
   )
