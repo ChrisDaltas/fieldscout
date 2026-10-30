@@ -1,3 +1,4 @@
+import { reportAccess } from '@/components/report/report-ops'
 import { featureFlags } from '@/lib/feature-flags'
 
 /**
@@ -15,9 +16,14 @@ export function commentControlsOn(): boolean {
  * A comment row's ⋯ menu — phone comments sheet and desktop Comments tab
  * alike (Community launch plan C1, readiness B1).
  *
- * The menu holds a list of items so the next one can join it: Report (C10)
- * goes in beside Delete. A viewer with no item gets no ⋯ at all — an item
- * someone can't use is left out, never shown greyed.
+ * The menu holds a list of items. A viewer with no item gets no ⋯ at all —
+ * an item someone can't use is left out, never shown greyed.
+ *
+ * **Report** (C10) is offered on everyone else's comment — never on your own
+ * (prevent, don't refuse: `report_content`'s "You can't report your own
+ * comment" is only the backstop). Signed out it is there too, and sends you
+ * to sign in (`reportAccess`). It comes first; Delete, the destructive one,
+ * is last.
  *
  * **Delete** is offered to whoever wrote the comment and to the list's owner
  * — the same two people `remove_list_comment` (migration 213) and the DELETE
@@ -25,7 +31,7 @@ export function commentControlsOn(): boolean {
  * Admin › Reports (C10), not in this menu.
  */
 
-export type CommentMenuItem = 'delete'
+export type CommentMenuItem = 'report' | 'delete'
 
 export function commentMenuItems({
   viewerId,
@@ -38,9 +44,9 @@ export function commentMenuItems({
   /** The viewer owns the list the comment is on. */
   listOwned: boolean
 }): CommentMenuItem[] {
-  if (!viewerId) return []
   const items: CommentMenuItem[] = []
-  if (authorId === viewerId || listOwned) items.push('delete')
+  if (reportAccess({ viewerId, ownerId: authorId }) !== 'hidden') items.push('report')
+  if (viewerId && (authorId === viewerId || listOwned)) items.push('delete')
   return items
 }
 

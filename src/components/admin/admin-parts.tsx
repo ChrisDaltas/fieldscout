@@ -22,6 +22,7 @@ import { segmentGroupVariants, segmentItemVariants } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { useAdminVerb } from '@/hooks/use-admin-verb'
 import { AdminApiError, newActionId } from '@/lib/admin/admin-api'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 
 import {
@@ -55,12 +56,20 @@ export const ADMIN_TABS = [
   { href: '/app/admin/posts', label: 'Posts', exact: false },
 ] as const
 
+/** Admin › Reports (Community launch plan C10) — on the Community switch. */
+export const ADMIN_REPORTS_TAB = { href: '/app/admin/reports', label: 'Reports', exact: false } as const
+
+/** The tabs shown: Reports joins them while Community is on. */
+export function adminTabs(communityOn: boolean) {
+  return communityOn ? [...ADMIN_TABS, ADMIN_REPORTS_TAB] : [...ADMIN_TABS]
+}
+
 export function AdminTabs() {
   const pathname = usePathname() ?? ''
   return (
     <nav aria-label="Admin" className="overflow-x-auto pb-2" data-admin-tabs>
       <div className={cn(segmentGroupVariants({ appearance: 'bare' }), 'w-max')}>
-        {ADMIN_TABS.map((t) => {
+        {adminTabs(featureFlags.community).map((t) => {
           const active = t.exact ? pathname === t.href : pathname.startsWith(t.href)
           return (
             <Link

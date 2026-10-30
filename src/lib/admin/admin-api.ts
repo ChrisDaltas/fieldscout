@@ -46,6 +46,8 @@ export const adminKeys = {
   leagueSearch: (q: string) => ['admin', 'league-search', q] as const,
   leagueTable: (url: string) => ['admin', 'league-table', url] as const,
   leagueDetail: (id: string) => ['admin', 'league-detail', id] as const,
+  // Community launch plan C10: Admin › Reports (and Home's "N new reports").
+  reports: () => ['admin', 'reports'] as const,
 }
 
 /** A fresh retry key (TD3). One per confirm dialog / compose; reused on retry. */

@@ -7,9 +7,12 @@ import { AttachListToLeagueModal } from '@/components/leagues/attach-list-modal'
 import { AiBuildBanner } from '@/components/lists/ai-build-banner'
 import { commentControlsOn } from '@/components/lists/comment-menu-ops'
 import { toastMovedToTrash } from '@/components/lists/trash-door'
+import { ReportDialog } from '@/components/report/report-dialog'
+import { reportAccess } from '@/components/report/report-ops'
 import { Icon } from '@/components/ui/icon'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAiListBuild } from '@/hooks/use-ai-list-build'
+import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { useComments } from '@/hooks/use-comments'
 import { useDraftMode } from '@/hooks/use-draft-mode'
@@ -37,6 +40,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useHistoryStore } from '@/stores/history-store'
 import { useListWindowsStore } from '@/stores/list-windows-store'
+import { useReportedStore, wasReported } from '@/stores/reported-store'
 import { openPlayer as openPlayerView } from '@/hooks/use-open-player'
 import {
   colsForView,
@@ -128,6 +132,10 @@ export function ListDetailPanel({
   const [addOpen, setAddOpen] = React.useState(false)
   // §7.4 (M2 L.B4.2): the list-side "Attach to league" flow.
   const [attachOpen, setAttachOpen] = React.useState(false)
+  // Report (C10) — someone else's list (a saved one).
+  const [reportOpen, setReportOpen] = React.useState(false)
+  const { user } = useAuth()
+  const reportedMarks = useReportedStore((state) => state.reported)
 
   const detail = useList(listId)
   const comments = useComments(listId)
@@ -525,7 +533,18 @@ export function ListDetailPanel({
         onAttachToLeague={
           featureFlags.leagues && list.is_owner ? () => setAttachOpen(true) : undefined
         }
+        // Report (C10, on the Community switch) — someone else's list only,
+        // never your own (prevent, don't refuse).
+        report={
+          !list.is_owner && reportAccess({ viewerId: user?.id, ownerId: list.owner_id }) === 'report'
+            ? { reported: wasReported(reportedMarks, user?.id, 'list', list.id), onReport: () => setReportOpen(true) }
+            : undefined
+        }
       />
+
+      {!list.is_owner && (
+        <ReportDialog open={reportOpen} onOpenChange={setReportOpen} target={{ type: 'list', id: list.id }} quote={list.title} />
+      )}
 
       <AttachListToLeagueModal
         open={attachOpen}

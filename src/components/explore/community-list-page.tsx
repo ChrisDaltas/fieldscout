@@ -2,7 +2,7 @@
 
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { toastLikeFailed } from '@/components/explore/explore-feed'
 import { FollowButton } from '@/components/explore/follow-button'
@@ -12,9 +12,12 @@ import { formatCount } from '@/components/lists/v2/list-stats'
 import { COMMUNITY_HREF } from '@/components/mobile/community/community-ops'
 import { listHref } from '@/components/mobile/lists/lists-routes'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
+import { ReportDialog, ReportMenuItem } from '@/components/report/report-dialog'
+import { reportAccess } from '@/components/report/report-ops'
 import { userProfileHref } from '@/components/shared/username-link-ops'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
@@ -29,6 +32,7 @@ import { useListPersona } from '@/hooks/use-list-persona'
 import { useList, useToggleLike, type ListWithDetails } from '@/hooks/use-lists'
 import { useMobileCommunityListMeta } from '@/hooks/use-mobile-community-detail'
 import { cn } from '@/lib/utils'
+import { useReportedStore, wasReported } from '@/stores/reported-store'
 
 /**
  * Community's list page on desktop — someone else's list, inside the app
@@ -46,7 +50,8 @@ import { cn } from '@/lib/utils'
  *    follow (the phone's rule);
  *  - the comments with C1's ⋯ menu (`ListCommentsTab`);
  *  - the "made by FieldScout AI" note on an AI expert's board;
- *  - the list's ⋯ menu, where Report goes (plan C10);
+ *  - the list's ⋯ menu, with Report (plan C10: the Report dialog, then
+ *    "Reported");
  *  - **Back** to where you came from — history when the app is behind
  *    this page, else Community (`useGoBack`, the phone's one Back rule).
  *
@@ -97,7 +102,7 @@ export function CommunityListPage({ listId, fromFeed = false }: { listId: string
 }
 
 function LoadedList({ list }: { list: ListWithDetails }) {
-  const { profile } = useAuth()
+  const { user, profile } = useAuth()
   // Who made it (the owner's handle and picture, and whether a person or an
   // AI expert) — the read, and cache, the phone's list page uses.
   const meta = useMobileCommunityListMeta({
@@ -135,16 +140,43 @@ function LoadedList({ list }: { list: ListWithDetails }) {
         community={{
           like: <LikeButton list={list} />,
           follow: followId ? <FollowButton userId={followId} className="ml-1" /> : null,
-          // The list's ⋯ menu: Report goes here (plan C10). It has no item
-          // yet, so there is no ⋯ — an item someone can't use is left out,
-          // never shown greyed (the comment ⋯'s rule).
-          menu: null,
+          // The list's ⋯ menu: Report (plan C10) — never on your own list
+          // (prevent, don't refuse). With no item there is no ⋯ (the
+          // comment ⋯'s rule).
+          menu:
+            reportAccess({ viewerId: user?.id, ownerId: list.owner_id }) === 'report' ? <ListMenu list={list} /> : null,
         }}
       />
       {/* A switched-off expert's board has no line (`null`), as on the share
           page; until the expert is read — or if it can't be — the line still
           says the board is AI-made. */}
       {list.ai_persona_id && persona.data !== null && <ListAiNote persona={persona.data} />}
+    </>
+  )
+}
+
+/**
+ * The list's ⋯ (plan C10): Report — "Reported" once the database has
+ * answered. A menu and a dialog overlay the page, so they keep the
+ * primitives' resting shadows.
+ */
+function ListMenu({ list }: { list: ListWithDetails }) {
+  const { user } = useAuth()
+  const [reportOpen, setReportOpen] = useState(false)
+  const reported = useReportedStore((state) => wasReported(state.reported, user?.id, 'list', list.id))
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon-sm" title="List options" aria-label="List options">
+            <Icon name="dots" size={13} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-[168px]">
+          <ReportMenuItem type="list" reported={reported} onSelect={() => setReportOpen(true)} />
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ReportDialog open={reportOpen} onOpenChange={setReportOpen} target={{ type: 'list', id: list.id }} quote={list.title} />
     </>
   )
 }

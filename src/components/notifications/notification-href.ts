@@ -1,4 +1,8 @@
 import type { NotificationItem } from '@/hooks/use-notifications'
+import { featureFlags } from '@/lib/feature-flags'
+
+/** Admin › Reports (Community launch plan C10) — desktop only. */
+export const ADMIN_REPORTS_HREF = '/app/admin/reports'
 
 /**
  * Deep-link destination for a notification row (or `null` → the row renders as
@@ -63,6 +67,13 @@ export function notificationHref(n: Pick<NotificationItem, 'type' | 'data'>): st
     if (typeof data?.link === 'string' && isInAppPath(data.link)) return data.link
     if (typeof data?.league_id === 'string' && data.league_id !== '') return `/app/leagues/${data.league_id}`
     return null
+  }
+  // Community launch plan C10 (214): "New reports to review", an admin's
+  // alert → Admin › Reports. A fixed address, never the row's data: the
+  // page is admins-only and rides the Community switch, so while it's off
+  // the row stays plain text rather than leading to "not found".
+  if (n.type === 'content_report') {
+    return featureFlags.community ? ADMIN_REPORTS_HREF : null
   }
   // List activity (the pre-existing arm): a list you saved was updated
   // (`list_updated`, 077) or someone commented on your list (`list_comment`,

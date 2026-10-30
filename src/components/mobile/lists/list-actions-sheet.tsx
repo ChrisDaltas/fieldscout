@@ -5,12 +5,16 @@ import * as React from 'react'
 import { commentControlsOn } from '@/components/lists/comment-menu-ops'
 import { toastMovedToTrash } from '@/components/lists/trash-door'
 import { offersDuplicate } from '@/components/mobile/community/community-ops'
+import { ReportRow, ReportSheet } from '@/components/mobile/community/report-sheet'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
+import { reportAccess } from '@/components/report/report-ops'
+import { useAuth } from '@/hooks/use-auth'
 import { useComments } from '@/hooks/use-comments'
 import { useDeleteList, useDuplicateList, useToggleFavorite, useUpdateList, type ListWithDetails } from '@/hooks/use-lists'
 import { toast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
+import { useReportedStore, wasReported } from '@/stores/reported-store'
 
 import { AttachLeagueSheet } from './attach-league-sheet'
 import { CommentsSheet } from './comments-sheet'
@@ -50,7 +54,8 @@ export interface ListToolsProps {
  * drafted, Show notes, Side by side — then Edit details, visibility, pin /
  * save, folders, attach to a league (leagues test cohort), comments (the
  * owner's on / off, then the thread), copy link, duplicate, delete (to the
- * trash, restorable). Every action is the
+ * trash, restorable) — and, on a list that isn't yours, Report (Community
+ * launch plan C10: the Report sheet, then "Reported"). Every action is the
  * desktop panel's own mutation. The switches flip in place; the rest close
  * the sheet first.
  *
@@ -87,6 +92,9 @@ export function ListActionsSheet({
   const [folderOpen, setFolderOpen] = React.useState(false)
   const [commentsOpen, setCommentsOpen] = React.useState(false)
   const [attachOpen, setAttachOpen] = React.useState(false)
+  const [reportOpen, setReportOpen] = React.useState(false)
+  const { user } = useAuth()
+  const reportedMarks = useReportedStore((state) => state.reported)
 
   const then = (next: () => void) => () => {
     onOpenChange(false)
@@ -95,6 +103,9 @@ export function ListActionsSheet({
 
   const owned = list.is_owner
   const commentsOn = list.comments_enabled ?? true
+  // Report: someone else's list only (prevent, don't refuse); the List view
+  // is inside the app, so the viewer is signed in.
+  const canReport = !owned && reportAccess({ viewerId: user?.id, ownerId: list.owner_id }) === 'report'
   const commentCount = comments.data?.pagination.total
 
   return (
@@ -243,6 +254,13 @@ export function ListActionsSheet({
               )}
             />
           )}
+          {canReport && (
+            <ReportRow
+              type="list"
+              reported={wasReported(reportedMarks, user?.id, 'list', list.id)}
+              onReport={then(() => setReportOpen(true))}
+            />
+          )}
         </div>
       </MobileSheet>
 
@@ -257,6 +275,9 @@ export function ListActionsSheet({
       />
       {featureFlags.leagues && owned && (
         <AttachLeagueSheet open={attachOpen} onOpenChange={setAttachOpen} list={{ id: list.id, title: list.title }} />
+      )}
+      {canReport && (
+        <ReportSheet open={reportOpen} onOpenChange={setReportOpen} target={{ type: 'list', id: list.id }} quote={list.title} />
       )}
     </>
   )

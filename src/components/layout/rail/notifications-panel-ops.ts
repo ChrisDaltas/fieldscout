@@ -25,6 +25,9 @@ export function notificationIcon(type: string): IconName {
   if (type.includes('waiver')) return 'repeat'
   if (type.includes('draft')) return 'list'
   if (type.includes('injur')) return 'info-circle'
+  // 214 (Community C9 / C10): an admin's "New reports to review" — the
+  // Report flag.
+  if (type === 'content_report') return 'flag'
   if (type.includes('message') || type.includes('comment')) return 'comments'
   if (type.startsWith('list')) return 'document'
   // Gap list #13 (192): the commissioner's pinned note — the pin glyph.

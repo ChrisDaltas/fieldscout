@@ -268,6 +268,12 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   '/app/u/[username]',
   '/app/u/[username]/followers',
   '/app/u/[username]/following',
+  // Community launch plan C10 — ADMIN › REPORTS: every report people made on
+  // Community, with Mark reviewed and a comment's Remove. Beside the operator
+  // console; "page not found" to every non-admin by `(shell)/admin/layout.tsx`,
+  // and to everyone while Community is off (the page's own `notFound()`).
+  // Desktop: the phone has no Admin screen. Permanent.
+  '/app/admin/reports',
 ]
 
 describe('route groups are invisible to the URL space', () => {

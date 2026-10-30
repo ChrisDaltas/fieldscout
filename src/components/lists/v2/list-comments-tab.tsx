@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 import {
   commentControlsOn,
@@ -11,9 +12,11 @@ import {
   DELETE_COMMENT,
   type CommentMenuItem,
 } from '@/components/lists/comment-menu-ops'
+import { signInHref } from '@/components/explore/follow-button'
+import { DeleteCommentDialog } from '@/components/lists/v2/delete-comment-dialog'
+import { ReportDialog, ReportMenuItem } from '@/components/report/report-dialog'
 import { UsernameLink } from '@/components/shared/username-link'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,7 +36,9 @@ import {
   type CommentWithAuthor,
 } from '@/hooks/use-comments'
 import { toast } from '@/hooks/use-toast'
+import { featureFlags } from '@/lib/feature-flags'
 import { commentWaitCopy } from '@/lib/rate-limit/comment-limit'
+import { useReportedStore, wasReported } from '@/stores/reported-store'
 import { MAX_COMMENT_LEN } from '@/types/schemas/lists'
 
 import { formatRelative } from './list-stats'
@@ -58,10 +63,11 @@ import { formatRelative } from './list-stats'
  *
  * ## The ⋯ menu (C1)
  *
- * Delete, with a confirm, for whoever wrote the comment and for the list's
- * owner (`comment-menu-ops`); everyone else gets no ⋯ at all. C10 adds
- * Report to the same menu. A refused delete puts the comment back and says
- * why in the toast.
+ * Report (C10) on everyone else's comment — signed out it sends you to
+ * sign in — opening the Report dialog; once sent it shows "Reported". Delete,
+ * with a confirm, for whoever wrote the comment and for the list's owner
+ * (`comment-menu-ops`). No item, no ⋯. A refused delete puts the comment
+ * back and says why in the toast.
  *
  * ## Older comments (C1)
  *
@@ -109,6 +115,7 @@ export function ListCommentsTab({
   listOwned = false,
 }: CommentsTabProps) {
   const [text, setText] = React.useState('')
+  const router = useRouter()
   const { user } = useAuth()
   const comments = useComments(listId)
   const addComment = useAddComment(listId)
@@ -116,6 +123,10 @@ export function ListCommentsTab({
   // The comment Delete is asking about (null = no confirm open).
   const [confirming, setConfirming] = React.useState<CommentWithAuthor | null>(null)
   const [confirmOpen, setConfirmOpen] = React.useState(false)
+  // The comment Report is open for (C10).
+  const [reporting, setReporting] = React.useState<CommentWithAuthor | null>(null)
+  const [reportOpen, setReportOpen] = React.useState(false)
+  const reportedMarks = useReportedStore((state) => state.reported)
   const olderFailed = comments.isFetchNextPageError
   // C1's ⋯, older comments and the owner's note ride the Community switch;
   // while it's off the tab is as it was.
@@ -237,6 +248,16 @@ export function ListCommentsTab({
           <CommentRowMenu
             username={comment.author.username}
             items={menusLive ? commentMenuItems({ viewerId: user?.id, authorId: comment.author_id, listOwned }) : []}
+            reported={wasReported(reportedMarks, user?.id, 'comment', comment.id)}
+            onReport={() => {
+              // Signed out, Report sends you to sign in, then back here.
+              if (!user) {
+                router.push(signInHref(window.location.pathname + window.location.search, featureFlags.community))
+                return
+              }
+              setReporting(comment)
+              setReportOpen(true)
+            }}
             onDelete={() => {
               setConfirming(comment)
               setConfirmOpen(true)
@@ -268,6 +289,15 @@ export function ListCommentsTab({
         </div>
       )}
 
+      {reporting && (
+        <ReportDialog
+          open={reportOpen}
+          onOpenChange={setReportOpen}
+          target={{ type: 'comment', id: reporting.id }}
+          quote={reporting.body}
+        />
+      )}
+
       {confirming && (
         <DeleteCommentDialog
           open={confirmOpen}
@@ -284,17 +314,22 @@ export function ListCommentsTab({
 }
 
 /**
- * A comment row's ⋯ (C1): its items in a menu — Delete today, Report with
- * C10. No item, no ⋯. A menu overlays the page, so it keeps the
- * primitive's resting shadow.
+ * A comment row's ⋯ (C1): its items in a menu — Report (C10; "Reported"
+ * once sent), then Delete. No item, no ⋯. A menu overlays the page, so it
+ * keeps the primitive's resting shadow.
  */
 export function CommentRowMenu({
   username,
   items,
+  reported = false,
+  onReport = () => {},
   onDelete,
 }: {
   username: string
   items: CommentMenuItem[]
+  /** You've reported this comment this session. */
+  reported?: boolean
+  onReport?: () => void
   onDelete: () => void
 }) {
   if (items.length === 0) return null
@@ -312,6 +347,7 @@ export function CommentRowMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[168px]">
+        {items.includes('report') && <ReportMenuItem type="comment" reported={reported} onSelect={onReport} />}
         {items.includes('delete') && (
           <DropdownMenuItem variant="destructive" onSelect={onDelete} data-comment-delete>
             <Icon name="remove" size={13} />
@@ -320,44 +356,5 @@ export function CommentRowMenu({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
-  )
-}
-
-/**
- * Delete's confirm: the comment quoted, Cancel, and Delete in the soft red
- * tint (bright red is for words, never a fill). A dialog is a true overlay,
- * so it keeps the primitive's resting shadow. Hookless: the tab holds it.
- */
-export function DeleteCommentDialog({
-  open,
-  onOpenChange,
-  body,
-  onConfirm,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  body: string
-  onConfirm: () => void
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm" data-comment-confirm>
-        <DialogHeader>
-          <DialogTitle>{DELETE_COMMENT.title}</DialogTitle>
-          <DialogDescription>{DELETE_COMMENT.body}</DialogDescription>
-        </DialogHeader>
-        <p className="line-clamp-3 rounded-xl bg-surface-sunken px-3 py-2 text-[12px] font-medium leading-snug text-n-2 [overflow-wrap:anywhere]">
-          {body}
-        </p>
-        <div className="flex justify-end gap-[5px]">
-          <Button variant="stroke" size="md" onClick={() => onOpenChange(false)} data-comment-confirm-cancel>
-            {DELETE_COMMENT.cancel}
-          </Button>
-          <Button variant="destructive" size="md" className="bg-negative-soft" onClick={onConfirm} data-comment-confirm-delete>
-            {DELETE_COMMENT.confirm}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   )
 }

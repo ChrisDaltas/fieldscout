@@ -38,6 +38,8 @@ const h = vi.hoisted(() => ({
   persona: undefined as { username: string; display_name: string } | null | undefined,
   coverOff: false,
   coverWatchReady: [] as boolean[],
+  community: false,
+  reported: false,
 }))
 
 // The detail is a Radix dialog in a portal, which renders nothing on the
@@ -62,7 +64,28 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/app/explore',
   useSearchParams: () => new URLSearchParams(),
 }))
-vi.mock('@/lib/feature-flags', () => ({ featureFlags: { personas: false } }))
+vi.mock('@/lib/feature-flags', () => ({
+  featureFlags: {
+    personas: false,
+    get community() {
+      return h.community
+    },
+  },
+}))
+// The Report sheet's controller (plan C10) — its answers are pinned in
+// report-ops.test.ts; here only whether the list counts as reported.
+vi.mock('@/hooks/use-report', () => ({
+  useReport: () => ({ reported: h.reported, send: () => {}, sending: false }),
+}))
+// The ⋯'s sheets (plan C10) are Radix dialogs too: drawn in place, open or
+// not, so their rows can be read.
+vi.mock('@/components/mobile/ui/mobile-sheet', async () => {
+  const react = await import('react')
+  return {
+    MobileSheet: ({ open, title, children, footer }: { open: boolean; title: string; children?: ReactNode; footer?: ReactNode }) =>
+      react.createElement('section', { 'data-sheet': title, 'data-open': String(open) }, children, footer),
+  }
+})
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'u-me' }, profile: { username: 'me', avatar_url: null } }),
 }))
@@ -103,7 +126,10 @@ vi.mock('@/stores/player-modal-store', () => ({
   usePlayerModalStore: (pick: (s: { openPlayerView: () => void }) => unknown) => pick({ openPlayerView: () => {} }),
 }))
 
+import { useReportedStore } from '@/stores/reported-store'
+
 import { CommunityDetail } from './community-detail'
+import { ReportRow } from './report-sheet'
 
 const PERSON = { profileId: 'u-kelly', username: 'kelly', avatarUrl: null, followers: 10, isPersona: false }
 const EXPERT = { profileId: null, username: 'bathew-merry-ai', avatarUrl: null, followers: null, isPersona: true }
@@ -170,6 +196,9 @@ beforeEach(() => {
   h.persona = undefined
   h.coverOff = false
   h.coverWatchReady = []
+  h.community = false
+  h.reported = false
+  useReportedStore.setState({ reported: {} })
 })
 
 /** A pill's opening tag, found by its data attribute. */
@@ -506,8 +535,10 @@ describe('the Community detail — an AI expert’s list says it was made by AI 
  * Plan C7 (readiness S16; the List view's gap list #25 bar): on a long list —
  * an AI stat list can run past 100 players — Back used to scroll away with
  * the cover. Once the cover has scrolled off, the List view's own slim bar
- * (`SlimBar`, not a copy) holds Back and the title at the top. The cover has
- * only Back, so the bar has no ⋯ or Edit.
+ * (`SlimBar`, not a copy) holds Back and the title at the top. Where the
+ * cover has only Back (your own list, or Community off), the bar has no ⋯ or
+ * Edit; on someone else's list the cover's ⋯ (plan C10) is on the bar too —
+ * pinned in the next block.
  */
 describe('the Community detail — the slim Back bar (plan C7)', () => {
   /** The slim bar's markup, from its anchor up to the cover. */
@@ -579,5 +610,69 @@ describe('the Community detail — the slim Back bar (plan C7)', () => {
     const out = render()
     expect(out).not.toContain('data-list-slim-bar')
     expect(out).toContain('aria-label="Back"')
+  })
+})
+
+/**
+ * Plan C10: Report on the phone Community list page — a ⋯ on the cover (the
+ * List view's, top right) and on the slim bar, on someone else's list only.
+ * Its sheet holds Report list, then "Reported" once the database says so.
+ */
+describe('the Community detail — the ⋯ and Report (plan C10)', () => {
+  beforeEach(() => {
+    h.community = true
+  })
+
+  const coverOf = (out: string) => out.slice(out.indexOf('<div class="relative">'), out.indexOf('data-community-list-options') === -1 ? undefined : out.indexOf('data-community-list-options'))
+
+  it('someone else’s list: a ⋯ on the cover, top right, and on the slim bar', () => {
+    const out = render()
+    expect(out).toContain('data-cover-options')
+    expect(pill(out, 'data-cover-options')).toContain('absolute right-3')
+    expect(pill(out, 'data-cover-options')).toContain('aria-label="List options"')
+    const bar = out.slice(out.indexOf('data-list-slim-bar'), out.indexOf('<div class="relative">'))
+    expect(bar).toContain('aria-label="List options"')
+    expect(coverOf(out)).toContain('aria-label="Back"')
+  })
+
+  it('…its sheet holds Report list', () => {
+    const out = render()
+    const sheet = out.slice(out.indexOf('data-community-list-options'))
+    expect(sheet).toContain('data-report="list"')
+    expect(sheet).toContain('Report list')
+  })
+
+  it('…and "Reported" once the database has answered — not a control', () => {
+    // A server render reads a store's first state, so the row is drawn
+    // directly; the sheet's wiring to the session's marks is read from source.
+    const out = renderToStaticMarkup(createElement(ReportRow, { type: 'list', reported: true, onReport: () => {} }))
+    expect(out).toContain('data-reported="list"')
+    expect(out).toContain('>Reported<')
+    expect(out).not.toContain('<button')
+    expect(out).not.toContain('Report list')
+    const source = readFileSync(path.resolve(process.cwd(), 'src/components/mobile/community/community-detail.tsx'), 'utf8')
+    expect(source).toContain("reported={wasReported(reportedMarks, user?.id, 'list', list.id)}")
+  })
+
+  it('your own list: no ⋯ at all (Report is never offered on your own — prevent, don’t refuse)', () => {
+    h.list = list({ is_owner: true, owner_id: 'u-me' })
+    const out = render()
+    expect(out).not.toContain('data-cover-options')
+    expect(out).not.toContain('aria-label="List options"')
+    expect(out).not.toContain('Report list')
+  })
+
+  it('while Community is off: no ⋯ (the page is as it was)', () => {
+    h.community = false
+    const out = render()
+    expect(out).not.toContain('data-cover-options')
+    expect(out).not.toContain('Report list')
+  })
+
+  it('themed for light and dark: the ⋯ is the cover’s own glass button; the sheet is on m-* tokens, no dark: variants', () => {
+    const out = render()
+    expect(pill(out, 'data-cover-options')).toContain('bg-black/35 text-white')
+    const sheet = out.slice(out.indexOf('data-community-list-options'))
+    expect(sheet).not.toMatch(/\bdark:/)
   })
 })

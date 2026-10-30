@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import * as React from 'react'
 
 import {
@@ -10,6 +11,8 @@ import {
   DELETE_COMMENT,
   type CommentMenuItem,
 } from '@/components/lists/comment-menu-ops'
+import { signInHref } from '@/components/explore/follow-button'
+import { ReportRow, ReportSheet } from '@/components/mobile/community/report-sheet'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { UsernameLink } from '@/components/shared/username-link'
@@ -24,7 +27,9 @@ import {
   type CommentWithAuthor,
 } from '@/hooks/use-comments'
 import { toast } from '@/hooks/use-toast'
+import { featureFlags } from '@/lib/feature-flags'
 import { commentWaitCopy } from '@/lib/rate-limit/comment-limit'
+import { useReportedStore, wasReported } from '@/stores/reported-store'
 import { MAX_COMMENT_LEN } from '@/types/schemas/lists'
 
 import { SheetRow } from './folder-sheets'
@@ -42,8 +47,9 @@ import { LIcon } from './lists-parts'
  * post shows in the ink toast and the typed text stays in the box.
  *
  * Each row's ⋯ (Community launch plan C1) opens the comment's own sheet —
- * Delete, for whoever wrote it and for the list's owner, with a confirm
- * (`comment-menu-ops`); C10 adds Report there. No item, no ⋯. The thread
+ * Report on everyone else's comment (C10: the Report sheet, then
+ * "Reported"), and Delete, for whoever wrote it and for the list's owner,
+ * with a confirm (`comment-menu-ops`). No item, no ⋯. The thread
  * reads the newest 20 first; "Show older comments" reads the next 20. Both
  * ride the Community switch (`commentControlsOn`).
  */
@@ -65,6 +71,7 @@ export function CommentsSheet({
   viewer: { username: string | null; avatarUrl: string | null }
 }) {
   const [text, setText] = React.useState('')
+  const router = useRouter()
   const { user } = useAuth()
   const comments = useComments(open ? listId : undefined)
   const add = useAddComment(listId)
@@ -81,6 +88,10 @@ export function CommentsSheet({
   // its words don't vanish mid-close.
   const [menu, setMenu] = React.useState<{ comment: CommentWithAuthor; items: CommentMenuItem[]; step: CommentMenuStep } | null>(null)
   const [menuOpen, setMenuOpen] = React.useState(false)
+  // Report (C10): the comment being reported, kept while its sheet closes.
+  const [reporting, setReporting] = React.useState<CommentWithAuthor | null>(null)
+  const [reportOpen, setReportOpen] = React.useState(false)
+  const reportedMarks = useReportedStore((state) => state.reported)
 
   const post = () => {
     const body = text.trim()
@@ -233,10 +244,29 @@ export function CommentsSheet({
           items={menu.items}
           step={menu.step}
           onStep={(step) => setMenu((m) => (m ? { ...m, step } : m))}
+          reported={wasReported(reportedMarks, user?.id, 'comment', menu.comment.id)}
+          onReport={() => {
+            setMenuOpen(false)
+            if (!user) {
+              router.push(signInHref(window.location.pathname + window.location.search, featureFlags.community))
+              return
+            }
+            setReporting(menu.comment)
+            setReportOpen(true)
+          }}
           onDelete={() => {
             setMenuOpen(false)
             confirmCommentDelete(remove, menu.comment.id, toast)
           }}
+        />
+      )}
+
+      {reporting && (
+        <ReportSheet
+          open={reportOpen}
+          onOpenChange={setReportOpen}
+          target={{ type: 'comment', id: reporting.id }}
+          quote={reporting.body}
         />
       )}
     </>
@@ -247,9 +277,9 @@ export type CommentMenuStep = 'menu' | 'confirm-delete'
 
 /**
  * One comment's sheet, over the thread: the comment quoted, its items
- * (Delete; C10 adds Report), then Delete's confirm in the same sheet —
- * Cancel and a Delete in the soft red tint (never bright red paint).
- * Hookless: the thread holds the step.
+ * (Report — "Reported" once sent — then Delete), then Delete's confirm in the
+ * same sheet — Cancel and a Delete in the soft red tint (never bright red
+ * paint). Hookless: the thread holds the step.
  */
 export function CommentMenuSheet({
   open,
@@ -258,6 +288,8 @@ export function CommentMenuSheet({
   items,
   step,
   onStep,
+  reported = false,
+  onReport = () => {},
   onDelete,
 }: {
   open: boolean
@@ -266,6 +298,9 @@ export function CommentMenuSheet({
   items: CommentMenuItem[]
   step: CommentMenuStep
   onStep: (step: CommentMenuStep) => void
+  /** You've reported this comment this session. */
+  reported?: boolean
+  onReport?: () => void
   onDelete: () => void
 }) {
   const confirming = step === 'confirm-delete'
@@ -305,6 +340,7 @@ export function CommentMenuSheet({
         </div>
       ) : (
         <div className="flex flex-col px-3 pb-2" data-comment-items>
+          {items.includes('report') && <ReportRow type="comment" reported={reported} onReport={onReport} />}
           {items.includes('delete') && (
             <SheetRow
               tone="danger"

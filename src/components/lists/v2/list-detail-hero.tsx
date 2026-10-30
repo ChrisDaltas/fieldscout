@@ -3,6 +3,7 @@
 import * as React from 'react'
 
 import { offersDuplicate } from '@/components/mobile/community/community-ops'
+import { ReportMenuItem } from '@/components/report/report-dialog'
 import { UsernameLink } from '@/components/shared/username-link'
 import { Button } from '@/components/ui/button'
 import {
@@ -246,6 +247,13 @@ interface HeroProps {
    * requires ownership), so the item never renders where it can't work.
    */
   onAttachToLeague?: () => void
+  /**
+   * Report (Community launch plan C10) — someone else's list only, on the
+   * Community switch. Handler-gated like the rest: the panel passes it only
+   * when the viewer may report this list; `reported` turns the item into
+   * "Reported" once the database has answered.
+   */
+  report?: { reported: boolean; onReport: () => void }
 }
 
 export function ListDetailHero({
@@ -268,6 +276,7 @@ export function ListDetailHero({
   folders,
   onMoveToFolder,
   onAttachToLeague,
+  report,
 }: HeroProps) {
   const numbered = isNumbered(list.ranking_mode)
   const commentsOn = list.comments_enabled ?? true
@@ -398,6 +407,12 @@ export function ListDetailHero({
               <Icon name="reset" size={13} />
               Clear drafted
             </DropdownMenuItem>
+            {report && (
+              <>
+                <DropdownMenuSeparator />
+                <ReportMenuItem type="list" reported={report.reported} onSelect={report.onReport} />
+              </>
+            )}
             {/* Favorites is permanent: the item is omitted, not disabled. */}
             {canEdit && !list.is_favorites && (
               <>
