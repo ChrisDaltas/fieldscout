@@ -74,7 +74,6 @@ function feedItem(id: string, over: Partial<ExploreFeedItem> = {}): ExploreFeedI
     created_at: '2026-10-01T00:00:00Z',
     author: { name: null, handle: `user${id}`, avatar_url: null },
     href: `/app/explore?list=${id}`,
-    author_href: `/app/u/user${id}`,
     author_id: `u-${id}`,
     is_liked: false,
     tag: null,

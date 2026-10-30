@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Fragment, type ReactNode } from 'react'
 
 import { useProfileHref } from '@/hooks/use-profile-href'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 
 import { splitActorName, usernameParts } from './username-link-ops'
@@ -59,6 +60,27 @@ export function UsernameLink({ username, at = true, newTab = false, className }:
     >
       {at ? `@${username}` : username}
     </Link>
+  )
+}
+
+/**
+ * An AI expert's handle — never a person's profile: the expert's own page is
+ * /personas/…, so it links there only while that surface is on and is plain
+ * text otherwise (the plan's E2: until the experts are real accounts, "the
+ * author stays a plain name, so nobody follows @fieldscout-ai by mistake").
+ * The phone's Community list page and desktop's (the list hero, plan C5)
+ * both name an expert's board this way.
+ */
+export function PersonaHandle({ username, className }: { username: string; className?: string }) {
+  const handle = `@${username}`
+  return featureFlags.personas ? (
+    <Link href={`/personas/${encodeURIComponent(username)}`} data-persona-handle={username} className={className}>
+      {handle}
+    </Link>
+  ) : (
+    <span data-persona-handle={username} className={className}>
+      {handle}
+    </span>
   )
 }
 

@@ -17,9 +17,9 @@ import { createBrowserClient } from '@/lib/supabase/client'
  */
 export interface CommunityListMeta {
   ownerUsername: string
-  /** The owner profile's own picture — the desktop byline's (plan C5),
-   *  which names the owner even on an AI expert's board, as the share page
-   *  does. */
+  /** The owner profile's own picture — the desktop byline's on a person's
+   *  list (plan C5). On an AI expert's board both layouts name the expert
+   *  (`author`) instead; only the share page names the owning account. */
   ownerAvatarUrl: string | null
   author: CommunityAuthor
   scoring: CommunityScoring | null

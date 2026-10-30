@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query'
 
@@ -28,6 +28,7 @@ import { useToggleLike } from '@/hooks/use-lists'
 import { useTags } from '@/hooks/use-tags'
 import { toast } from '@/hooks/use-toast'
 import { ranksOn } from '@/lib/rankings/ranks-on'
+import { useCommunityTopicStore } from '@/stores/community-topic-store'
 import { useUIStore } from '@/stores/ui-store'
 
 const TOPIC_CHIP_COUNT = 6
@@ -232,7 +233,12 @@ export function FeedSkeleton({ rows = 6 }: { rows?: number }) {
  */
 export function ExploreFeed() {
   const [tab, setTab] = useState<ExploreFeedTab>('popular')
-  const [tagId, setTagId] = useState<string | null>(null)
+  // The topic is shared with the Trending tags card beside the feed, so a
+  // tag there sets this same filter (`community-topic-store`). Leaving
+  // Community clears it, as when it was this feed's own state.
+  const tagId = useCommunityTopicStore((s) => s.tagId)
+  const setTagId = useCommunityTopicStore((s) => s.setTagId)
+  useEffect(() => () => setTagId(null), [setTagId])
   const openCreateList = useUIStore((s) => s.setCreateListOpen)
 
   const feed = useExploreFeed(tab, tagId)

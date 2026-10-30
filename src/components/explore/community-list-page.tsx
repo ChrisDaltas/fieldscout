@@ -47,7 +47,8 @@ import { useReportedStore, wasReported } from '@/stores/reported-store'
  *  - **Like**, with its count (optimistic, and a failure says so);
  *  - **Follow** beside the author — a person's list only: an AI expert's
  *    board is owned by the FieldScout AI account, which isn't a person to
- *    follow (the phone's rule);
+ *    follow (the phone's rule). Its byline names the expert, as plain
+ *    text, never that account (plan E2);
  *  - the comments with C1's ⋯ menu (`ListCommentsTab`);
  *  - the "made by FieldScout AI" note on an AI expert's board;
  *  - the list's ⋯ menu, with Report (plan C10: the Report dialog, then
@@ -123,12 +124,19 @@ function LoadedList({ list }: { list: ListWithDetails }) {
   // A person's list (an AI expert's board has no person to follow);
   // FollowButton hides itself on your own.
   const followId = author.profileId
+  // Who the byline names: a person's list names its owner, a link to their
+  // profile; an AI expert's board names the expert, as plain text — the
+  // phone's rule — never the FieldScout AI account that owns every expert
+  // board, so nobody follows it by mistake (plan E2).
+  const owner = author.isPersona
+    ? { username: author.username, avatarUrl: author.avatarUrl, isPersona: true }
+    : { username: ownerUsername, avatarUrl: ownerAvatarUrl }
 
   return (
     <>
       <PublicListView
         list={list}
-        owner={{ username: ownerUsername, avatarUrl: ownerAvatarUrl }}
+        owner={owner}
         viewer={{ username: profile?.username ?? null, avatarUrl: profile?.avatar_url ?? null }}
         canPin
         signedIn

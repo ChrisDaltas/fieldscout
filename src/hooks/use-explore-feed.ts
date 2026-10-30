@@ -10,7 +10,6 @@ import {
   shownInCommunityQuery,
   sortPopular,
 } from '@/components/mobile/community/community-ops'
-import { userProfileHref } from '@/components/shared/username-link-ops'
 import { pastPoolCursor } from '@/hooks/use-community-older'
 import { readFollowingIds } from '@/hooks/use-follows'
 import {
@@ -86,7 +85,6 @@ export interface ExploreFeedItem {
    *  Lists; otherwise the public list page (persona boards also live under
    *  the owner profile). */
   href: string
-  author_href: string
   /** Owner profile id for the follow control — null for AI-persona boards
    *  (personas aren't real profiles, so they can't be followed here). */
   author_id: string | null
@@ -217,9 +215,6 @@ export function mapFeedRows(
           own: viewerId !== null && owner.id === viewerId,
           otherwise: `/u/${owner.username}/lists/${row.slug}`,
         }),
-        author_href: persona
-          ? `/personas/${persona.username}`
-          : userProfileHref(owner.username),
         author_id: persona ? null : owner.id,
         is_liked: likedIds.has(row.id),
         tag: tags[0] ? { name: tags[0].name, slug: tags[0].slug } : null,
