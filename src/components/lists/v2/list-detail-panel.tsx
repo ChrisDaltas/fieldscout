@@ -118,6 +118,11 @@ interface DetailPanelProps {
   onToggleExpanded: () => void
   onClose: () => void
   onDeleted: () => void
+  /** Open on the Comments tab — "@x commented on your list" asked for it
+   *  (`LIST_COMMENTS_PARAM`). `onCommentsShown` says it's done, so the
+   *  request is spent and a later visit to the list opens on List. */
+  openComments?: boolean
+  onCommentsShown?: () => void
 }
 
 export function ListDetailPanel({
@@ -128,6 +133,8 @@ export function ListDetailPanel({
   onToggleExpanded,
   onClose,
   onDeleted,
+  openComments = false,
+  onCommentsShown,
 }: DetailPanelProps) {
   const { toast } = useToast()
   const [tab, setTab] = React.useState<DetailTab>('list')
@@ -169,6 +176,13 @@ export function ListDetailPanel({
   React.useEffect(() => {
     setTab('list')
   }, [listId])
+  // After the reset above (effects run in order), so a list opened from the
+  // alert lands on Comments.
+  React.useEffect(() => {
+    if (!openComments) return
+    setTab('comments')
+    onCommentsShown?.()
+  }, [openComments, listId, onCommentsShown])
 
   const list = detail.data
   // Someone else's list you haven't saved has no owner in the collection:

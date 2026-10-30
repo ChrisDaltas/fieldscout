@@ -18,6 +18,31 @@ export const listHref = (id: string, from?: ListFrom) =>
   `/app/lists?list=${encodeURIComponent(id)}${from ? `&from=${from}` : ''}`
 
 /**
+ * The flag that opens a list's comments on arrival: `comments=1` beside
+ * `?list=`. "@x commented on your list" (`list_comment`, migration 213) links
+ * here, so the tap lands where the comment is — on the phone the List view
+ * with its Comments sheet open, on desktop the Lists panel on its Comments
+ * tab. The screen drops the flag once it has opened them
+ * (`withoutCommentsFlag`), so Back and a reload show the list as usual.
+ */
+export const LIST_COMMENTS_PARAM = 'comments'
+
+/** Your list, opened on its comments (`LIST_COMMENTS_PARAM`). */
+export const listCommentsHref = (id: string) => `${listHref(id)}&${LIST_COMMENTS_PARAM}=1`
+
+/** An address (path + query) with the comments flag taken out, the rest
+ *  kept as it was. */
+export function withoutCommentsFlag(href: string): string {
+  const at = href.indexOf('?')
+  if (at === -1) return href
+  const search = new URLSearchParams(href.slice(at + 1))
+  if (!search.has(LIST_COMMENTS_PARAM)) return href
+  search.delete(LIST_COMMENTS_PARAM)
+  const rest = search.toString()
+  return `${href.slice(0, at)}${rest ? `?${rest}` : ''}`
+}
+
+/**
  * The phone screens that open one list from `?list=<id>`: the List view
  * (`listHref`) and Community's list page, over the feed or the Latest page
  * (`communityDetailHref` — pinned against these in `public-list-phone.test`).

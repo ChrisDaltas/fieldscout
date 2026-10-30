@@ -29,6 +29,7 @@ import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/hooks/use-auth'
 import { useCommentCooldown } from '@/hooks/use-comment-cooldown'
 import {
+  COMMENTS_READ_FAILED,
   CommentRequestError,
   useAddComment,
   useComments,
@@ -212,9 +213,15 @@ export function ListCommentsTab({
       )}
 
       {comments.isError && !olderFailed && (
-        <p className="text-[11px] font-medium text-negative-strong">
-          Comments could not be loaded. {comments.error.message}
-        </p>
+        // A retry puts the tab back to "Loading comments…" until it answers.
+        <div className="flex flex-col items-center gap-[9px] py-4 text-center" data-comments-read-failed>
+          <p role="alert" className="text-[11px] font-medium text-negative-strong">
+            {COMMENTS_READ_FAILED}
+          </p>
+          <Button variant="stroke" size="sm" onClick={() => void comments.refetch()} data-comments-retry>
+            Try again
+          </Button>
+        </div>
       )}
 
       {comments.data?.comments.map((comment) => (

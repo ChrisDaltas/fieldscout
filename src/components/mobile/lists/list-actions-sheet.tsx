@@ -75,6 +75,7 @@ export function ListActionsSheet({
   onEditDetails,
   onDeleted,
   tools,
+  commentsSheet,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -89,6 +90,12 @@ export function ListActionsSheet({
   onEditDetails: () => void
   onDeleted: () => void
   tools: ListToolsProps
+  /**
+   * The Comments sheet's open state, when the List view holds it — so "@x
+   * commented on your list" can open the thread straight from the List view
+   * on arrival (`LIST_COMMENTS_PARAM`). Without it this sheet holds it.
+   */
+  commentsSheet?: { open: boolean; onOpenChange: (open: boolean) => void }
 }) {
   const update = useUpdateList(list.id)
   const favorite = useToggleFavorite()
@@ -96,7 +103,9 @@ export function ListActionsSheet({
   const remove = useDeleteList()
   const comments = useComments(open ? list.id : undefined)
   const [folderOpen, setFolderOpen] = React.useState(false)
-  const [commentsOpen, setCommentsOpen] = React.useState(false)
+  const [ownCommentsOpen, setOwnCommentsOpen] = React.useState(false)
+  const commentsOpen = commentsSheet?.open ?? ownCommentsOpen
+  const setCommentsOpen = commentsSheet?.onOpenChange ?? setOwnCommentsOpen
   const [attachOpen, setAttachOpen] = React.useState(false)
   const [reportOpen, setReportOpen] = React.useState(false)
   const { user } = useAuth()
