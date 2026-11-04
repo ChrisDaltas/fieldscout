@@ -62,6 +62,8 @@ redesign_pkg.zip
 # M5 gate evidence (L.D3.10) — the transacting run and four probe reports.
 /.gate-m5/
 /.gate-m6/
+# M7 gate (L.F2.12) — the open-row report, M7's pgTAP output, the verdict.
+/.gate-m7/
 
 # M7 L.F2.1 load harness: the seeder manifest holds per-run bot passwords + row ids (public repo)
 /load/.out/
