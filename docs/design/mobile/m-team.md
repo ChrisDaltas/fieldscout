@@ -929,7 +929,7 @@ Resulting dark-mode appearance in this area:
 | "Send trade proposal" + "sent" toast | restyle-only | `useProposeTrade`; the "Offer sent to X" card | — |
 | Counter → builder prefilled (their offer → theirs, their ask → mine) | restyle-only | `counterSeed`, counter mode (teams fixed) | — |
 | App-only builder features | restyle-only | `trade-builder.tsx`, `trade-center.tsx` | FAAB legs, drop picker for roster overflow, note, 162 legality preview, deadline lock, no-partner state, rosters-loading state. Keep and restyle. |
-| Entry doors (Team tile, team view, profile "Propose trade", Players-tab trade with a preselected player) | restyle-only | `tradesHref(?with=&player=)`, `tradeDoorStep` | — |
+| Entry doors (Team tile, team view, profile "Propose trade", Players-tab trade with a preselected player) | restyle-only | `tradesHref(?with=&target=)`, `tradeDoorStep` | — |
 | Sent offers listed in Messages › Trades with a pending count and inline Accept/Decline/Counter | out-of-scope-or-question | Trades live in league More › Trades (Pending/History); Messages is mock | Should trades also live in DMs? IA ruling needed. |
 
 ### Shared chrome

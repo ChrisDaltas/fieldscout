@@ -49,7 +49,8 @@ import { STORAGE_STATE } from './helpers/local-env'
  *
  *   1. WAIVER MORNING — two managers put in claims on the same free agent in
  *      the browser (blind FAAB bids), the run happens at an INJECTED instant,
- *      and each manager's claims panel shows won / lost with the reason.
+ *      and each manager's My Team → Transactions shows won / lost with the
+ *      reason.
  *   2. A TRADE UNDER EACH REVIEW MODE, each to execution — commissioner
  *      review (approved by the commissioner in the browser), no review
  *      (executes at accept), league vote (votes by the other managers; one
@@ -697,7 +698,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       await mPage.goto(`/app/leagues/${league.leagueId}/standings`)
       const orderList = mPage.locator('[data-waiver-order="order"]')
       await expect(orderList).toBeVisible({ timeout: 60_000 })
-      // D489 (F580): the list is a titled Card now; the region is named by its title.
+      // D489(3) / F494: the list is a titled Card now; the region is named by its title.
       await expect(orderList).toHaveAccessibleName('Tie order for equal bids')
       await expect(orderList.locator('#waiver-order-title')).toHaveText('Tie order for equal bids')
       const shownTeams = orderList.locator('[data-waiver-order-team]')

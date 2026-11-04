@@ -73,7 +73,7 @@
 #     census counts them, and an OFF league that passed over nobody is a
 #     `LEGALITY PREMISE` problem — here AND in gate-m4-evidence / [4.1].
 #   - F480 (a PRODUCT fix, found by this gate's first run): the trade
-#     center's `?with=&player=` door decided once, in the initial state, and
+#     center's `?with=&target=` door decided once, in the initial state, and
 #     was lost whenever the league read beat the session (`useAuth` user still
 #     null) — `transactions.spec.ts:155` red inside gate-m3's browser run,
 #     reproduced by construction (the session held 4 s) and fixed: the door

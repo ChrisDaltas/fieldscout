@@ -13,7 +13,7 @@
  *  4. The actions block rendered per state.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createElement, type ReactElement } from 'react'
+import { createElement, isValidElement, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -22,6 +22,7 @@ import { LOCKED_ADD_TITLE, LOCKED_DROP_TITLE } from '@/components/leagues/player
 import type { PoolRow } from '@/hooks/use-league-pool'
 import type { LeagueRosters, RosterPlayer, RosterTeam } from '@/lib/leagues/api/rosters-service'
 import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
+import { usePlayerModalStore } from '@/stores/player-modal-store'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 import { DraftCardActions, LeagueActionsBody } from './player-card-actions'
@@ -526,6 +527,60 @@ describe('LeagueActionsBody — a render per state', () => {
   })
   it('the drop confirmation reads in plain words', () => {
     expect(dropConfirmCopy('Bijan Robinson')).toBe('Bijan Robinson leaves your roster, and other teams can pick him up.')
+  })
+})
+
+// F881 — the view and the card live at the root, so nothing else clears them
+// when the door navigates. `LeagueActionsBody` has no hooks of its own, so its
+// element tree can be walked and the door's real handler pressed.
+describe('the trade door closes what would sit on top of the builder (F881)', () => {
+  const door = (node: unknown): ReactElement<{ onClick: (e: object) => void }> | null => {
+    if (Array.isArray(node)) {
+      for (const n of node) {
+        const found = door(n)
+        if (found) return found
+      }
+      return null
+    }
+    if (!isValidElement<{ children?: unknown; 'data-card-action'?: string }>(node)) return null
+    if (node.props['data-card-action'] === 'trade') return node as never
+    return door(node.props.children)
+  }
+  const press = (e: object) => {
+    const tree = LeagueActionsBody({ view: cardLeagueView(input({ player: player('p-theirs') })), leagueId: 'lg', myTeamId: 'mine' })
+    const found = door(tree)
+    if (!found) throw new Error('no trade door in the block')
+    found.props.onClick(e)
+  }
+  const openWindows = () => usePlayerWindowsStore.getState().windows.map((w) => w.playerId)
+
+  beforeEach(() => {
+    usePlayerWindowsStore.setState({ windows: [], ambient: null })
+    usePlayerModalStore.getState().closePlayerView()
+    usePlayerModalStore.getState().openPlayerView('p-theirs', 'lg')
+    usePlayerWindowsStore.getState().open('p-theirs')
+    usePlayerWindowsStore.getState().open('p-other')
+  })
+
+  it('pressing it closes the player view and his mini card, and marks the view as left with the page', () => {
+    press({})
+    expect(usePlayerModalStore.getState().target).toBeNull()
+    expect(usePlayerModalStore.getState().leftPage).toBe(true)
+    // Another player's card floats across pages by design, and stays.
+    expect(openWindows()).toEqual(['p-other'])
+  })
+  it('a modified click opens a new tab: this tab keeps both', () => {
+    for (const mod of ['metaKey', 'ctrlKey', 'shiftKey', 'altKey']) press({ [mod]: true })
+    expect(usePlayerModalStore.getState().target?.playerId).toBe('p-theirs')
+    expect(usePlayerModalStore.getState().leftPage).toBe(false)
+    expect(openWindows()).toEqual(['p-theirs', 'p-other'])
+  })
+  it('only a door marks it left: a plain close still strips `?player=`, and the next open clears the mark', () => {
+    usePlayerModalStore.getState().closePlayerView()
+    expect(usePlayerModalStore.getState().leftPage).toBe(false)
+    press({})
+    usePlayerModalStore.getState().openPlayerView('p-theirs', 'lg')
+    expect(usePlayerModalStore.getState().leftPage).toBe(false)
   })
 })
 

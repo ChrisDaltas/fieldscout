@@ -207,13 +207,28 @@ test.describe('the full player page + rail notifications (real browser)', () => 
       isMobile: true,
     })
     const phonePage = await phone.newPage()
-    await phonePage.goto(`${teamUrl}?player=${playerId}&league=${leagueId}`)
+    await phonePage.goto(teamUrl)
+    // A phone's row has no player attribute: the name button is told from the
+    // row's slot chip ("Bench: <name> — swap") by starting with the name.
+    const { data: tapped, error: tappedError } = await serviceClient().from('players').select('full_name').eq('id', playerId!).single()
+    if (tappedError) throw tappedError
+    const nameStart = new RegExp(`^${tapped.full_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+    const row = phonePage.locator('[data-lineup-row], [data-view-row]').getByRole('button', { name: nameStart })
+    await expect(row).toBeVisible({ timeout: 60_000 })
+    await row.tap()
     const sheet = phonePage.locator(`[data-player-profile="${playerId}"]`)
     await expect(sheet).toBeVisible({ timeout: 60_000 })
     const box = await sheet.boundingBox()
     expect(box?.width).toBe(390)
     expect(await sheet.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
     await phonePage.waitForTimeout(300)
+    // The outer sheet clips, so it can't see overflow: the body scroller can
+    // (`mobile-player-profile.tsx`). It must have content for this to mean anything.
+    const scroller = sheet.locator('[role="tabpanel"]')
+    await expect(scroller).toBeVisible({ timeout: 30_000 })
+    const fit = await scroller.evaluate((el) => ({ children: el.childElementCount, fits: el.scrollWidth <= el.clientWidth }))
+    expect(fit.children).toBeGreaterThan(0)
+    expect(fit.fits).toBe(true)
     await phonePage.screenshot({ path: process.env.PP_MOBILE_SHOT ?? test.info().outputPath('player-modal-mobile.png') })
     await phone.close()
 

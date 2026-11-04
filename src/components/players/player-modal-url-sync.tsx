@@ -8,7 +8,9 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
 /**
  * `?player=<id>` (+ `&league=`) opens the player view modal — the landing for
  * a shared link or an old `/app/players/<id>` URL (which redirects here).
- * Closing the modal clears both params, leaving the page under it.
+ * Closing the modal clears both params, leaving the page under it. A door
+ * that left the page (`leavePlayerView`) already has its own navigation under
+ * way, so the params go with the page.
  */
 export function PlayerModalUrlSync() {
   const params = useSearchParams()
@@ -16,6 +18,7 @@ export function PlayerModalUrlSync() {
   const router = useRouter()
   const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
   const target = usePlayerModalStore((s) => s.target)
+  const leftPage = usePlayerModalStore((s) => s.leftPage)
   const playerParam = params.get('player')
   const opened = useRef<string | null>(null)
   // The param's modal has actually been shown — only then does a null
@@ -38,12 +41,13 @@ export function PlayerModalUrlSync() {
     if (!shown.current) return
     opened.current = null
     shown.current = false
+    if (leftPage) return
     const next = new URLSearchParams(params.toString())
     next.delete('player')
     next.delete('league')
     const q = next.toString()
     router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false })
-  }, [target, playerParam, params, pathname, router])
+  }, [target, leftPage, playerParam, params, pathname, router])
 
   return null
 }

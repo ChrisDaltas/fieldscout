@@ -19,13 +19,21 @@ export interface PlayerModalTarget {
 
 interface PlayerModalStore {
   target: PlayerModalTarget | null
+  /** The view went because a door is leaving the page, not because it was
+   *  closed. `PlayerModalUrlSync` then leaves the URL alone: stripping
+   *  `?player=` there is a `router.replace` to the page being left, and the
+   *  newest navigation wins, so the door's own would be discarded (F881). */
+  leftPage: boolean
   openPlayerView: (playerId: string, leagueId?: string | null, listContext?: PlayerListContext | null) => void
   closePlayerView: () => void
+  leavePlayerView: () => void
 }
 
 export const usePlayerModalStore = create<PlayerModalStore>()((set) => ({
   target: null,
+  leftPage: false,
   openPlayerView: (playerId, leagueId = null, listContext = null) =>
-    set({ target: { playerId, leagueId, listContext } }),
-  closePlayerView: () => set({ target: null }),
+    set({ target: { playerId, leagueId, listContext }, leftPage: false }),
+  closePlayerView: () => set({ target: null, leftPage: false }),
+  leavePlayerView: () => set({ target: null, leftPage: true }),
 }))

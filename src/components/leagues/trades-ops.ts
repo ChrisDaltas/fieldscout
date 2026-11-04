@@ -845,7 +845,7 @@ export function isTradesUnavailable(error: unknown): boolean {
 }
 
 /**
- * THE `?with=` / `?player=` DOOR — PROGRESS F480 / R1268 (D423). One step of
+ * THE `?with=` / `?target=` DOOR — PROGRESS F480 / R1268 (D423). One step of
  * the trade center's door, run once per render with the viewer's team as it
  * is known THEN. The team needs the signed-in user, and `useAuth`'s session
  * can land AFTER the league read, so the first renders may carry `null`. The
