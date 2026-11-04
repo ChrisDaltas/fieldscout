@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { playerPageHref } from '@/components/players/player-page-ops'
+import { isOffensePosition } from '@/lib/players/preset-scoring'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { TableCell, TableHead } from '@/components/ui/table'
@@ -155,7 +156,7 @@ const COLUMNS: ColumnDef[] = [
   // Kicking
   { key: 'fg_made', label: 'FGM', full: 'Field goals made', group: 'kicking', statField: 'fg_made' },
   { key: 'fg_attempted', label: 'FGA', full: 'Field goals attempted', group: 'kicking', statField: 'fg_attempted' },
-  { key: 'fg_made_40_plus', label: 'FG 40+', full: 'Field goals 40+ yards', group: 'kicking', statField: 'fg_made_40_plus', adv: true },
+  { key: 'fg_made_40_plus', label: 'FG 40–49', full: 'Field goals 40–49 yards', group: 'kicking', statField: 'fg_made_40_plus', adv: true },
   { key: 'fg_made_50_plus', label: 'FG 50+', full: 'Field goals 50+ yards', group: 'kicking', statField: 'fg_made_50_plus', adv: true },
   { key: 'xp_made', label: 'XPM', full: 'Extra points made', group: 'kicking', statField: 'xp_made' },
   { key: 'xp_attempted', label: 'XPA', full: 'Extra points attempted', group: 'kicking', statField: 'xp_attempted', adv: true },
@@ -315,7 +316,11 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
 
   const columnValue = (row: PlayerRow, col: ColumnDef): number | null => {
     if (col.key === 'projected') return row.projected_pts
-    if (col.key === 'pts') return ptsOf(row)
+    if (col.key === 'pts') {
+      // A K or D/ST with no scored game has no number, not a 0 (K0).
+      const games = season === 'current' ? row.current_games : row.last_games
+      return games === 0 && !isOffensePosition(row.position) ? null : ptsOf(row)
+    }
     return Number(statsOf(row)[col.statField ?? ''] ?? 0)
   }
 

@@ -22,9 +22,9 @@
  * cutsOf(snapshot)))` — the scoring worker's own composition, with the
  * league's FROZEN `scoring_rules_snapshot` (§7.3.3 — never the live
  * `scoring_systems` row; never-weaken). `src/lib/scoring/default.ts` (the
- * legacy research calculator, its own column-name namespace) is NOT used and
- * must never be: a value computed through it is a wrong value that looks
- * right (R1096).
+ * settings editor's values, its own column-name namespace) is NOT used and
+ * must never be: the calculator it used to hold produced wrong values that
+ * looked right (R1096), and K0 deleted it.
  *
  *   * SEASON is literally the worker's `scoreStarter` per week — the stored
  *     per-player precision (§7.3.3 half-up, 2dp) summed and rounded once

@@ -197,7 +197,7 @@ import {
 } from './rules-doc'
 import { readHeldGames, withoutHeldLines } from './held-games'
 import type { TierCuts } from './tier-cuts'
-import { POSITION_SCORABLE_KEYS } from './validate-rules-doc'
+import { POSITION_SCORABLE_KEYS } from './position-scorable-keys'
 
 // ── Registry-derived surfaces (one namespace, D33) ─────────────────────────
 

@@ -1,16 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import {
-  calculateFantasyPoints,
-  type ScoringRules,
-  type StatRow,
-} from '@/lib/scoring/default'
-import {
-  CURRENT_SEASON,
-  LAST_SEASON,
-  SCORING_BY_KEY,
-  type ScoringKey,
-} from '@/lib/stats/aggregate-fantasy'
+import { PRESET_BY_BUILDER_KEY, PRESET_LINE_SELECT, presetLines, presetSeasonDisplay } from '@/lib/players/preset-scoring'
+import type { ScoringKey } from '@/lib/stats/aggregate-fantasy'
+import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/seasons'
 import { fetchWeeklyStatsForPlayers } from '@/lib/stats/fetch-weekly-stats'
 import type {
   AiPosition,
@@ -102,12 +94,38 @@ interface PlayerPoolRow {
   [key: string]: unknown
 }
 
-type WeeklyRow = StatRow & {
+type WeeklyRow = Record<string, unknown> & {
   player_id: string | null
   week: number | null
-  targets: number | null
-  receptions: number | null
-  rush_attempts: number | null
+  targets?: number | null
+  receptions?: number | null
+  rush_attempts?: number | null
+}
+
+export interface LastSeasonLine {
+  /** Null when no game scored: the prompt says "no stats", never 0. */
+  points: number | null
+  games: number
+  targets: number
+  receptions: number
+  rushAttempts: number
+}
+
+/** One player's last season for the prompt: each game scored alone by the one
+ *  preset scorer. A refused game adds no points, no count and no volume. */
+export function aggregateLastSeason(rows: readonly WeeklyRow[], position: string, scoringKey: ScoringKey): LastSeasonLine {
+  const games = presetLines(
+    position,
+    rows.filter((row) => row.week != null),
+  )
+  const sum = (read: (row: WeeklyRow) => number | null | undefined) => games.reduce((total, row) => total + (read(row) ?? 0), 0)
+  return {
+    points: games.length === 0 ? null : presetSeasonDisplay(PRESET_BY_BUILDER_KEY[scoringKey], position, games),
+    games: games.length,
+    targets: sum((row) => row.targets),
+    receptions: sum((row) => row.receptions),
+    rushAttempts: sum((row) => row.rush_attempts),
+  }
 }
 
 const CACHE_TTL_MS = 10 * 60 * 1000
@@ -197,38 +215,23 @@ export async function buildPlayerPacket(
   }
 
   const ids = pool.map((p) => p.row.id)
-  const rules: ScoringRules = SCORING_BY_KEY[scoringKey]
   const weekly = await fetchWeeklyStatsForPlayers<WeeklyRow>({
     supabase,
     playerIds: ids,
     seasons: [LAST_SEASON],
-    select:
-      'player_id, week, pass_yards, pass_tds, interceptions, rush_yards, rush_tds, receptions, receiving_yards, receiving_tds, fumbles_lost, two_point_conversions, fg_made, fg_made_40_plus, fg_made_50_plus, xp_made, def_sacks, def_interceptions, def_fumble_recoveries, def_tds, def_safeties, targets, rush_attempts',
+    select: PRESET_LINE_SELECT,
   })
 
-  const byPlayer = new Map<
-    string,
-    { points: number; games: number; targets: number; receptions: number; rushAttempts: number }
-  >()
+  const rowsByPlayer = new Map<string, WeeklyRow[]>()
   for (const row of weekly) {
-    if (!row.player_id || row.week == null) continue
-    const agg = byPlayer.get(row.player_id) ?? {
-      points: 0,
-      games: 0,
-      targets: 0,
-      receptions: 0,
-      rushAttempts: 0,
-    }
-    agg.points += calculateFantasyPoints(row, rules)
-    agg.games += 1
-    agg.targets += row.targets ?? 0
-    agg.receptions += row.receptions ?? 0
-    agg.rushAttempts += row.rush_attempts ?? 0
-    byPlayer.set(row.player_id, agg)
+    if (!row.player_id) continue
+    const list = rowsByPlayer.get(row.player_id)
+    if (list) list.push(row)
+    else rowsByPlayer.set(row.player_id, [row])
   }
 
   const players: PacketPlayer[] = pool.map(({ row, projected }) => {
-    const agg = byPlayer.get(row.id)
+    const last = aggregateLastSeason(rowsByPlayer.get(row.id) ?? [], row.position, scoringKey)
     return {
       id: row.id,
       name: row.full_name,
@@ -238,11 +241,11 @@ export async function buildPlayerPacket(
       adp: row.adp,
       bye_week: row.bye_week,
       status: row.status,
-      last_season_points: agg ? Math.round(agg.points * 10) / 10 : null,
-      last_season_games: agg?.games ?? 0,
-      targets: agg?.targets ?? 0,
-      receptions: agg?.receptions ?? 0,
-      rush_attempts: agg?.rushAttempts ?? 0,
+      last_season_points: last.points,
+      last_season_games: last.games,
+      targets: last.targets,
+      receptions: last.receptions,
+      rush_attempts: last.rushAttempts,
       projected_points: projected,
     }
   })

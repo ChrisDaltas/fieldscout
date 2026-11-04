@@ -34,7 +34,8 @@ export interface SeasonBlock {
   season: number
   gamesPlayed: number
   totals: StatTotals
-  fantasy: { ppr: number; standard: number }
+  /** Null: a K or D/ST with no scored game, or no stored projection. A dash. */
+  fantasy: { ppr: number | null; standard: number | null }
   basis?: 'pace' | 'projections' | 'last_season'
 }
 
@@ -43,7 +44,8 @@ export interface GameLogRow {
   source: string | null
   is_live: boolean | null
   stats: StatTotals
-  fantasy: { ppr: number; standard: number }
+  /** Null: this game can't be scored (a K or D/ST line with a stat missing). */
+  fantasy: { ppr: number | null; standard: number | null }
 }
 
 export interface PlayerStatsPlayer {

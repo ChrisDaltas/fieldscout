@@ -20,9 +20,10 @@ import type { ListBucketKey } from '@/types/schemas/lists'
 export type { ListLink }
 
 export interface ListPlayerStats {
-  current_pts: number
+  /** Null: a K or D/ST with no scored game (a dash, never a 0). */
+  current_pts: number | null
   current_games: number
-  last_pts: number
+  last_pts: number | null
   last_games: number
   projected_pts: number | null
 }

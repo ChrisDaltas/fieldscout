@@ -1,8 +1,10 @@
 /**
- * Default scoring systems. Mirrors the platform defaults referenced in the
- * PRD: ESPN Standard and ESPN PPR. We expose both ruleset shapes here so the
- * stats API and the player modal can compute fantasy points without depending
- * on a particular user's saved scoring system yet.
+ * The values the scoring settings editor shows, not a scorer. Every stats
+ * surface scores through `src/lib/players/preset-scoring.ts` (the canonical
+ * engine and the shipped ESPN templates). K0 deleted the calculator that used
+ * to read these; `one-scorer-rule.test.ts` keeps it from coming back.
+ *
+ * `StatRow` and `sumStatRows` stay for raw box totals, which are never points.
  */
 
 export interface ScoringRules {
@@ -129,34 +131,6 @@ export interface StatRow {
   def_fumble_recoveries?: number | null
   def_tds?: number | null
   def_safeties?: number | null
-}
-
-export function calculateFantasyPoints(
-  row: StatRow,
-  rules: ScoringRules = PPR_SCORING,
-): number {
-  const get = (k: keyof StatRow) => Number(row[k] ?? 0)
-  let pts = 0
-  pts += get('pass_yards') * rules.pass_yards
-  pts += get('pass_tds') * rules.pass_tds
-  pts += get('interceptions') * rules.interceptions
-  pts += get('rush_yards') * rules.rush_yards
-  pts += get('rush_tds') * rules.rush_tds
-  pts += get('receptions') * rules.receptions
-  pts += get('receiving_yards') * rules.receiving_yards
-  pts += get('receiving_tds') * rules.receiving_tds
-  pts += get('fumbles_lost') * rules.fumbles_lost
-  pts += get('two_point_conversions') * rules.two_point_conversions
-  pts += get('fg_made') * rules.fg_made
-  pts += get('fg_made_40_plus') * rules.fg_made_40_plus
-  pts += get('fg_made_50_plus') * rules.fg_made_50_plus
-  pts += get('xp_made') * rules.xp_made
-  pts += get('def_sacks') * rules.def_sacks
-  pts += get('def_interceptions') * rules.def_interceptions
-  pts += get('def_fumble_recoveries') * rules.def_fumble_recoveries
-  pts += get('def_tds') * rules.def_tds
-  pts += get('def_safeties') * rules.def_safeties
-  return Math.round(pts * 10) / 10
 }
 
 const STAT_FIELDS: (keyof StatRow)[] = [

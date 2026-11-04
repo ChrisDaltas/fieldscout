@@ -8,7 +8,7 @@ import { STAT_CATALOG } from '@/components/lists/v2/list-stats'
 import { SEASON_PROJ_LABEL } from '@/components/players/projected-points'
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
 import type { FrameTotals } from '@/hooks/use-mobile-lists-timeframe-stats'
-import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/aggregate-fantasy'
+import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/seasons'
 
 import {
   DASH,

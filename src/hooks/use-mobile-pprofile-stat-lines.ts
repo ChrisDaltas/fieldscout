@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 
+import { PRESET_LINE_COLUMNS } from '@/lib/players/preset-scoring'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 /**
@@ -44,6 +45,9 @@ export const PROFILE_BOX_COLUMNS = [
 ] as const
 export type ProfileBoxColumn = (typeof PROFILE_BOX_COLUMNS)[number]
 
+/** The box columns plus what the preset scorer needs (past-season Fpts). */
+const PROFILE_LINE_SELECT = ['season', 'week', 'is_live', ...new Set([...PROFILE_BOX_COLUMNS, ...PRESET_LINE_COLUMNS])].join(', ')
+
 export type ProfileStatLine = {
   season: number
   week: number
@@ -63,7 +67,7 @@ export function useMobileProfileStatLines(playerId: string | null, currentSeason
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('player_stats')
-        .select(['season', 'week', 'is_live', ...PROFILE_BOX_COLUMNS].join(', '))
+        .select(PROFILE_LINE_SELECT)
         .eq('player_id', playerId!)
         .eq('stat_type', 'weekly')
         .in('season', seasons)

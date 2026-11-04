@@ -1,34 +1,9 @@
-import {
-  calculateFantasyPoints,
-  HALF_PPR_SCORING,
-  PPR_SCORING,
-  STANDARD_SCORING,
-  type ScoringRules,
-  type StatRow,
-} from '@/lib/scoring/default'
+import { PRESET_BY_BUILDER_KEY, PRESET_LINE_SELECT, presetLines, presetSeasonDisplay } from '@/lib/players/preset-scoring'
 import { fetchWeeklyStatsForPlayers } from '@/lib/stats/fetch-weekly-stats'
+import { ASSUMED_TOTAL_GAMES, CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/seasons'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export const CURRENT_SEASON = 2026
-export const LAST_SEASON = 2025
-export const ASSUMED_TOTAL_GAMES = 17
-
-const STATS_SELECT =
-  'player_id, season, week, source, ' +
-  'pass_attempts, pass_completions, pass_yards, pass_tds, interceptions, sacks_taken, ' +
-  'rush_attempts, rush_yards, rush_tds, fumbles_lost, ' +
-  'targets, receptions, receiving_yards, receiving_tds, ' +
-  'fg_made, fg_attempted, fg_made_40_plus, fg_made_50_plus, xp_made, xp_attempted, ' +
-  'def_sacks, def_interceptions, def_fumble_recoveries, def_tds, def_safeties, ' +
-  'two_point_conversions'
-
 export type ScoringKey = 'ppr' | 'standard' | 'half_ppr'
-
-export const SCORING_BY_KEY: Record<ScoringKey, ScoringRules> = {
-  ppr: PPR_SCORING,
-  standard: STANDARD_SCORING,
-  half_ppr: HALF_PPR_SCORING,
-}
 
 const PROJECTION_COLUMN_BY_KEY: Record<ScoringKey, string> = {
   ppr: 'projected_pts_ppr',
@@ -37,9 +12,11 @@ const PROJECTION_COLUMN_BY_KEY: Record<ScoringKey, string> = {
 }
 
 export interface FantasyStatsForPlayer {
-  current_pts: number
+  /** Null: a K or D/ST with no scored game (a dash, never a 0). The games
+   *  counts are scored games only: a refused game is not a game. */
+  current_pts: number | null
   current_games: number
-  last_pts: number
+  last_pts: number | null
   last_games: number
   /**
    * Pre-season: real Sleeper projection for the chosen scoring variant
@@ -53,27 +30,17 @@ export interface FantasyStatsForPlayer {
   projected_pts: number | null
 }
 
-type Accumulator = Record<string, number> & { __games?: number }
-
-function add(acc: Accumulator, row: Record<string, unknown>) {
-  for (const [k, v] of Object.entries(row)) {
-    if (k === 'player_id' || k === 'season' || k === 'week' || k === 'source') continue
-    acc[k] = (acc[k] ?? 0) + Number(v ?? 0)
-  }
-  acc.__games = (acc.__games ?? 0) + 1
-}
-
 /**
- * Read the players' stored Sleeper projections for the chosen scoring
- * variant. Chunked by id to dodge PostgREST's 1000-row cap (same trap as
- * fetchWeeklyStatsForPlayers).
+ * Read each player's position (the scorer needs it) and stored Sleeper
+ * projection for the chosen scoring variant, in one read. Chunked by id to
+ * dodge PostgREST's 1000-row cap (same trap as fetchWeeklyStatsForPlayers).
  */
-async function fetchStoredProjections(
+async function fetchPlayerFacts(
   supabase: SupabaseClient,
   playerIds: string[],
   scoring: ScoringKey,
-): Promise<Map<string, number | null>> {
-  const out = new Map<string, number | null>()
+): Promise<Map<string, { position: string | null; projection: number | null }>> {
+  const out = new Map<string, { position: string | null; projection: number | null }>()
   if (playerIds.length === 0) return out
   const col = PROJECTION_COLUMN_BY_KEY[scoring]
   const CHUNK = 200
@@ -85,7 +52,7 @@ async function fetchStoredProjections(
     chunks.map(async (chunk) => {
       const { data, error } = await supabase
         .from('players')
-        .select(`id, ${col}` as string)
+        .select(`id, position, ${col}` as string)
         .in('id', chunk)
       if (error) throw new Error(error.message)
       return (data ?? []) as unknown as Array<Record<string, unknown>>
@@ -96,7 +63,10 @@ async function fetchStoredProjections(
       const id = row.id as string
       const raw = row[col]
       const num = raw === null || raw === undefined ? null : Number(raw)
-      out.set(id, Number.isFinite(num as number) ? (num as number) : null)
+      out.set(id, {
+        position: typeof row.position === 'string' ? row.position : null,
+        projection: Number.isFinite(num as number) ? (num as number) : null,
+      })
     }
   }
   return out
@@ -122,78 +92,73 @@ export async function aggregateFantasyStats(
   const result = new Map<string, FantasyStatsForPlayer>()
   if (playerIds.length === 0) return result
 
-  const rules = SCORING_BY_KEY[scoring]
-  const [data, storedProjections] = await Promise.all([
+  const preset = PRESET_BY_BUILDER_KEY[scoring]
+  const [data, facts] = await Promise.all([
     fetchWeeklyStatsForPlayers<Record<string, unknown>>({
       supabase,
       playerIds,
       seasons: [CURRENT_SEASON, LAST_SEASON],
-      select: STATS_SELECT,
+      select: PRESET_LINE_SELECT,
     }),
-    fetchStoredProjections(supabase, playerIds, scoring),
+    fetchPlayerFacts(supabase, playerIds, scoring),
   ])
 
-  const currentByPlayer = new Map<string, Accumulator>()
-  const currentLiveByPlayer = new Map<string, Accumulator>()
-  const lastByPlayer = new Map<string, Accumulator>()
+  // Each game is scored alone (a K or D/ST can't be scored from a sum), so the
+  // rows stay per bucket. Mock rows count toward "current" but never toward
+  // the live pace.
+  const currentByPlayer = new Map<string, Record<string, unknown>[]>()
+  const currentLiveByPlayer = new Map<string, Record<string, unknown>[]>()
+  const lastByPlayer = new Map<string, Record<string, unknown>[]>()
+  const push = (bucket: Map<string, Record<string, unknown>[]>, id: string, row: Record<string, unknown>) => {
+    const list = bucket.get(id)
+    if (list) list.push(row)
+    else bucket.set(id, [row])
+  }
 
   for (const row of data) {
     const pid = row.player_id as string
-    const isMock = row.source === 'mock'
-
     if (row.season === CURRENT_SEASON) {
-      let acc = currentByPlayer.get(pid)
-      if (!acc) {
-        acc = {}
-        currentByPlayer.set(pid, acc)
-      }
-      add(acc, row)
-
-      if (!isMock) {
-        let liveAcc = currentLiveByPlayer.get(pid)
-        if (!liveAcc) {
-          liveAcc = {}
-          currentLiveByPlayer.set(pid, liveAcc)
-        }
-        add(liveAcc, row)
-      }
+      push(currentByPlayer, pid, row)
+      if (row.source !== 'mock') push(currentLiveByPlayer, pid, row)
     } else {
-      let acc = lastByPlayer.get(pid)
-      if (!acc) {
-        acc = {}
-        lastByPlayer.set(pid, acc)
-      }
-      add(acc, row)
+      push(lastByPlayer, pid, row)
     }
   }
 
   for (const id of playerIds) {
-    const currentAcc = currentByPlayer.get(id) ?? {}
-    const liveAcc = currentLiveByPlayer.get(id) ?? {}
-    const lastAcc = lastByPlayer.get(id) ?? {}
-    const liveGames = liveAcc.__games ?? 0
+    const stored = currentByPlayer.get(id) ?? []
+    const storedLast = lastByPlayer.get(id) ?? []
+    const position = facts.get(id)?.position ?? ''
+    // A position is what picks the scoring. Rows with none can't be scored, and
+    // a list route catches this rather than showing a plausible 0.
+    if (position === '' && (stored.length > 0 || storedLast.length > 0)) {
+      throw new Error(`aggregateFantasyStats: player ${id} has stat rows but no position`)
+    }
 
-    const currentPts = calculateFantasyPoints(currentAcc as StatRow, rules)
-    const livePts = calculateFantasyPoints(liveAcc as StatRow, rules)
-    const lastPts = calculateFantasyPoints(lastAcc as StatRow, rules)
+    // Refused games leave here, so every count below means scored games.
+    const current = presetLines(position, stored)
+    const live = presetLines(position, currentLiveByPlayer.get(id) ?? [])
+    const last = presetLines(position, storedLast)
+    const liveGames = live.length
 
     let projectedPts: number | null
     if (liveGames > 0) {
+      const livePts = presetSeasonDisplay(preset, position, live) ?? 0
       const perGame = livePts / liveGames
       projectedPts =
         Math.round(
           (livePts + perGame * Math.max(0, ASSUMED_TOTAL_GAMES - liveGames)) * 10,
         ) / 10
     } else {
-      const stored = storedProjections.get(id)
-      projectedPts = typeof stored === 'number' ? Math.round(stored * 10) / 10 : null
+      const projection = facts.get(id)?.projection
+      projectedPts = typeof projection === 'number' ? Math.round(projection * 10) / 10 : null
     }
 
     result.set(id, {
-      current_pts: Math.round(currentPts * 10) / 10,
-      current_games: currentAcc.__games ?? 0,
-      last_pts: Math.round(lastPts * 10) / 10,
-      last_games: lastAcc.__games ?? 0,
+      current_pts: presetSeasonDisplay(preset, position, current),
+      current_games: current.length,
+      last_pts: presetSeasonDisplay(preset, position, last),
+      last_games: last.length,
       projected_pts: projectedPts,
     })
   }
