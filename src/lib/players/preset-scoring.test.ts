@@ -9,11 +9,28 @@ import { describe, expect, it } from 'vitest'
 
 import { seasonToDate } from '@/lib/leagues/scoring/player-values'
 import { normalizePosition, scoreStarter, type StatLineRow } from '@/lib/leagues/scoring/score-week-worker'
-import { mapToCanonicalKeys, readZeroOmittedYardsAllowed } from '@/lib/leagues/stats/sleeper-stats-provider'
-import { NULL_IS_PENDING_COLUMNS, STAT_COLUMN_SURFACE } from '@/lib/sync/ingest-week'
-import { toStatColumns } from '@/lib/sync/live-stats'
 
 import { systemRules as coreStatsSystemRules } from './core-stats-service'
+import {
+  ARI_2026_WK1,
+  AUBREY_2025_WK15,
+  BASS_2026_WK1,
+  BOSWELL_2025_WK1,
+  BOSWELL_2026_WK8,
+  BUF_2025_WK2,
+  DAL_2026_WK5,
+  DAL_2026_WK6,
+  KC_2025_WK7,
+  KICKOFF_DST,
+  MCMANUS_2025_WK2,
+  MIN_2026_WK3,
+  MYERS_2025_WK18,
+  PHI_2026_WK8,
+  RYLAND_2026_WK6,
+  SEA_2026_WK1,
+  storedLine,
+  TB_2026_WK8,
+} from './preset-scoring.fixtures'
 import {
   isOffensePosition,
   PRESET_BY_BUILDER_KEY,
@@ -38,33 +55,6 @@ const line = (playerId: string, week: number, stats: Record<string, number | nul
   advanced: {},
   ...stats,
 })
-
-/** What ingest stores for a raw Sleeper line: the adapter's own mapping, then
- *  every surface column filled with its default (`ingest-week.ts`). */
-function storedLine(raw: Record<string, number>): StatLineRow {
-  const columns = toStatColumns(readZeroOmittedYardsAllowed(raw, mapToCanonicalKeys(raw)))
-  const row: StatLineRow = { player_id: 'x', updated_at: 'x', advanced: null }
-  for (const column of STAT_COLUMN_SURFACE) row[column] = columns[column] ?? (NULL_IS_PENDING_COLUMNS.has(column) ? null : 0)
-  return row
-}
-
-// Real Sleeper lines, trimmed to the scoring fields.
-const BASS_2026_WK1 = { fga: 3, fgm: 3, fgm_30_39: 2, fgm_40_49: 1, xpa: 3, xpm: 3 }
-const RYLAND_2026_WK6 = { fga: 6, fgm: 6, fgm_20_29: 2, fgm_30_39: 3, fgm_40_49: 1 }
-const BOSWELL_2026_WK8 = { fga: 3, fgm: 2, fgm_20_29: 1, fgm_30_39: 1, fgmiss: 1, fgmiss_50_59: 1, fgmiss_50p: 1, xpa: 3, xpm: 3 }
-const MYERS_2025_WK18 = { fga: 4, fgm: 2, fgm_30_39: 1, fgm_40_49: 1, fgmiss: 2, fgmiss_20_29: 1, fgmiss_40_49: 1, xpa: 1, xpm: 1 }
-const MCMANUS_2025_WK2 = { fga: 3, fgm: 2, fgm_20_29: 1, fgm_50_59: 1, fgm_50p: 1, fgmiss: 1, fgmiss_40_49: 1, xpa: 3, xpm: 3 }
-const BOSWELL_2025_WK1 = { fga: 2, fgm: 2, fgm_50_59: 1, fgm_50p: 2, fgm_60p: 1, xpa: 4, xpm: 4 }
-const AUBREY_2025_WK15 = { fga: 6, fgm: 4, fgm_20_29: 1, fgm_30_39: 1, fgm_40_49: 2, fgmiss: 2, fgmiss_50_59: 2, fgmiss_50p: 2, rush_yd: 6, xpa: 2, xpm: 2 }
-const SEA_2026_WK1 = { int: 3, pts_allow: 10, sack: 3, yds_allow: 277 }
-const TB_2026_WK8 = { int: 4, pts_allow_0: 1, yds_allow: 224 }
-const KC_2025_WK7 = { fum_rec: 1, pts_allow_0: 1, sack: 1, yds_allow: 95, yds_allow_0_100: 1 }
-const BUF_2025_WK2 = { fum_rec: 1, pts_allow: 10, sack: 4, yds_allow: 154 }
-const PHI_2026_WK8 = { fum_rec: 1, pts_allow: 27, sack: 2, yds_allow: 339 }
-const DAL_2026_WK5 = { pts_allow: 24, sack: 1, yds_allow: 419 }
-const DAL_2026_WK6 = { int: 1, pts_allow: 23, sack: 3, yds_allow: 318 }
-const ARI_2026_WK1 = { blk_kick: 1, fum_rec: 1, int: 1, pts_allow: 14, sack: 3, yds_allow: 268 }
-const MIN_2026_WK3 = { def_st_td: 1, int: 2, pts_allow: 16, sack: 6, yds_allow: 243 }
 
 describe('K0 goldens: real stored lines against ESPN table, the same under all four scorings', () => {
   const cases: ReadonlyArray<[string, string, Record<string, number>, number]> = [
@@ -159,7 +149,8 @@ describe('K0 missing data: refuse rather than show a plausible number', () => {
   })
 
   it('refused games leave presetLines before anything counts them: Cowboys 5 and 6 final, 7 a live kickoff row', () => {
-    const kickoff = line('dal', 7, { def_points_allowed: 0, def_yards_allowed: null })
+    const kickoff = storedLine(KICKOFF_DST)
+    expect([kickoff.def_points_allowed, kickoff.def_yards_allowed]).toEqual([0, null])
     const prepared = presetLines('DEF', [storedLine(DAL_2026_WK5), storedLine(DAL_2026_WK6), kickoff])
     expect(prepared).toHaveLength(2)
     for (const system of SYSTEMS) {

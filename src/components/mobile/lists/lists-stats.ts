@@ -313,12 +313,12 @@ export const MOBILE_STATS: readonly MStat[] = [
   // The payload's PPR value has no figure when its stats failed (`stats`
   // null → "–"); the other scorings say the same.
   scoredApp('current', `${CURRENT_SEASON} pts`, (entry, ctx, scoring) =>
-    entry.stats == null ? null : (ctx.frames?.season?.pts[scoring] ?? 0),
+    entry.stats == null ? null : (ctx.frames?.season?.pts[scoring] ?? (entry.stats.current_pts === null ? null : 0)),
   ),
   scoredApp('last', `${LAST_SEASON} pts`, (entry, ctx, scoring) => {
     if (entry.stats == null) return null
     const last = ctx.frames?.lastSeason
-    return last === undefined ? undefined : (last?.pts[scoring] ?? 0)
+    return last === undefined ? undefined : (last?.pts[scoring] ?? (entry.stats.last_pts === null ? null : 0))
   }),
   usage('snap', 'Snap %'),
   usage('tshare', 'Tgt share'),

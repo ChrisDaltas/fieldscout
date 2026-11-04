@@ -71,7 +71,7 @@ export const SCORING_GROUPS: { title: string; fields: StatFieldMeta[] }[] = [
     title: 'Kicking',
     fields: [
       { key: 'fg_made', label: 'Field goal', unit: 'per FG', step: 1 },
-      { key: 'fg_made_40_plus', label: 'Field goal 40+', unit: 'per FG', step: 1 },
+      { key: 'fg_made_40_plus', label: 'Field goal 40–49', unit: 'per FG', step: 1 },
       { key: 'fg_made_50_plus', label: 'Field goal 50+', unit: 'per FG', step: 1 },
       { key: 'xp_made', label: 'Extra point', unit: 'per XP', step: 1 },
     ],

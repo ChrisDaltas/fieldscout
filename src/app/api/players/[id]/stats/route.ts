@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server'
 
 import {
-  calculateFantasyPoints,
-  PPR_SCORING,
-  STANDARD_SCORING,
-  sumStatRows,
-  type StatRow,
-} from '@/lib/scoring/default'
+  isOffensePosition,
+  PRESET_LINE_SELECT,
+  presetGamePoints,
+  presetLines,
+  presetSeasonDisplay,
+  presetTotalsPoints,
+  roundOneDecimal,
+  type PresetSystem,
+} from '@/lib/players/preset-scoring'
+import { sumStatRows, type StatRow } from '@/lib/scoring/default'
+import { ASSUMED_TOTAL_GAMES, CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/seasons'
 import { createServerClient } from '@/lib/supabase/server'
-
-const CURRENT_SEASON = 2026
-const LAST_SEASON = 2025
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -23,14 +25,12 @@ interface WeeklyStat extends StatRow {
   is_live: boolean | null
 }
 
-const SELECT_COLS =
-  'season, week, source, is_live, ' +
-  'pass_attempts, pass_completions, pass_yards, pass_tds, interceptions, sacks_taken, ' +
-  'rush_attempts, rush_yards, rush_tds, fumbles_lost, ' +
-  'targets, receptions, receiving_yards, receiving_tds, ' +
-  'fg_made, fg_attempted, fg_made_40_plus, fg_made_50_plus, xp_made, xp_attempted, ' +
-  'def_sacks, def_interceptions, def_fumble_recoveries, def_tds, def_safeties, ' +
-  'two_point_conversions'
+/** A stored projection total, to 1 dp, or null when there is none. */
+function storedPoints(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null
+  const n = Number(value)
+  return Number.isFinite(n) ? roundOneDecimal(n) : null
+}
 
 export async function GET(_request: Request, { params }: RouteParams) {
   const { id } = await params
@@ -39,7 +39,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const { data: player, error: playerError } = await supabase
     .from('players')
     .select(
-      'id, full_name, first_name, last_name, position, team, headshot_url, status, jersey_number, height, weight, birth_date, college, experience_years, bye_week, draft_year, draft_round, draft_pick, adp, sos, auction_value, projected_pts_half_ppr, projected_stats, injury_body_part, injury_notes, injury_start_date, practice_participation',
+      'id, full_name, first_name, last_name, position, team, headshot_url, status, jersey_number, height, weight, birth_date, college, experience_years, bye_week, draft_year, draft_round, draft_pick, adp, sos, auction_value, projected_pts_ppr, projected_pts_standard, projected_pts_half_ppr, projected_stats, injury_body_part, injury_notes, injury_start_date, practice_participation',
     )
     .eq('id', id)
     .maybeSingle()
@@ -56,7 +56,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
   // is live this can return, computed from actual fantasy points.
   const { data: rows, error: statsError } = await supabase
     .from('player_stats')
-    .select(SELECT_COLS)
+    .select(`${PRESET_LINE_SELECT}, is_live`)
     .eq('player_id', id)
     .in('season', [CURRENT_SEASON, LAST_SEASON])
     .order('season', { ascending: false })
@@ -66,12 +66,20 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: statsError.message }, { status: 500 })
   }
 
+  const position = player.position
   const all = (rows ?? []) as unknown as WeeklyStat[]
-  const currentWeekly = all.filter((r) => r.season === CURRENT_SEASON && r.week != null)
+  const currentRows = all.filter((r) => r.season === CURRENT_SEASON && r.week != null)
+  // A refused game is not a game (K0): it adds no points, no totals and no
+  // count. Every count and sum below reads these prepared lines; only the game
+  // log keeps the refused row, as a dash.
+  const currentWeekly = presetLines(position, currentRows)
   // Live (non-mock) rows are the only honest signal for projecting current
   // season totals — mock data is starter-level numbers for every player.
   const currentLiveWeekly = currentWeekly.filter((r) => r.source !== 'mock')
-  const lastWeekly = all.filter((r) => r.season === LAST_SEASON && r.week != null)
+  const lastWeekly = presetLines(
+    position,
+    all.filter((r) => r.season === LAST_SEASON && r.week != null),
+  )
 
   const currentTotals = sumStatRows(currentWeekly)
   const liveTotals = sumStatRows(currentLiveWeekly)
@@ -79,10 +87,17 @@ export async function GET(_request: Request, { params }: RouteParams) {
 
   const gamesPlayed = currentWeekly.length
   const liveGames = currentLiveWeekly.length
-  const remainingGames = Math.max(0, 17 - liveGames)
+  const remainingGames = Math.max(0, ASSUMED_TOTAL_GAMES - liveGames)
 
-  // Real projected stat line synced from Sleeper (sync-projections.ts) —
-  // the honest pre-season basis, and what custom scoring should score.
+  const seasonFantasy = (lines: readonly object[]) => ({
+    ppr: presetSeasonDisplay('ppr', position, lines),
+    standard: presetSeasonDisplay('espn_standard', position, lines),
+  })
+  const currentFantasy = seasonFantasy(currentWeekly)
+  const lastFantasy = seasonFantasy(lastWeekly)
+
+  // Real projected stat line synced from Sleeper (sync-projections.ts), the
+  // honest pre-season basis for the NFL view and for offense points.
   // Empty {} lines don't count: fall back to last season rather than
   // rendering a blank projection.
   const sleeperProjection =
@@ -91,6 +106,25 @@ export async function GET(_request: Request, { params }: RouteParams) {
     Object.keys(player.projected_stats).length > 0
       ? (player.projected_stats as StatRow)
       : null
+
+  // Sleeper's own totals. A K or D/ST reads these pre-season, as the Stats
+  // Center does: ESPN's table can't be computed from a season line, which has
+  // no short field goals and no points allowed.
+  const storedProjection = {
+    ppr: storedPoints(player.projected_pts_ppr),
+    standard: storedPoints(player.projected_pts_standard),
+  }
+  const offense = isOffensePosition(position)
+  const hasStoredProjection = storedProjection.ppr !== null || storedProjection.standard !== null
+
+  // Scored live games pick the basis. A season whose every game was refused
+  // falls through to the stored projection, exactly as the Stats Center does.
+  const basis =
+    liveGames > 0
+      ? 'pace'
+      : sleeperProjection || (!offense && hasStoredProjection)
+        ? 'projections'
+        : 'last_season'
 
   // Projection: pace × remaining games when real games exist; otherwise the
   // synced projected stat line; last-season totals only as a final fallback.
@@ -107,6 +141,29 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return proj as StatRow
   })()
 
+  // Offense scores the projected stat line (each stat paced, then rounded). A K
+  // or D/ST can't score a summed line, so its pace is its points per scored game.
+  const projectionFantasy = (() => {
+    if (basis === 'last_season') return lastFantasy
+    if (offense) {
+      return {
+        ppr: presetTotalsPoints('ppr', position, projection),
+        standard: presetTotalsPoints('espn_standard', position, projection),
+      }
+    }
+    if (basis === 'projections') return storedProjection
+    const paced = (points: number | null) =>
+      points === null ? null : roundOneDecimal(points + (points / liveGames) * remainingGames)
+    const live = seasonFantasy(currentLiveWeekly)
+    return { ppr: paced(live.ppr), standard: paced(live.standard) }
+  })()
+
+  /** One game at 1 dp (the route's contract), or null when it can't be scored. */
+  const gameFantasy = (system: PresetSystem, row: WeeklyStat) => {
+    const points = presetGamePoints(system, position, row)
+    return points === null ? null : roundOneDecimal(points)
+  }
+
   return NextResponse.json({
     player,
     seasons: {
@@ -114,39 +171,29 @@ export async function GET(_request: Request, { params }: RouteParams) {
         season: CURRENT_SEASON,
         gamesPlayed,
         totals: currentTotals,
-        fantasy: {
-          ppr: calculateFantasyPoints(currentTotals, PPR_SCORING),
-          standard: calculateFantasyPoints(currentTotals, STANDARD_SCORING),
-        },
+        fantasy: currentFantasy,
       },
       last: {
         season: LAST_SEASON,
         gamesPlayed: lastWeekly.length,
         totals: lastTotals,
-        fantasy: {
-          ppr: calculateFantasyPoints(lastTotals, PPR_SCORING),
-          standard: calculateFantasyPoints(lastTotals, STANDARD_SCORING),
-        },
+        fantasy: lastFantasy,
       },
       projection: {
         season: CURRENT_SEASON,
-        basis:
-          liveGames > 0 ? 'pace' : sleeperProjection ? 'projections' : 'last_season',
+        basis,
         totals: projection,
-        fantasy: {
-          ppr: calculateFantasyPoints(projection, PPR_SCORING),
-          standard: calculateFantasyPoints(projection, STANDARD_SCORING),
-        },
+        fantasy: projectionFantasy,
       },
     },
-    gameLog: currentWeekly.map((row) => ({
+    gameLog: currentRows.map((row) => ({
       week: row.week,
       source: row.source,
       is_live: row.is_live,
       stats: row,
       fantasy: {
-        ppr: calculateFantasyPoints(row, PPR_SCORING),
-        standard: calculateFantasyPoints(row, STANDARD_SCORING),
+        ppr: gameFantasy('ppr', row),
+        standard: gameFantasy('espn_standard', row),
       },
     })),
   })

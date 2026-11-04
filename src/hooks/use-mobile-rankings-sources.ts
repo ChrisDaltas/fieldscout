@@ -20,7 +20,7 @@ import {
   type WeekGameLite,
 } from '@/components/mobile/rankings/rankings-ops'
 import { useAdpBoard, useAuctionBoard, type BoardSourcePlayer } from '@/hooks/use-board-sources'
-import { QUARTER_PPR_SCORING, calculateFantasyPoints, type StatRow } from '@/lib/scoring/default'
+import { isOffensePosition, presetTotalsPoints } from '@/lib/players/preset-scoring'
 import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { firstEmbed } from '@/utils/supabase-embed'
@@ -504,11 +504,12 @@ async function fetchBuilderPool(dbPosition: string, scoring: BuilderScoring): Pr
 }
 
 /**
- * The pool in 0.25 PPR from its Standard and Half PPR pools. Points are
- * scored from the season's raw totals with the 0.25 rules (exactly what the
- * route does for its own scorings); the projection is the midpoint of the
- * Standard and Half PPR ones — exact, since the scorings differ only in
- * what a catch is worth (the same rule phone Lists use). Re-sorted by that
+ * The pool in 0.25 PPR from its Standard and Half PPR pools. Offense is
+ * scored from the season's raw totals with the 0.25 rules. A K or D/ST can't
+ * be scored from a sum (tiers exist per game), and a catch is worth nothing to
+ * them, so they keep the Standard pool's own points. The projection is the
+ * midpoint of the Standard and Half PPR ones, since the scorings differ only
+ * in what a catch is worth (the same rule phone Lists use). Re-sorted by that
  * projection, as the route sorts its pools.
  */
 export function quarterPool(std: readonly BuilderPlayer[], half: readonly BuilderPlayer[]): BuilderPlayer[] {
@@ -520,7 +521,7 @@ export function quarterPool(std: readonly BuilderPlayer[], half: readonly Builde
       const h = halfById.get(p.id)
       return {
         ...p,
-        current_pts: round1(calculateFantasyPoints(p.stats_current as StatRow, QUARTER_PPR_SCORING)),
+        current_pts: isOffensePosition(p.position) ? presetTotalsPoints('quarter_ppr', p.position, p.stats_current) : p.current_pts,
         projected_pts:
           p.projected_pts != null && h?.projected_pts != null ? round1((p.projected_pts + h.projected_pts) / 2) : null,
       }

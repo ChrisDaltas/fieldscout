@@ -12,7 +12,7 @@
  * and not in `deliveredLine` or ingest because those feed league scores, which
  * K0's ruling doesn't cover. League scoring is untouched, so league kicker
  * points still read the stored short-FG and missed-FG columns, which nothing
- * writes (F402). Chris rules on that separately.
+ * writes (F402). Chris rules on that separately (F870).
  *
  * - K: `fg_0_39` and `fg_missed` are worked out from the columns ingest does
  *   store (`fg_made`, `fg_attempted`, and the 40–49 and 50+ buckets). If the
@@ -31,7 +31,7 @@
  * ruling): blocked kicks and return TDs are not stored, a 60+ yard FG pays 5
  * rather than 6, and an engine kicker scope scores kicking stats only, so a
  * kicker's rushing yards score nothing (Brandon Aubrey 2025 wk15: 14 vs ESPN's
- * 14.6). Rulings on these are filed in PROGRESS.
+ * 14.6). Filed for Chris as F871.
  */
 import { roundHalfUp } from '@/lib/leagues/scoring/calculator'
 import type { ScoringRulesDoc } from '@/lib/leagues/scoring/rules-doc'
@@ -194,11 +194,6 @@ export function presetTotalsPoints(system: PresetSystem, position: string, total
   if (!OFFENSE_POSITIONS.has(normalized)) throw new Error(`preset scoring: a summed ${normalized} line can't be scored, its tiers are per game`)
   const line = presetLine(normalized, totals as RawLine) as RawLine
   return roundOneDecimal(scoreStarter(systemRules(system), '', normalized, line as unknown as StatLineRow).points)
-}
-
-/** Commit-step bridge for the Stats Center until its route moves to the new names. */
-export function builderSeasonPoints(system: PresetSystem, _playerId: string, position: string, weeklyRows: readonly object[]): number {
-  return presetSeasonDisplay(system, position, weeklyRows) ?? 0
 }
 
 /** The columns the Stats Center reads per week: the raw totals it shows and

@@ -23,6 +23,9 @@ import { cn } from '@/lib/utils'
 
 type View = 'fantasy' | 'nfl'
 
+/** A points value, or the dash for a game or season that can't be scored. */
+const pointsText = (value: number | null) => (value === null ? '–' : value.toFixed(1))
+
 // =============================================================================
 // Stats — the three season cards with a Fantasy / NFL toggle
 // =============================================================================
@@ -70,7 +73,7 @@ export function GameLogPanel({ data }: { data: PlayerStatsResponse }) {
   const [view, setView] = useState<View>('fantasy')
   const rows = data.gameLog
   const { current } = data.seasons
-  const ppg = current.gamesPlayed > 0 ? current.fantasy.ppr / current.gamesPlayed : 0
+  const ppg = current.gamesPlayed > 0 && current.fantasy.ppr !== null ? current.fantasy.ppr / current.gamesPlayed : 0
   const position = data.player.position
 
   if (rows.length === 0) {
@@ -100,8 +103,8 @@ export function GameLogPanel({ data }: { data: PlayerStatsResponse }) {
  * positive for a hit week, negative for a bust, caution in between (football
  * semantic fills, ink text).
  */
-function performanceChip(ppr: number, ppg: number): string {
-  if (ppg <= 0) return 'bg-n-4'
+function performanceChip(ppr: number | null, ppg: number): string {
+  if (ppr === null || ppg <= 0) return 'bg-n-4'
   const ratio = ppr / ppg
   if (ratio >= 1.15) return 'bg-positive'
   if (ratio <= 0.6) return 'bg-negative'
@@ -131,11 +134,11 @@ function FantasyGameLog({ rows, ppg }: { rows: GameLogRow[]; ppg: number }) {
                     performanceChip(row.fantasy.ppr, ppg),
                   )}
                 >
-                  {row.fantasy.ppr.toFixed(1)}
+                  {pointsText(row.fantasy.ppr)}
                 </span>
               </TableCell>
               <TableCell className="fs-num text-right">
-                {row.fantasy.standard.toFixed(1)}
+                {pointsText(row.fantasy.standard)}
               </TableCell>
               <TableCell className="text-right">
                 <span className="fs-overline text-n-3">
@@ -303,18 +306,19 @@ export function SeasonCard({
 }
 
 function FantasyBlock({ season, projected = false }: { season: SeasonBlock; projected?: boolean }) {
-  const ppg = season.gamesPlayed > 0 ? season.fantasy.ppr / season.gamesPlayed : 0
+  const ppr = season.fantasy.ppr
+  const ppg = ppr === null ? null : season.gamesPlayed > 0 ? ppr / season.gamesPlayed : 0
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-2">
         <span className={cn('fs-num text-[24px] font-bold leading-none', projected ? PROJ_TEXT : 'text-ink')}>
-          {season.fantasy.ppr.toFixed(1)}
+          {pointsText(season.fantasy.ppr)}
         </span>
         <span className="text-[11px] font-semibold text-n-3">PPR</span>
       </div>
       <div className="grid grid-cols-2 gap-1.5">
-        <Stat label="Standard" value={season.fantasy.standard.toFixed(1)} />
-        <Stat label="PPR / game" value={ppg.toFixed(1)} />
+        <Stat label="Standard" value={pointsText(season.fantasy.standard)} />
+        <Stat label="PPR / game" value={pointsText(ppg)} />
       </div>
     </div>
   )
@@ -504,7 +508,11 @@ function positionColumns(position: string): LogColumn[] {
 /** Shared by the card and the full page's Overview tab. */
 export function WeeklyPointsList({ data }: { data: PlayerStatsResponse }) {
   const rows = data.gameLog
-  if (rows.length === 0) {
+  // A game that can't be scored adds nothing and counts for nothing: it stays
+  // in the list as a dash, and the guard is on the scored count, so the average
+  // can never divide by 0.
+  const scored = rows.flatMap((row) => (row.fantasy.ppr === null ? [] : [row.fantasy.ppr]))
+  if (scored.length === 0) {
     return (
       <p className="rounded-xl bg-surface-sunken p-3 text-center text-[11px] font-semibold text-n-3">
         No games logged yet for the current season.
@@ -512,9 +520,9 @@ export function WeeklyPointsList({ data }: { data: PlayerStatsResponse }) {
     )
   }
 
-  const total = rows.reduce((sum, row) => sum + row.fantasy.ppr, 0)
-  const avg = total / rows.length
-  const max = Math.max(...rows.map((row) => row.fantasy.ppr))
+  const total = scored.reduce((sum, pts) => sum + pts, 0)
+  const avg = total / scored.length
+  const max = Math.max(...scored)
 
   return (
     <div data-weekly-points>
@@ -531,7 +539,7 @@ export function WeeklyPointsList({ data }: { data: PlayerStatsResponse }) {
       <div className="flex flex-col gap-1">
         {rows.map((row) => {
           const pts = row.fantasy.ppr
-          const width = max > 0 ? (pts / max) * 100 : 0
+          const width = pts !== null && max > 0 ? (pts / max) * 100 : 0
           return (
             <div key={row.week} className="flex items-center gap-2">
               <span className="fs-num w-9 shrink-0 text-[11px] font-bold text-n-3">
@@ -542,14 +550,14 @@ export function WeeklyPointsList({ data }: { data: PlayerStatsResponse }) {
                   <span
                     className={cn(
                       'block h-full rounded-pill',
-                      pts >= avg ? 'bg-brand' : 'bg-n-3/40',
+                      pts !== null && pts >= avg ? 'bg-brand' : 'bg-n-3/40',
                     )}
                     style={{ width: `${width}%` }}
                   />
                 )}
               </span>
               <span className="fs-num w-10 shrink-0 text-right text-[11px] font-bold">
-                {pts.toFixed(1)}
+                {pointsText(pts)}
               </span>
             </div>
           )

@@ -30,14 +30,7 @@ import {
 } from '@/lib/players/core-stats-ops'
 import { completionPct, perGame, yardsPerTarget } from '@/lib/players/key-stats-ops'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
-import {
-  calculateFantasyPoints,
-  HALF_PPR_SCORING,
-  PPR_SCORING,
-  QUARTER_PPR_SCORING,
-  STANDARD_SCORING,
-  type ScoringRules,
-} from '@/lib/scoring/default'
+import { presetGamePoints, presetLines, presetSeasonDisplay, roundOneDecimal, type PresetSystem } from '@/lib/players/preset-scoring'
 
 export const DASH = '–'
 
@@ -181,7 +174,7 @@ export function stripCells(core: CoreStatsPayload | null, player: Pick<PlayerSta
     { key: 'avg', value: core?.avg_points != null ? core.avg_points.toFixed(1) : DASH, label: 'Avg pts', missing: core?.avg_points == null },
     {
       key: 'total',
-      value: core?.total_points != null ? core.total_points.toFixed(1) : DASH,
+      value: core?.total_points != null ? roundOneDecimal(core.total_points).toFixed(1) : DASH,
       label: `${season} pts`,
       missing: core?.total_points == null,
     },
@@ -596,21 +589,11 @@ function boxCells(groups: BoxGroup[], line: Partial<Record<ProfileBoxColumn, num
   )
 }
 
-/** The preset rules past seasons are scored under (the stats route's own
- *  calculator — the core-stats engine reads the current season only). A
- *  league basis falls back to standard. KNOWN GAP (F576): this legacy
- *  calculator has no D/ST points-allowed tiers and no missed-kick
- *  penalties, so past-season Fpts are not on the same basis as the current
- *  season's core-stats points — the same numbers the desktop game log shows
- *  for those seasons. Closing it needs the engine to score past seasons
- *  server-side. */
-export function pastSeasonRules(choice: ScoringChoice): ScoringRules {
-  if (choice.kind === 'system') {
-    if (choice.system === 'ppr') return PPR_SCORING
-    if (choice.system === 'half_ppr') return HALF_PPR_SCORING
-    if (choice.system === 'quarter_ppr') return QUARTER_PPR_SCORING
-  }
-  return STANDARD_SCORING
+/** The preset past seasons are scored under: the one preset scorer, the same
+ *  basis as the current season's core-stats points. A league basis falls back
+ *  to ESPN Standard (the core-stats engine reads the current season only). */
+export function pastSeasonSystem(choice: ScoringChoice): PresetSystem {
+  return choice.kind === 'system' ? choice.system : 'espn_standard'
 }
 
 /** Any nonzero stat on the line — the core-stats appearance proxy (R1506). */
@@ -636,7 +619,7 @@ export function gameLogTable(args: {
   lines: readonly ProfileStatLine[]
   schedule: readonly ScheduleRow[]
   weekly: ReadonlyArray<{ week: number; points: number | null }>
-  rules: ScoringRules
+  system: PresetSystem
 }): StatsTable {
   const groups = boxGroups(args.position)
   const cols = ['Fpts', ...groups.flatMap(([, c]) => c.map(([label]) => label))]
@@ -670,7 +653,7 @@ export function gameLogTable(args: {
   } else {
     for (let week = 1; week <= 18; week += 1) {
       const line = lineOf(week)
-      const pts = line && appeared(line) ? calculateFantasyPoints(line, args.rules) : null
+      const pts = line && appeared(line) ? presetGamePoints(args.system, args.position, line) : null
       rows.push({
         key: String(week),
         k1: String(week),
@@ -720,7 +703,7 @@ export function careerTable(args: {
   team: string | null
   lines: readonly ProfileStatLine[]
   core: CoreStatsPayload | null
-  rules: ScoringRules
+  system: PresetSystem
   /** His current-season position rank under each preset (null = unread). */
   ranks?: { std: number | null; ppr: number | null } | null
 }): StatsTable {
@@ -729,7 +712,11 @@ export function careerTable(args: {
   const seasons = [args.currentSeason, ...seasonsWithLines(args.lines, args.currentSeason)].slice(0, 4)
   const rankCell = (rank: number | null): TableCell => (rank !== null ? { value: String(rank), kind: rankTone(rank) } : dash)
   const rows = seasons.map((season): TableRow => {
-    const done = args.lines.filter((l) => l.season === season && !l.is_live)
+    // A game the scorer refuses is not a game: no count, no points, no box sums.
+    const done = presetLines(
+      args.position,
+      args.lines.filter((l) => l.season === season && !l.is_live),
+    )
     const games = done.filter(appeared)
     const sums: Partial<Record<ProfileBoxColumn, number>> = {}
     for (const l of done) {
@@ -745,7 +732,7 @@ export function careerTable(args: {
     const fpts = isCurrent
       ? (args.core?.total_points ?? null)
       : games.length > 0
-        ? Math.round(games.reduce((a, l) => a + calculateFantasyPoints(l, args.rules), 0) * 10) / 10
+        ? presetSeasonDisplay(args.system, args.position, games)
         : null
     const std = isCurrent ? (args.ranks?.std ?? null) : null
     const ppr = isCurrent ? (args.ranks?.ppr ?? null) : null
@@ -756,7 +743,7 @@ export function careerTable(args: {
       k2Tone: isCurrent ? 'plain' : 'none',
       cells: [
         plain(String(gm)),
-        fpts !== null ? { value: fpts.toFixed(1), kind: std !== null ? rankTone(std) : 'plain' } : dash,
+        fpts !== null ? { value: roundOneDecimal(fpts).toFixed(1), kind: std !== null ? rankTone(std) : 'plain' } : dash,
         rankCell(std),
         rankCell(ppr),
         ...boxCells(groups, done.length > 0 ? sums : undefined),

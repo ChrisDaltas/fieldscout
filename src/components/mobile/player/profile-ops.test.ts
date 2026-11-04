@@ -8,7 +8,7 @@ import type { ProfileStatLine } from '@/hooks/use-mobile-pprofile-stat-lines'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
 import { resolveChoice, scoredLeagues, type CoreStatsPayload } from '@/lib/players/core-stats-ops'
-import { PPR_SCORING, QUARTER_PPR_SCORING, STANDARD_SCORING } from '@/lib/scoring/default'
+import { BASS_2026_WK1, BOSWELL_2026_WK8, DAL_2026_WK5, DAL_2026_WK6, KICKOFF_DST, PRESCOTT_2025_WK1, storedLine } from '@/lib/players/preset-scoring.fixtures'
 
 import {
   bioLine,
@@ -30,7 +30,7 @@ import {
   movesTimeline,
   ownershipNeedsRosters,
   ownershipSummary,
-  pastSeasonRules,
+  pastSeasonSystem,
   playerMoves,
   PRESS,
   PROFILE_SCORING_SYSTEMS,
@@ -368,7 +368,7 @@ describe('game log + career tables', () => {
   ]
 
   it('current season follows the schedule; Fpts from core weekly, tinted by the position baseline', () => {
-    const t = gameLogTable({ season: 2026, current: true, position: 'RB', lines, schedule, weekly: [{ week: 1, points: 22 }], rules: STANDARD_SCORING })
+    const t = gameLogTable({ season: 2026, current: true, position: 'RB', lines, schedule, weekly: [{ week: 1, points: 22 }], system: 'espn_standard' })
     expect(t.groups).toEqual([
       { label: 'Fantasy', cols: 1 },
       { label: 'Rushing', cols: 3 },
@@ -386,7 +386,7 @@ describe('game log + career tables', () => {
   })
 
   it('a past season lists weeks 1–18 from its lines, scored under the preset rules', () => {
-    const t = gameLogTable({ season: 2025, current: false, position: 'RB', lines, schedule: [], weekly: [], rules: PPR_SCORING })
+    const t = gameLogTable({ season: 2025, current: false, position: 'RB', lines, schedule: [], weekly: [], system: 'ppr' })
     expect(t.rows).toHaveLength(18)
     expect(t.rows[0]!.cells[0]!.value).toBe('8.00') // 5 + 1 (10 rec yds) + 2 rec
     expect(t.rows[2]!.cells.every((c) => c.kind === 'dash')).toBe(true)
@@ -395,7 +395,7 @@ describe('game log + career tables', () => {
   })
 
   it('career: current season from core-stats, earlier seasons summed; team known for this season only', () => {
-    const t = careerTable({ currentSeason: 2026, position: 'RB', team: 'ATL', lines, core: core({ games: 1, total_points: 22 }), rules: STANDARD_SCORING })
+    const t = careerTable({ currentSeason: 2026, position: 'RB', team: 'ATL', lines, core: core({ games: 1, total_points: 22 }), system: 'espn_standard' })
     expect(t.cols.slice(0, 4)).toEqual(['Gm', 'Fpts', 'Std', 'PPR'])
     expect(t.groups.slice(0, 2)).toEqual([
       { label: 'Fantasy', cols: 2 },
@@ -422,7 +422,7 @@ describe('game log + career tables', () => {
       team: 'ATL',
       lines,
       core: core({ games: 1, total_points: 22 }),
-      rules: STANDARD_SCORING,
+      system: 'espn_standard',
       ranks: { std: 8, ppr: 14 },
     })
     expect(t.rows[0]!.cells.slice(1, 4)).toEqual([
@@ -435,9 +435,62 @@ describe('game log + career tables', () => {
   })
 
   it('past seasons score under the basis preset (league → standard)', () => {
-    expect(pastSeasonRules({ kind: 'system', system: 'ppr' })).toBe(PPR_SCORING)
-    expect(pastSeasonRules({ kind: 'system', system: 'quarter_ppr' })).toBe(QUARTER_PPR_SCORING)
-    expect(pastSeasonRules({ kind: 'league', leagueId: 'L' })).toBe(STANDARD_SCORING)
+    expect(pastSeasonSystem({ kind: 'system', system: 'ppr' })).toBe('ppr')
+    expect(pastSeasonSystem({ kind: 'system', system: 'quarter_ppr' })).toBe('quarter_ppr')
+    expect(pastSeasonSystem({ kind: 'league', leagueId: 'L' })).toBe('espn_standard')
+  })
+
+  describe('K0: past seasons on the one preset scorer', () => {
+    const stat = (season: number, week: number, raw: Record<string, number>): ProfileStatLine => ({
+      ...(storedLine(raw) as unknown as ProfileStatLine),
+      season,
+      week,
+      is_live: false,
+    })
+    const log = (position: string, ls: ProfileStatLine[]) =>
+      gameLogTable({ season: 2025, current: false, position, lines: ls, schedule: [], weekly: [], system: 'espn_standard' })
+    const career = (position: string, ls: ProfileStatLine[]) =>
+      careerTable({ currentSeason: 2026, position, team: null, lines: ls, core: null, system: 'espn_standard' })
+
+    it('a kicker game reads ESPN table: Bass 13.00, and his 21 over two games', () => {
+      const ls = [stat(2025, 1, BASS_2026_WK1), stat(2025, 2, BOSWELL_2026_WK8)]
+      expect(log('K', ls).rows[0]!.cells[0]!.value).toBe('13.00')
+      expect(career('K', ls).rows[1]!.cells.slice(0, 2).map((c) => c.value)).toEqual(['2', '21.0'])
+    })
+
+    it('a D/ST game can go negative, and a season sums its games: −2.00, then 3.0', () => {
+      const ls = [stat(2025, 5, DAL_2026_WK5), stat(2025, 6, DAL_2026_WK6)]
+      expect(log('DEF', ls).rows[4]!.cells[0]!.value).toBe('-2.00')
+      expect(career('DEF', ls).rows[1]!.cells.slice(0, 2).map((c) => c.value)).toEqual(['2', '3.0'])
+    })
+
+    it('a refused game is a dash and counts for nothing', () => {
+      const ls = [stat(2025, 5, DAL_2026_WK5), stat(2025, 6, DAL_2026_WK6), { ...stat(2025, 7, KICKOFF_DST), def_sacks: 2 }]
+      expect(log('DEF', ls).rows[6]!.cells[0]!.kind).toBe('dash')
+      expect(career('DEF', ls).rows[1]!.cells.slice(0, 2).map((c) => c.value)).toEqual(['2', '3.0'])
+    })
+
+    it('a K season of empty rows reads dashes, never a 0', () => {
+      const ls = [stat(2025, 1, {})]
+      expect(log('K', ls).rows[0]!.cells[0]!.kind).toBe('dash')
+      expect(career('K', ls).rows[1]!.cells.slice(0, 2).map((c) => c.value)).toEqual(['0', '–'])
+    })
+
+    it('named exception: a past-season QB cell shows true decimals (Prescott 2025 wk1: 7.82, was 7.80)', () => {
+      expect(log('QB', [stat(2025, 1, PRESCOTT_2025_WK1)]).rows[0]!.cells[0]!.value).toBe('7.82')
+    })
+
+    it('named exception: a line with only a sack taken now appears, as core stats reads it (a dash becomes 0.00)', () => {
+      const sackOnly = { ...stat(2025, 3, {}), sacks_taken: 1 } as ProfileStatLine
+      expect(log('QB', [sackOnly]).rows[2]!.cells[0]!.value).toBe('0.00')
+      expect(career('QB', [sackOnly]).rows[1]!.cells[0]!.value).toBe('1')
+    })
+
+    it('0.25 PPR season points round the same half-up way as the phone list', () => {
+      expect(stripCells(core({ total_points: 104.55 }), { position: 'RB', bye_week: null }, 2026, 'RB').find((c) => c.key === 'total')?.value).toBe('104.6')
+      const t = careerTable({ currentSeason: 2026, position: 'RB', team: null, lines: [], core: core({ games: 8, total_points: 104.55 }), system: 'quarter_ppr' })
+      expect(t.rows[0]!.cells[1]!.value).toBe('104.6')
+    })
   })
 })
 

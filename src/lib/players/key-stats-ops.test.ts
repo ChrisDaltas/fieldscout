@@ -83,6 +83,8 @@ describe('key stats — per position', () => {
 
   it('K and DEF: the stored equivalents', () => {
     const k = keyStats('K', { games: 3, totals: { fg_made: 7, fg_attempted: 8, fg_made_40_plus: 3, fg_made_50_plus: 1, xp_made: 9, xp_attempted: 9 }, usage: null })
+    // K0's distance check: the `fg_made_40_plus` column holds 40–49 only, so the tile says so.
+    expect(k.primary.find((tile) => tile.key === 'fg_40')?.label).toBe('FG 40–49')
     expect(k.primary.map((t) => t.value)).toEqual(['7/8', '87.5%', '3', '1', '9/9'])
     const d = keyStats('DEF', { games: 2, totals: { def_sacks: 5, def_interceptions: 2, def_fumble_recoveries: 1, def_tds: 0, def_points_allowed: 37, def_yards_allowed: 610 }, usage: null })
     expect(d.primary.map((t) => t.value)).toEqual(['5', '2', '1', '0', '18.5', '305.0'])
