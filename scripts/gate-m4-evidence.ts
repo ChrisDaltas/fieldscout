@@ -361,31 +361,32 @@ function main(): void {
     console.log(`   COVERAGE GAPS (printed, never failing): ${report.coverageGaps.length}`)
     for (const gap of report.coverageGaps) console.log(`     - ${gap}`)
 
-    // ---- F300: the ONE coverage gap that IS enforced ------------------------
-    // Invariant 4 (pool/roster mirror) returns clean from a season audit
-    // without asserting anything, because `league_player_pool` is empty for
-    // every sim league. The claim is withdrawn in words on every report; this
-    // stage makes the withdrawal load-bearing, because a declaration nothing
-    // checks is exactly the decoration the vacuous assertion was.
-    //   - the declaration must be PRESENT: a run that dropped it would read as
-    //     if invariant 4 had been exercised;
-    //   - `poolRows` must be 0: if the pool ever stops being empty the mirror
-    //     is live, the declaration is stale, and both must be re-reasoned —
-    //     which is a red here, not a silent change of meaning.
-    console.log(`   POOL ROWS (F300 — invariant 4's input): ${report.poolRows}`)
+    // ---- F300, re-reasoned by D810: the ONE coverage gap that IS enforced ----
+    // This check used to require `poolRows = 0`: invariant 4 asserted nothing
+    // on an empty pool, and a non-empty pool was to red here and force the arm
+    // to be re-reasoned. D496 / migration 181 did that (the lock tick writes a
+    // `rostered` row for every rostered player), so the requirement is now the
+    // new truth, no looser than the old one:
+    //   - the declaration of what is STILL not exercised must be PRESENT;
+    //   - `poolRows` must EQUAL `rosterRows`, and be above 0: a pool gone empty
+    //     makes invariant 4 vacuous again, a partial pool means a player the
+    //     lock view never judged (D496's live bug), and either reds here rather
+    //     than silently changing what the invariant's clean result means.
+    console.log(`   POOL ROWS (F300 / D810 — invariant 4's input): ${report.poolRows} over ${report.rosterRows} roster rows`)
     if (!report.coverageGaps.some((g) => g.includes('INVARIANT 4 (pool/roster mirror'))) {
       fail(
         problems,
         `${scenario}: the F300 pool-mirror coverage-gap declaration is MISSING from report.coverageGaps — ` +
-          `invariant 4 asserts nothing in a season run and the report must say so`,
+          `a default season run exercises invariant 4's rostered arm only, and the report must say so`,
       )
     }
-    if (report.poolRows !== 0) {
+    if (report.rosterRows === 0 || report.poolRows !== report.rosterRows) {
       fail(
         problems,
-        `${scenario}: report.poolRows is ${report.poolRows}, not 0 — `+
-          `league_player_pool is no longer empty in a season run, so invariant 4 (pool/roster mirror) is ` +
-          `now LIVE and F300's withdrawal-of-claim is stale. Re-reason the arm; do not relax this check`,
+        `${scenario}: report.poolRows is ${report.poolRows} over ${report.rosterRows} roster rows — ` +
+          `the lock tick gives every rostered player a pool row (D496), so a default season run's pool must be ` +
+          `the whole roster mirror; invariant 4 is not judging the population D810 says it does. Re-reason the ` +
+          `arm; do not relax this check`,
       )
     }
 
