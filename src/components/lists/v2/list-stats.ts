@@ -1,5 +1,5 @@
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
-import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/aggregate-fantasy'
+import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/seasons'
 
 /**
  * Which per-player stat a list row can show.

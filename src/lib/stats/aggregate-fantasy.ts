@@ -7,11 +7,8 @@ import {
   type StatRow,
 } from '@/lib/scoring/default'
 import { fetchWeeklyStatsForPlayers } from '@/lib/stats/fetch-weekly-stats'
+import { ASSUMED_TOTAL_GAMES, CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/seasons'
 import type { SupabaseClient } from '@supabase/supabase-js'
-
-export const CURRENT_SEASON = 2026
-export const LAST_SEASON = 2025
-export const ASSUMED_TOTAL_GAMES = 17
 
 const STATS_SELECT =
   'player_id, season, week, source, ' +

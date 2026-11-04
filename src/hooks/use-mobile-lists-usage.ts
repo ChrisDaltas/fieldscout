@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 
-import { CURRENT_SEASON } from '@/lib/stats/aggregate-fantasy'
+import { CURRENT_SEASON } from '@/lib/stats/seasons'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 /**

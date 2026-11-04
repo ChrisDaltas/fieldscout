@@ -11,7 +11,7 @@ import {
   type ScoringRules,
   type StatRow,
 } from '@/lib/scoring/default'
-import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/aggregate-fantasy'
+import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/seasons'
 import { fetchWeeklyStatsForPlayers } from '@/lib/stats/fetch-weekly-stats'
 import { createBrowserClient } from '@/lib/supabase/client'
 

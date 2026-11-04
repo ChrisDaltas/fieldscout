@@ -4,7 +4,7 @@ import type { FrameTotals, ListScoring, PlayerFrames, TimeFrame } from '@/hooks/
 import type { ListUsage } from '@/hooks/use-mobile-lists-usage'
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
 import { featureFlags, type FeatureFlag } from '@/lib/feature-flags'
-import { ASSUMED_TOTAL_GAMES, CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/aggregate-fantasy'
+import { ASSUMED_TOTAL_GAMES, CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/seasons'
 
 /**
  * FieldScout Mobile — Lists stat columns (lr-lists §2.5, §5).

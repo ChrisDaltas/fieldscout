@@ -5,12 +5,8 @@ import {
   type ScoringRules,
   type StatRow,
 } from '@/lib/scoring/default'
-import {
-  CURRENT_SEASON,
-  LAST_SEASON,
-  SCORING_BY_KEY,
-  type ScoringKey,
-} from '@/lib/stats/aggregate-fantasy'
+import { SCORING_BY_KEY, type ScoringKey } from '@/lib/stats/aggregate-fantasy'
+import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/seasons'
 import { fetchWeeklyStatsForPlayers } from '@/lib/stats/fetch-weekly-stats'
 import type {
   AiPosition,
