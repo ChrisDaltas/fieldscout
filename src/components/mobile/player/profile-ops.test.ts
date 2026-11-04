@@ -7,7 +7,7 @@ import type { DepthChartPlayer } from '@/hooks/use-mobile-pprofile-depth-chart'
 import type { ProfileStatLine } from '@/hooks/use-mobile-pprofile-stat-lines'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
-import { resolveChoice, scoredLeagues, type CoreStatsPayload } from '@/lib/players/core-stats-ops'
+import { coreTiles, resolveChoice, scoredLeagues, type CoreStatsPayload } from '@/lib/players/core-stats-ops'
 import { BASS_2026_WK1, BOSWELL_2026_WK8, DAL_2026_WK5, DAL_2026_WK6, KICKOFF_DST, PRESCOTT_2025_WK1, storedLine } from '@/lib/players/preset-scoring.fixtures'
 
 import {
@@ -519,6 +519,15 @@ describe('game log + career tables', () => {
       expect(stripCells(core({ total_points: 104.55 }), { position: 'RB', bye_week: null }, 2026, 'RB').find((c) => c.key === 'total')?.value).toBe('104.6')
       const t = careerTable({ currentSeason: 2026, position: 'RB', team: null, lines: [], core: core({ games: 8, total_points: 104.55 }), system: 'quarter_ppr' })
       expect(t.rows[0]!.cells[1]!.value).toBe('104.6')
+    })
+
+    it('a league total keeps its own rounding: 169.35 reads 169.3 in the strip, the career row and the desktop tile', () => {
+      // C.J. Stroud under Scout Standard. K0 does not rule on league numbers.
+      const league = core({ basis: { kind: 'league', league_name: 'League' }, games: 8, total_points: 169.35 })
+      expect(stripCells(league, { position: 'QB', bye_week: null }, 2026, 'QB').find((c) => c.key === 'total')?.value).toBe('169.3')
+      const t = careerTable({ currentSeason: 2026, position: 'QB', team: null, lines: [], core: league, system: 'espn_standard' })
+      expect(t.rows[0]!.cells[1]!.value).toBe('169.3')
+      expect(coreTiles(league, { position: 'QB' }).find((c) => c.key === 'total')?.value).toBe('169.3')
     })
   })
 })

@@ -87,8 +87,9 @@ export function isOffensePosition(position: string): boolean {
   return OFFENSE_POSITIONS.has(normalizePosition(position))
 }
 
-/** Half-up to 1 decimal: the rounding every displayed points number uses, so a
- *  Quarter PPR 104.55 reads 104.6 on every surface (exact for any 2 dp value). */
+/** Half-up to 1 decimal: the rounding every displayed preset points number uses,
+ *  so a Quarter PPR 104.55 reads 104.6 on every surface (exact for any 2 dp value).
+ *  League totals don't use it: they aren't K0's to move. */
 export function roundOneDecimal(value: number): number {
   return Math.round(value * 10) / 10
 }

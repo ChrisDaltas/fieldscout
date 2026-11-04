@@ -161,6 +161,14 @@ export interface StripCell {
   missing: boolean
 }
 
+/** A season's points, one decimal. A preset total rounds half up, so the strip
+ *  and the phone list agree (0.25 PPR totals end in .x5). A league total keeps
+ *  plain `toFixed`, the same as the desktop tile: K0 doesn't rule on league
+ *  numbers, and Scout templates really do end in .x5 (169.35 reads 169.3). */
+function seasonPointsText(points: number, leagueTotal: boolean): string {
+  return (leagueTotal ? points : roundOneDecimal(points)).toFixed(1)
+}
+
 /** Position rank · Avg pts · season pts · Bye week. The prototype's
  *  "Rost %" has no source (no rostered-% snapshot exists) and is left out. */
 export function stripCells(core: CoreStatsPayload | null, player: Pick<PlayerStatsPlayer, 'position' | 'bye_week'>, season: number, posLabel: string): StripCell[] {
@@ -174,7 +182,7 @@ export function stripCells(core: CoreStatsPayload | null, player: Pick<PlayerSta
     { key: 'avg', value: core?.avg_points != null ? core.avg_points.toFixed(1) : DASH, label: 'Avg pts', missing: core?.avg_points == null },
     {
       key: 'total',
-      value: core?.total_points != null ? roundOneDecimal(core.total_points).toFixed(1) : DASH,
+      value: core?.total_points != null ? seasonPointsText(core.total_points, core.basis.kind === 'league') : DASH,
       label: `${season} pts`,
       missing: core?.total_points == null,
     },
@@ -717,7 +725,8 @@ export function careerTable(args: {
     // A game the scorer refuses is not a game: no count, no points, no box sums.
     // The exception is this season on a league basis: its Gm and Fpts come from
     // the league read, which scores what is stored, so the box sums do the same.
-    const done = isCurrent && args.core?.basis.kind === 'league' ? stored : presetLines(args.position, stored)
+    const leagueRead = isCurrent && args.core?.basis.kind === 'league'
+    const done = leagueRead ? stored : presetLines(args.position, stored)
     const games = done.filter(appeared)
     const sums: Partial<Record<ProfileBoxColumn, number>> = {}
     for (const l of done) {
@@ -743,7 +752,7 @@ export function careerTable(args: {
       k2Tone: isCurrent ? 'plain' : 'none',
       cells: [
         plain(String(gm)),
-        fpts !== null ? { value: roundOneDecimal(fpts).toFixed(1), kind: std !== null ? rankTone(std) : 'plain' } : dash,
+        fpts !== null ? { value: seasonPointsText(fpts, leagueRead), kind: std !== null ? rankTone(std) : 'plain' } : dash,
         rankCell(std),
         rankCell(ppr),
         ...boxCells(groups, done.length > 0 ? sums : undefined),
