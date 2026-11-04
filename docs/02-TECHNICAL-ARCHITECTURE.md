@@ -402,7 +402,7 @@ Upgrade when Pro subscription revenue justifies it.
 - DFS salary data, news feeds
 - The gold standard for fantasy sports API data
 
-**Note on custom scoring systems:** Regardless of which paid API you use, the `calculateFantasyPoints()` utility in `src/utils/scoring.ts` is always used for Pro users' custom scoring rules. The paid API raw stats feed into this engine.
+**Note on scoring:** Regardless of which paid API you use, raw stats feed one engine: `src/lib/players/preset-scoring.ts` outside a league, the same calculator under each league's frozen rules inside one. No code scores with a user's saved custom scoring system yet.
 
 ---
 

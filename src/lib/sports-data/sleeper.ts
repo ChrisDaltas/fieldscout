@@ -138,8 +138,10 @@ export interface SleeperProjectedStats {
   safe?: number | null
 }
 
-/** App-convention projected stat line (matches ScoringRules/StatRow keys in
- *  lib/scoring/default.ts) so calculateFantasyPoints can score it directly. */
+/** App-convention projected stat line (matches the StatRow keys in
+ *  lib/scoring/default.ts). `presetTotalsPoints` scores it for offense. A K or
+ *  D/ST can't be scored from it (no short FGs, no points allowed), so those read
+ *  Sleeper's stored totals. */
 export type ProjectedStatLine = Record<string, number>
 
 const projNum = (v: number | null | undefined): number => {
