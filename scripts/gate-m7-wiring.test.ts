@@ -6,14 +6,18 @@
  * no unit test reaches: a green run with an attachment gone exits 3 with the
  * right headline, an open S0 exits 4, a failed leg exits 1 even when the leg's
  * own code was 3, a hang or a non-local URL exits 2, and "PASSED" needs it all.
+ * Each scratch tree is a real git checkout (the stage stamps name HEAD, R1761),
+ * and the vitest shims print the real summary line (R1762).
  */
 import { spawnSync } from 'node:child_process'
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -65,7 +69,19 @@ case "$1 $2" in
     [ "\${STUB_RESET:-ok}" = "fail" ] && exit 1
     ;;
   "supabase test") echo "Files=\${STUB_PGTAP_FILES:-5}, Tests=9,  1 wallclock secs" ;;
-  "vitest run") exit "\${STUB_VITEST_CODE:-0}" ;;
+  "vitest run")
+    shift 2
+    files=$#
+    skipped=""
+    # More than the pre-flight's two files is the M7 list at [4/7].
+    if [ "$#" -gt 2 ]; then
+      files="\${STUB_M7_FILES:-$files}"
+      [ -n "\${STUB_M7_SKIPPED:-}" ] && skipped=" | 1 skipped"
+    fi
+    echo " Test Files  $files passed ($files)"
+    echo "      Tests  9 passed$skipped (9)"
+    exit "\${STUB_VITEST_CODE:-0}"
+    ;;
   "tsx scripts/gate-settle.ts") ;;
   "tsx scripts/gate-m7-evidence.ts") shift; exec node "$TSX_CLI" "$@" ;;
   *) echo "unexpected npx call: $*" >&2; exit 99 ;;
@@ -75,16 +91,32 @@ exit 0
 const NPM_SHIM = `#!/usr/bin/env bash
 echo "npm $*" >> "$STUB_LOG"
 case "$2" in
-  test:chaos) exit "\${STUB_CHAOS_CODE:-0}" ;;
+  test:chaos)
+    files="\${STUB_CHAOS_FILES:-7}"
+    echo " Test Files  $files passed ($files)"
+    if [ -n "\${STUB_CHAOS_SKIPPED:-}" ]; then echo "      Tests  8 passed | 1 skipped (9)"; else echo "      Tests  9 passed (9)"; fi
+    exit "\${STUB_CHAOS_CODE:-0}"
+    ;;
   test:gate:m6) exit "\${STUB_M6_CODE:-0}" ;;
   test:gate:m8) exit 0 ;;
   *) echo "unexpected npm call: $*" >&2; exit 99 ;;
 esac
 `
 
-const LEDGER_PADDING = Array.from({ length: 600 }, (_, i) => `| F${i + 1} | x | y | z | ✅ Done |`)
+const LEDGER_PADDING = Array.from({ length: 600 }, (_, i) => `| F${i + 1} | x | y | z | ✅ Done |`).filter((r) => !r.startsWith('| F273 '))
+/** F861 closed and F273 / F859 / F860 rated: what exit 0 needs from the ledger (R1759). */
+const SETTLED = [
+  '| F273 | x | y | z | ⬜ Open **[Severity S3 — fixture]** |',
+  '| F859 | x | y | z | ⬜ Open **[Severity S3 — fixture]** |',
+  '| F860 | x | y | z | ⬜ Open **[Severity S3 — fixture]** |',
+  '| F861 | x | y | z | ✅ Done |',
+]
 function ledger(...rows: string[]): string {
   return ['## 6. Forward obligations ledger', ...LEDGER_PADDING, ...rows, '## Review findings'].join('\n')
+}
+function attachmentText(key: string): string {
+  const ruling = key === 'C4' ? 'M7-GATE-RULING: C4 2026-12-01 Chris: "it counts"\n' : ''
+  return `M7-GATE-ATTACHMENT: ${key} PASS\n${ruling}`
 }
 
 describe('gate-m7.sh, with its legs stubbed', () => {
@@ -98,6 +130,8 @@ describe('gate-m7.sh, with its legs stubbed', () => {
     env?: Record<string, string>
     m8?: boolean
     without?: string
+    settled?: string[]
+    noGit?: boolean
   }) {
     const root = join(scratch, `run-${counter++}`)
     const put = (rel: string, text: string) => {
@@ -111,9 +145,9 @@ describe('gate-m7.sh, with its legs stubbed', () => {
     }
     for (const f of NAMED_FILES) if (f !== opts.without) put(f, '')
     put('package.json', JSON.stringify({ scripts: opts.m8 ? { 'test:gate:m8': 'x' } : {} }))
-    put('docs/specs/PROGRESS-leagues.md', ledger(...(opts.rows ?? [])))
+    put('docs/specs/PROGRESS-leagues.md', ledger(...(opts.settled ?? SETTLED), ...(opts.rows ?? [])))
     if (opts.attachments) {
-      for (const a of ATTACHMENTS) put(a.path, `M7-GATE-ATTACHMENT: ${a.key} PASS\n`)
+      for (const a of ATTACHMENTS) put(a.path, attachmentText(a.key))
     }
     const bin = join(root, '.bin')
     put('.bin/npx', NPX_SHIM)
@@ -122,6 +156,17 @@ describe('gate-m7.sh, with its legs stubbed', () => {
     chmodSync(join(bin, 'npm'), 0o755)
     const log = join(root, 'stub.log')
     writeFileSync(log, '')
+    let head = ''
+    if (!opts.noGit) {
+      const inRoot = (...args: string[]) =>
+        spawnSync('git', ['-C', root, '-c', 'user.name=gate', '-c', 'user.email=gate@example.test', ...args], {
+          encoding: 'utf8',
+          env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', NODE_ENV: 'test' },
+        })
+      inRoot('init', '-q')
+      inRoot('commit', '-q', '--allow-empty', '-m', 'fixture')
+      head = inRoot('rev-parse', 'HEAD').stdout.trim()
+    }
     const env: NodeJS.ProcessEnv = {
       NODE_ENV: 'test',
       PATH: `${bin}:${process.env.PATH ?? ''}`,
@@ -131,7 +176,11 @@ describe('gate-m7.sh, with its legs stubbed', () => {
       ...opts.env,
     }
     const res = spawnSync('bash', [join(root, 'scripts/gate-m7.sh')], { encoding: 'utf8', env })
-    return { code: res.status, out: `${res.stdout}\n${res.stderr}`, calls: () => readFileSync(log, 'utf8') }
+    const stamp = (stage: number) => {
+      const file = join(root, '.gate-m7', `stage-${stage}.done`)
+      return existsSync(file) ? readFileSync(file, 'utf8').trim() : null
+    }
+    return { code: res.status, out: `${res.stdout}\n${res.stderr}`, calls: () => readFileSync(log, 'utf8'), head, stamp }
   }
 
   it('all green, attachments gone: exit 3, the exact headline, every stage ran in order', () => {
@@ -140,6 +189,8 @@ describe('gate-m7.sh, with its legs stubbed', () => {
     expect(run.out).toContain('AUTOMATED LEGS GREEN — M7 2026 GATE NOT PASSED')
     expect(run.out).not.toContain('GATE PASSED')
     expect(run.out).toContain('test:gate:m8: NOT RUN')
+    expect(run.out).toContain(`Commit: ${run.head}`)
+    for (const stage of [1, 2, 3, 4, 5, 6]) expect(run.stamp(stage), `stage ${stage}`).toBe(run.head)
     const calls = run.calls().split('\n').filter((l: string) => !l.includes('gate-m7-evidence') && !l.includes('supabase status'))
     expect(calls.map((l: string) => l.split(' ').slice(0, 4).join(' '))).toEqual([
       'npx vitest run scripts/gate-m7-open-rows.test.ts',
@@ -175,6 +226,10 @@ describe('gate-m7.sh, with its legs stubbed', () => {
     ['the chaos drills, exiting 3', { STUB_CHAOS_CODE: '3' }],
     ['the M6 gate, exiting 4', { STUB_M6_CODE: '4' }],
     ['the M7 vitest', { STUB_VITEST_CODE: '1' }],
+    ['a dropped file at [4/7], vitest exit 0', { STUB_M7_FILES: '11' }],
+    ['a skipped test at [4/7], vitest exit 0', { STUB_M7_SKIPPED: '1' }],
+    ['a dropped file at [5/7], chaos exit 0', { STUB_CHAOS_FILES: '6' }],
+    ['a skipped drill at [5/7], chaos exit 0', { STUB_CHAOS_SKIPPED: '1' }],
     ['a failed reset', { STUB_RESET: 'fail' }],
     ['pgTAP that ran four files', { STUB_PGTAP_FILES: '4' }],
   ])('a failed leg (%s): exit 1, GATE FAILED, the green headline never printed', (_name, env) => {
@@ -184,6 +239,43 @@ describe('gate-m7.sh, with its legs stubbed', () => {
     expect(run.out).not.toContain('AUTOMATED LEGS GREEN')
     expect(run.out).not.toContain('GATE PASSED')
   }, 60_000)
+
+  it('a failed stage leaves no stamp, and no later stage stamps either (R1761)', () => {
+    const run = gate({ attachments: true, env: { STUB_CHAOS_FILES: '6' } })
+    expect(run.code).toBe(1)
+    expect(run.stamp(4)).toBe(run.head)
+    expect(run.stamp(5)).toBeNull()
+    expect(run.stamp(6)).toBeNull()
+    expect(run.calls()).not.toContain('test:gate:m6')
+    expect(run.calls()).not.toContain('verdict')
+  }, 60_000)
+
+  it('a gate re-run clears the last run\'s stamps first', () => {
+    const script = readFileSync(join(REPO, 'scripts/gate-m7.sh'), 'utf8')
+    expect(script.indexOf('rm -rf "$REPORT_DIR"')).toBeLessThan(script.indexOf('stage_done 1'))
+  })
+
+  it('every leg green but F861 open: exit 3 by name, never PASSED (R1759)', () => {
+    const run = gate({ attachments: true, settled: SETTLED.map((r) => (r.startsWith('| F861') ? '| F861 | x | y | z | ⬜ Open |' : r)) })
+    expect(run.code).toBe(3)
+    expect(run.out).toContain('AUTOMATED LEGS GREEN — M7 2026 GATE NOT PASSED')
+    expect(run.out).toContain('exit 0 held back: F861')
+    expect(run.out).not.toContain('GATE PASSED')
+  }, 60_000)
+
+  it('F860 unrated: exit 3 by name (R1759)', () => {
+    const run = gate({ attachments: true, settled: SETTLED.map((r) => (r.startsWith('| F860') ? '| F860 | x | y | z | ⬜ Open |' : r)) })
+    expect(run.code).toBe(3)
+    expect(run.out).toContain('exit 0 held back: F860')
+  }, 60_000)
+
+  it('the chaos count is the directory\'s, so a new or renamed file is seen', () => {
+    const script = readFileSync(join(REPO, 'scripts/gate-m7.sh'), 'utf8')
+    const pinned = Number(/^CHAOS_FILE_COUNT=(\d+)$/m.exec(script)?.[1])
+    const onDisk = readdirSync(join(REPO, 'src/lib/leagues/chaos')).filter((f) => f.endsWith('.test.ts'))
+    expect(onDisk).toHaveLength(pinned)
+    expect(pinned).toBe(7)
+  })
 
   it.each([
     ['a hosted URL in the environment', { NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co' }],
@@ -198,6 +290,19 @@ describe('gate-m7.sh, with its legs stubbed', () => {
     expect(run.out).not.toContain('AUTOMATED LEGS GREEN')
     expect(run.out).not.toContain('GATE PASSED')
     expect(run.out).not.toContain('example.supabase.co')
+  }, 60_000)
+
+  it('not a git checkout: exit 2 before anything is reset', () => {
+    const run = gate({ attachments: true, noGit: true })
+    expect(run.code).toBe(2)
+    expect(run.out).toContain('not a git checkout')
+    expect(run.calls()).not.toContain('supabase db reset')
+  }, 60_000)
+
+  it('a hung reset warns that its child may still be changing the DB (R1768)', () => {
+    const run = gate({ attachments: true, env: { STUB_RESET: 'hang', GATE_M7_RESET_BUDGET_S: '2' } })
+    expect(run.code).toBe(2)
+    expect(run.out).toContain('a child may still be changing the local DB')
   }, 60_000)
 
   it('a named file gone: exit 1 before anything is reset', () => {

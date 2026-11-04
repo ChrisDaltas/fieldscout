@@ -13,19 +13,27 @@ import { afterAll, describe, expect, it } from 'vitest'
 
 import {
   ATTACHMENTS,
-  EXIT_ATTACHMENT_MISSING,
+  EXIT_EVIDENCE_MISSING,
   EXIT_LEG_FAILED,
   EXIT_OPEN_S0_S1,
   EXIT_PASSED,
   EXIT_UNREADABLE,
+  GATE_STAGES,
   LedgerParseError,
+  MUST_BE_CLOSED,
+  RATING_OWED,
+  S01_TEXT_ALLOWLIST,
+  SECTION_10_ROWS,
   classifyStatus,
   exitCodeOf,
   judgeAttachment,
+  judgeStamps,
   parseLedger,
   readSeverity,
+  readUnreadableMark,
   renderBanner,
   renderStatus,
+  stampFile,
   summarizeLedger,
   type AttachmentFinding,
   type LedgerRow,
@@ -49,15 +57,29 @@ function ledgerOf(...rows: string[]): string {
 const parsed = (...rows: string[]) => parseLedger(ledgerOf(...rows), 1)
 const one = (row: string): LedgerRow => parsed(row)[0]!
 
+/** F861 closed and F273 / F859 / F860 rated: what exit 0 needs from the ledger (R1759). */
+const SETTLED = [
+  '| F273 | x | y | z | ⬜ Open **[Severity S3 — fixture]** |',
+  '| F859 | x | y | z | ⬜ Open **[Severity S3 — fixture]** |',
+  '| F860 | x | y | z | ✅ Done |',
+  '| F861 | x | y | z | ✅ Done |',
+]
+
+function attachmentText(key: string): string {
+  const ruling = key === 'C4' ? 'M7-GATE-RULING: C4 2026-12-01 Chris: "it counts"\n' : ''
+  return `M7-GATE-ATTACHMENT: ${key} PASS\n${ruling}`
+}
+
 function passingAttachments(): AttachmentFinding[] {
-  return ATTACHMENTS.map((spec) => judgeAttachment(spec, `M7-GATE-ATTACHMENT: ${spec.key} PASS\n`))
+  return ATTACHMENTS.map((spec) => judgeAttachment(spec, attachmentText(spec.key)))
 }
 
 function missingAttachments(): AttachmentFinding[] {
   return ATTACHMENTS.map((spec) => judgeAttachment(spec, null))
 }
 
-const CLEAN = summarizeLedger(parsed('| F1 | done row | x | y | ✅ Done 2026-09-07 |'))
+const CLEAN = summarizeLedger(parsed('| F1 | done row | x | y | ✅ Done 2026-09-07 |', ...SETTLED))
+const COMMIT = { sha: 'abc1234', dirty: false }
 
 describe('the status of a row', () => {
   it.each([
@@ -110,6 +132,97 @@ describe('the severity of a row', () => {
     ['plain text', '⬜ Open', null],
   ])('%s + %s → %s', (obligation, status, want) => {
     expect(readSeverity(obligation, status)).toBe(want)
+  })
+})
+
+describe('an S0 / S1 no mark can read fails, it never reads as unrated (R1760)', () => {
+  it.each([
+    ['plain text', '🟡 Partial — S1', 'S1'],
+    ['plain text', '⏳ Open — S0', 'S0'],
+    ['plain text', '⬜ Open (S1)', 'S1'],
+    ['plain text', '⬜ Open · S0', 'S0'],
+    ['plain text', '⬜ Open **[S1 — review]**', 'S1'],
+    ['plain text', '⬜ Open [Severity: S0]', 'S0'],
+    ['plain text', '⬜ Open [severity S0]', 'S0'],
+    ['plain text', '⬜ Open Severity S1', 'S1'],
+    ['plain text', '⬜ Open — **rated S1**', 'S1'],
+    ['A title **[S0]** y', '⬜ Open', 'S0'],
+    ['**S0 — x** y', '⬜ Open', 'S0'],
+  ])('%s + %s fails by name as %s', (obligation, status, want) => {
+    expect(readSeverity(obligation, status)).toBeNull()
+    const row = one(`| F1000 | ${obligation} | y | z | ${status} |`)
+    expect(row).toMatchObject({ status: 'open', severity: null, unreadableMark: want })
+    const summary = summarizeLedger([row])
+    expect(summary.failing.map((r) => r.id)).toEqual(['F1000'])
+    expect(summary.unreadable.map((r) => r.id)).toEqual(['F1000'])
+    expect(summary.unrated).toEqual([])
+    expect(exitCodeOf({ ledger: summary, attachments: passingAttachments(), legsGreen: true })).toBe(EXIT_OPEN_S0_S1)
+    expect(
+      renderBanner({ ledger: summary, attachments: passingAttachments(), legsGreen: true, m8: 'absent', elapsedSeconds: 1, commit: COMMIT }),
+    ).toContain(`F1000 [${want} in its text, no mark reads it]`)
+  })
+
+  it('a milder rating beside the words does not settle them', () => {
+    expect(readUnreadableMark('F1000', 'plain', '⬜ Open — S3 (S1)')).toBe('S1')
+    expect(summarizeLedger([one('| F1000 | plain | y | z | ⬜ Open — S3 (S1) |')]).failing.map((r) => r.id)).toEqual(['F1000'])
+  })
+
+  it('a mark that reads it is enough, S2 / S3 text means nothing, struck text does not count', () => {
+    expect(readUnreadableMark('F1000', '**[S0 — x]** text says S0', '⬜ Open')).toBeNull()
+    expect(readUnreadableMark('F1000', 'plain', '⬜ Open — S1 and S1 again')).toBeNull()
+    expect(readUnreadableMark('F1000', 'never mints a (S2, week 1) row', '⬜ Open — S3')).toBeNull()
+    expect(readUnreadableMark('F1000', 'plain', '~~⬜ Open — S1~~ ⬜ Open **[Severity S3 — re-rated]**')).toBeNull()
+  })
+
+  it('a closed row is not read at all', () => {
+    expect(summarizeLedger([one('| F1000 | **[S1 while it happens — FIXED]** x | y | z | ✅ Done (S0 was fixed) |')]).failing).toEqual([])
+  })
+
+  it('the allowlist is by id: F778, F761, F861 and no one else', () => {
+    expect(Object.keys(S01_TEXT_ALLOWLIST).sort()).toEqual(['F761', 'F778', 'F861'])
+    const quoting = 'with its TD6 severity (S0 = wrong score / S1 = …)'
+    for (const id of ['F778', 'F761', 'F861']) expect(readUnreadableMark(id, quoting, '⬜ Open')).toBeNull()
+    expect(readUnreadableMark('F762', quoting, '⬜ Open')).toBe('S0')
+  })
+})
+
+describe('exit 0 is held back on F861 and the three owed ratings (R1759)', () => {
+  const held = (...rows: string[]) => summarizeLedger(parsed(...rows)).withheld.map((w) => w.id)
+
+  it('names exactly those four', () => {
+    expect([...MUST_BE_CLOSED, ...RATING_OWED]).toEqual(['F861', 'F273', 'F859', 'F860'])
+  })
+
+  it('all answered holds nothing back', () => {
+    expect(held(...SETTLED)).toEqual([])
+  })
+
+  it('F861 open: exit 3, named, whatever else is clean', () => {
+    const ledger = summarizeLedger(parsed(...SETTLED.filter((r) => !r.startsWith('| F861')), '| F861 | x | y | z | ⬜ Open |'))
+    expect(ledger.withheld.map((w) => w.id)).toEqual(['F861'])
+    expect(exitCodeOf({ ledger, attachments: passingAttachments(), legsGreen: true })).toBe(EXIT_EVIDENCE_MISSING)
+    const text = renderBanner({ ledger, attachments: passingAttachments(), legsGreen: true, m8: 'absent', elapsedSeconds: 1, commit: COMMIT })
+    expect(text).toContain('AUTOMATED LEGS GREEN — M7 2026 GATE NOT PASSED')
+    expect(text).toContain('exit 0 held back: F861')
+    expect(text).toContain('a rating is owed')
+    expect(text).not.toContain('GATE PASSED')
+  })
+
+  it.each(['F273', 'F859', 'F860'])('%s open with no rating: exit 3, named', (id) => {
+    const rows = [...SETTLED.filter((r) => !r.startsWith(`| ${id}`)), `| ${id} | x | y | z | ⬜ Open |`]
+    const ledger = summarizeLedger(parsed(...rows))
+    expect(ledger.withheld.map((w) => w.id)).toEqual([id])
+    expect(exitCodeOf({ ledger, attachments: passingAttachments(), legsGreen: true })).toBe(EXIT_EVIDENCE_MISSING)
+  })
+
+  it('a row gone from the ledger holds it back too, and rating or closing releases it', () => {
+    expect(held('| F1 | x | y | z | ✅ Done |')).toEqual(['F861', 'F273', 'F859', 'F860'])
+    expect(held(...SETTLED.filter((r) => !r.startsWith('| F273')), '| F273 | x | y | z | ✅ Done |')).toEqual([])
+  })
+
+  it('an open S0 still outranks it', () => {
+    const ledger = summarizeLedger(parsed('| F273 | x | y | z | ⬜ Open — S0 |', '| F859 | x | y | z | ⬜ Open |'))
+    expect(exitCodeOf({ ledger, attachments: passingAttachments(), legsGreen: true })).toBe(EXIT_OPEN_S0_S1)
   })
 })
 
@@ -191,6 +304,38 @@ describe('judgeAttachment', () => {
     expect(judgeAttachment(spec, `\`\`\`\n${line} PASS\n\`\`\`\n`).state).toBe('no-verdict')
   })
 
+  it('a fence with ~~~, an indented fence, or an HTML comment hides a PASS (R1764)', () => {
+    const hidden = (text: string) => judgeAttachment(spec, text).state
+    expect(hidden(`~~~\n${line} PASS\n~~~\n`)).toBe('no-verdict')
+    expect(hidden(`~~~~\n~~~\n${line} PASS\n~~~~\n`)).toBe('no-verdict')
+    expect(hidden(`  \`\`\`\n${line} PASS\n  \`\`\`\n`)).toBe('no-verdict')
+    expect(hidden(`    \`\`\`\n${line} PASS\n`)).toBe('no-verdict')
+    expect(hidden(`\`\`\`\n~~~\n${line} PASS\n`)).toBe('no-verdict')
+    expect(hidden(`<!-- ${line} PASS -->\n`)).toBe('no-verdict')
+    expect(hidden(`<!--\n${line} PASS\n-->\n`)).toBe('no-verdict')
+    expect(hidden(`<!-- open, never closed\n${line} PASS\n`)).toBe('no-verdict')
+    // And the line outside them still counts.
+    expect(hidden(`~~~\nexample\n~~~\n<!-- note -->\n${line} PASS\n`)).toBe('pass')
+    expect(hidden(`<!--\nnote\n-->\n${line} PASS\n`)).toBe('pass')
+  })
+
+  it("C4's PASS needs a dated ruling on the line beside it (R1765)", () => {
+    const c4 = ATTACHMENTS.find((a) => a.key === 'C4')!
+    const pass = 'M7-GATE-ATTACHMENT: C4 PASS'
+    const ruling = 'M7-GATE-RULING: C4 2026-12-01 Chris: "it counts"'
+    expect(judgeAttachment(c4, `${pass}\n`).state).toBe('no-ruling')
+    expect(judgeAttachment(c4, `${pass}\n${ruling}\n`).state).toBe('pass')
+    expect(judgeAttachment(c4, `${ruling}\n\n${pass}\n`).state).toBe('pass')
+    // Not dated, not a real date, no words, not beside it, or only in a fence.
+    expect(judgeAttachment(c4, `${pass}\nM7-GATE-RULING: C4 Chris: "it counts"\n`).state).toBe('no-ruling')
+    expect(judgeAttachment(c4, `${pass}\nM7-GATE-RULING: C4 2026-13-45 Chris\n`).state).toBe('no-ruling')
+    expect(judgeAttachment(c4, `${pass}\nM7-GATE-RULING: C4 2026-12-01\n`).state).toBe('no-ruling')
+    expect(judgeAttachment(c4, `${pass}\nsome prose\n${ruling}\n`).state).toBe('no-ruling')
+    expect(judgeAttachment(c4, `${pass}\n\`\`\`\n${ruling}\n\`\`\`\n`).state).toBe('no-ruling')
+    // And no attachment but C4 asks for one.
+    expect(judgeAttachment(spec, `${line} PASS\n`).state).toBe('pass')
+  })
+
   it('anything but PASS is not PASS, and a later PASS does not launder it', () => {
     expect(judgeAttachment(spec, `${line} FAIL\n`).state).toBe('not-pass')
     expect(judgeAttachment(spec, `${line} PASS with one miss\n`).state).toBe('not-pass')
@@ -220,7 +365,7 @@ describe('the verdict', () => {
   it('exit 0 needs all three: green legs, every attachment, no S0/S1', () => {
     expect(exitCodeOf({ ledger: CLEAN, attachments: passingAttachments(), legsGreen: true })).toBe(EXIT_PASSED)
     expect(exitCodeOf({ ledger: CLEAN, attachments: passingAttachments(), legsGreen: false })).toBe(EXIT_LEG_FAILED)
-    expect(exitCodeOf({ ledger: CLEAN, attachments: missingAttachments(), legsGreen: true })).toBe(EXIT_ATTACHMENT_MISSING)
+    expect(exitCodeOf({ ledger: CLEAN, attachments: missingAttachments(), legsGreen: true })).toBe(EXIT_EVIDENCE_MISSING)
     expect(exitCodeOf({ ledger: openS0, attachments: passingAttachments(), legsGreen: true })).toBe(EXIT_OPEN_S0_S1)
   })
 
@@ -228,7 +373,7 @@ describe('the verdict', () => {
     for (let i = 0; i < 3; i++) {
       const attachments = passingAttachments()
       attachments[i] = judgeAttachment(attachments[i]!.spec, null)
-      expect(exitCodeOf({ ledger: CLEAN, attachments, legsGreen: true })).toBe(EXIT_ATTACHMENT_MISSING)
+      expect(exitCodeOf({ ledger: CLEAN, attachments, legsGreen: true })).toBe(EXIT_EVIDENCE_MISSING)
     }
   })
 
@@ -237,11 +382,11 @@ describe('the verdict', () => {
   })
 
   it('the exit codes are distinct from a test failure', () => {
-    expect(new Set([EXIT_PASSED, EXIT_LEG_FAILED, EXIT_UNREADABLE, EXIT_ATTACHMENT_MISSING, EXIT_OPEN_S0_S1]).size).toBe(5)
+    expect(new Set([EXIT_PASSED, EXIT_LEG_FAILED, EXIT_UNREADABLE, EXIT_EVIDENCE_MISSING, EXIT_OPEN_S0_S1]).size).toBe(5)
   })
 
   const banner = (over: Partial<Parameters<typeof renderBanner>[0]> = {}) =>
-    renderBanner({ ledger: CLEAN, attachments: missingAttachments(), legsGreen: true, m8: 'absent', elapsedSeconds: 7, ...over })
+    renderBanner({ ledger: CLEAN, attachments: missingAttachments(), legsGreen: true, m8: 'absent', elapsedSeconds: 7, commit: COMMIT, ...over })
 
   it('missing attachments: the exact headline, every leg named, never "GATE PASSED"', () => {
     const text = banner()
@@ -283,6 +428,27 @@ describe('the verdict', () => {
     expect(banner({ ledger: unrated, attachments: passingAttachments() })).toContain('Open rows with no rating: 1')
   })
 
+  it('every banner names the commit and whether the tree was dirty (R1765)', () => {
+    expect(banner()).toContain('Commit: abc1234 (clean)')
+    expect(banner({ attachments: passingAttachments() })).toContain('Commit: abc1234 (clean)')
+    expect(banner({ legsGreen: false })).toContain('Commit: abc1234 (clean)')
+    expect(banner({ commit: { sha: 'abc1234', dirty: true } })).toContain('Commit: abc1234 (DIRTY')
+  })
+
+  it('every banner says where §9 and §10 stand (R1766)', () => {
+    for (const text of [banner(), banner({ attachments: passingAttachments() }), banner({ legsGreen: false })]) {
+      expect(text).toContain('tasks-M7 §9, the exit criteria:')
+      expect(text).toContain('criterion 1, L.F2.2:')
+      expect(text).toContain('criterion 3, zero S0/S1:')
+      expect(text).toContain('criterion 4, C4:')
+      expect(text).toContain('tasks-M7 §10, the 15 severity reviews:')
+    }
+    const reviewed = summarizeLedger(parsed('| F256 | x | y | z | ⬜ Open **[Severity S0 — part (b)]** |', '| F50 | x | y | z | ⬜ Open **[Severity S2 — x]** |'))
+    const text = banner({ ledger: reviewed })
+    expect(text).toContain('the 15 severity reviews: 2 rated; open at S0/S1: F256')
+    expect(SECTION_10_ROWS).toHaveLength(15)
+  })
+
   it('pre-flight status claims no test leg', () => {
     const text = renderStatus({ ledger: CLEAN, attachments: missingAttachments() })
     expect(text).not.toContain('AUTOMATED LEGS GREEN')
@@ -295,17 +461,39 @@ describe('the CLI, on a scratch tree', () => {
   const scratch = mkdtempSync(join(tmpdir(), 'gate-m7-'))
   afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
-  const padding = Array.from({ length: 600 }, (_, i) => `| F${i + 1} | x | y | z | ✅ Done |`)
-  function tree(name: string, rows: string[], attachments: boolean): string {
+  const padding = Array.from({ length: 600 }, (_, i) => `| F${i + 1} | x | y | z | ✅ Done |`).filter((r) => !r.startsWith('| F273 '))
+  const gitEnv = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', NODE_ENV: 'test' as const }
+  function git(root: string, ...args: string[]) {
+    return spawnSync('git', ['-C', root, '-c', 'user.name=gate', '-c', 'user.email=gate@example.test', ...args], { encoding: 'utf8', env: gitEnv })
+  }
+  /** A real checkout with one commit, so `verdict` has a HEAD to name. Returns the SHA. */
+  function checkout(root: string): string {
+    git(root, 'init', '-q')
+    git(root, 'add', '-A')
+    git(root, 'commit', '-q', '--allow-empty', '-m', 'fixture')
+    return git(root, 'rev-parse', 'HEAD').stdout.trim()
+  }
+  function stamp(root: string, sha: string, stages: readonly number[] = GATE_STAGES) {
+    mkdirSync(join(root, '.gate-m7'), { recursive: true })
+    for (const stage of stages) writeFileSync(join(root, '.gate-m7', stampFile(stage)), `${sha}\n`)
+  }
+  /** Ignore the stamp directory, as the real repo's .gitignore does. */
+  function checkedOutAndStamped(root: string): string {
+    writeFileSync(join(root, '.gitignore'), '/.gate-m7/\n')
+    const sha = checkout(root)
+    stamp(root, sha)
+    return root
+  }
+  function tree(name: string, rows: string[], attachments: boolean, settled: string[] = SETTLED): string {
     const root = join(scratch, name)
     const write = (rel: string, text: string) => {
       const file = join(root, rel)
       mkdirSync(dirname(file), { recursive: true })
       writeFileSync(file, text)
     }
-    write('docs/specs/PROGRESS-leagues.md', ledgerOf(...padding, ...rows))
+    write('docs/specs/PROGRESS-leagues.md', ledgerOf(...padding, ...settled, ...rows))
     if (attachments) {
-      for (const a of ATTACHMENTS) write(a.path, `M7-GATE-ATTACHMENT: ${a.key} PASS\n`)
+      for (const a of ATTACHMENTS) write(a.path, attachmentText(a.key))
     }
     return root
   }
@@ -313,21 +501,67 @@ describe('the CLI, on a scratch tree', () => {
     return spawnSync('npx', ['tsx', join(REPO, 'scripts/gate-m7-evidence.ts'), ...args, '--root', root], {
       cwd: REPO,
       encoding: 'utf8',
+      env: gitEnv,
     })
   }
 
   it('verdict: 3 with the attachments gone, 4 on an open S0, 0 only when all is in', () => {
-    const missing = run(tree('missing', [], false), 'verdict', '--m8', 'absent')
-    expect(missing.status).toBe(EXIT_ATTACHMENT_MISSING)
+    const missing = run(checkedOutAndStamped(tree('missing', [], false)), 'verdict', '--m8', 'absent')
+    expect(missing.status).toBe(EXIT_EVIDENCE_MISSING)
     expect(missing.stdout).toContain('AUTOMATED LEGS GREEN — M7 2026 GATE NOT PASSED')
 
-    const s0 = run(tree('s0', ['| F710 | x | y | z | ⬜ Open — S0 |'], true), 'verdict', '--m8', 'absent')
+    const s0 = run(checkedOutAndStamped(tree('s0', ['| F710 | x | y | z | ⬜ Open — S0 |'], true)), 'verdict', '--m8', 'absent')
     expect(s0.status).toBe(EXIT_OPEN_S0_S1)
     expect(s0.stdout).toContain('F710')
 
-    const passed = run(tree('passed', [], true), 'verdict', '--m8', 'absent')
+    const passed = run(checkedOutAndStamped(tree('passed', [], true)), 'verdict', '--m8', 'absent')
     expect(passed.status).toBe(EXIT_PASSED)
     expect(passed.stdout).toContain('M7 2026 GATE PASSED')
+    expect(passed.stdout).toMatch(/Commit: [0-9a-f]{40} \(clean\)/)
+  }, 60_000)
+
+  it('verdict by hand refuses, exit 2, with no leg on record for HEAD (R1761)', () => {
+    const unstamped = tree('unstamped', [], true)
+    checkout(unstamped)
+    const none = run(unstamped, 'verdict', '--m8', 'absent')
+    expect(none.status).toBe(EXIT_UNREADABLE)
+    expect(none.stderr).toContain('not on record')
+    expect(none.stdout).not.toContain('GATE PASSED')
+    expect(none.stdout).not.toContain('AUTOMATED LEGS GREEN')
+
+    const partial = tree('partial', [], true)
+    stamp(partial, checkout(partial), [1, 2, 3, 4, 5])
+    const five = run(partial, 'verdict', '--m8', 'absent')
+    expect(five.status).toBe(EXIT_UNREADABLE)
+    expect(five.stderr).toContain('stage 6/7 has no stamp')
+
+    const stale = tree('stale', [], true)
+    checkout(stale)
+    stamp(stale, 'a-different-commit')
+    const old = run(stale, 'verdict', '--m8', 'absent')
+    expect(old.status).toBe(EXIT_UNREADABLE)
+    expect(old.stderr).toContain('stamped for a-different-commit')
+
+    const notRepo = tree('notrepo', [], true)
+    const noGit = run(notRepo, 'verdict', '--m8', 'absent')
+    expect(noGit.status).toBe(EXIT_UNREADABLE)
+    expect(noGit.stdout).not.toContain('GATE PASSED')
+  }, 60_000)
+
+  it('the verdict shows a dirty tree', () => {
+    const root = checkedOutAndStamped(tree('dirty', [], true))
+    writeFileSync(join(root, 'uncommitted.txt'), 'x')
+    const res = run(root, 'verdict', '--m8', 'absent')
+    expect(res.status).toBe(EXIT_PASSED)
+    expect(res.stdout).toContain('(DIRTY')
+  }, 60_000)
+
+  it('F861 open: 3 by name, with every attachment in and every leg stamped (R1759)', () => {
+    const settled = SETTLED.map((r) => (r.startsWith('| F861') ? '| F861 | x | y | z | ⬜ Open |' : r))
+    const res = run(checkedOutAndStamped(tree('f861', [], true, settled)), 'verdict', '--m8', 'absent')
+    expect(res.status).toBe(EXIT_EVIDENCE_MISSING)
+    expect(res.stdout).toContain('exit 0 held back: F861')
+    expect(res.stdout).not.toContain('GATE PASSED')
   }, 60_000)
 
   it('an unreadable ledger is exit 2, and so is a verdict with no --m8', () => {
@@ -339,8 +573,21 @@ describe('the CLI, on a scratch tree', () => {
   }, 60_000)
 })
 
+describe('judgeStamps', () => {
+  const all = () => 'head\n'
+
+  it('needs all six stages, each for HEAD', () => {
+    expect(GATE_STAGES).toEqual([1, 2, 3, 4, 5, 6])
+    expect(judgeStamps('head', all)).toEqual([])
+    expect(judgeStamps('head', (s) => (s === 4 ? null : 'head'))).toEqual(['stage 4/7 has no stamp'])
+    expect(judgeStamps('head', (s) => (s === 6 ? 'other' : 'head'))).toEqual(['stage 6/7 is stamped for other'])
+    expect(judgeStamps('head', (s) => (s === 1 ? '' : 'head'))).toEqual(['stage 1/7 is stamped for nothing'])
+  })
+})
+
 describe('the real PROGRESS file', () => {
   const rows = parseLedger(readFileSync(join(REPO, 'docs/specs/PROGRESS-leagues.md'), 'utf8'))
+  const summary = summarizeLedger(rows)
 
   it('parses to the whole table', () => {
     expect(rows.length).toBeGreaterThanOrEqual(639)
@@ -355,7 +602,26 @@ describe('the real PROGRESS file', () => {
   })
 
   it('the fifteen rows §10 sent to review are all rated', () => {
-    const reviewed = 'F50 F86 F92 F93 F144 F212 F226 F248 F256 F260 F262 F274 F275 F278 F281'.split(' ')
-    for (const id of reviewed) expect(rows.find((r) => r.id === id)?.severity, id).not.toBeNull()
+    for (const id of SECTION_10_ROWS) expect(rows.find((r) => r.id === id)?.severity, id).not.toBeNull()
+  })
+
+  it('F273, F859 and F860 are rated (or closed) and nothing else holds exit 0 back but F861', () => {
+    for (const id of RATING_OWED) {
+      const row = rows.find((r) => r.id === id)!
+      expect(row.status === 'closed' || row.severity !== null, id).toBe(true)
+    }
+    const f861Open = rows.find((r) => r.id === 'F861')?.status !== 'closed'
+    expect(summary.withheld.map((w) => w.id)).toEqual(f861Open ? ['F861'] : [])
+  })
+
+  it('no open row says S0 / S1 in a spelling the marks cannot read', () => {
+    expect(summary.unreadable.map((r) => r.id)).toEqual([])
+    expect(summary.failing.filter((r) => r.unreadableMark).map((r) => r.id)).toEqual([])
+  })
+
+  it('L.F2.7\'s four S0 rows are closed (F778)', () => {
+    for (const id of ['F710', 'F711', 'F712', 'F713', 'F778']) {
+      expect(rows.find((r) => r.id === id)?.status, id).toBe('closed')
+    }
   })
 })

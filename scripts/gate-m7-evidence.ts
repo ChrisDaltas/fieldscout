@@ -7,30 +7,37 @@
  *
  *   npx tsx scripts/gate-m7-evidence.ts verdict --m8 absent|ran
  *                                               [--elapsed S] [--root DIR] [--out DIR]
- *     The gate's last stage, and only the gate calls it: reaching it means
- *     every automated stage passed under `set -e`. Prints the banner.
+ *     The gate's last stage. Prints the banner, but only when every automated
+ *     stage left its stamp for HEAD under `<root>/.gate-m7/` (R1761): run by
+ *     hand with no leg behind it, it refuses with exit 2. Accident prevention,
+ *     not forgery-proofing.
  *
- * EXIT: 0 passed · 1 a crash · 2 unreadable ledger or a misused command ·
- * 3 an attachment is missing · 4 an S0 / S1 row is open. `status` exits 3 / 4
- * the same way, or 0 when nothing stands against the verdict yet.
+ * EXIT: 0 passed · 1 a crash · 2 unreadable ledger, a misused command, or no
+ * stamps for HEAD · 3 an attachment is missing or a rating is owed · 4 an S0 / S1
+ * row is open. `status` exits 3 / 4 the same way, or 0 when nothing stands
+ * against the verdict yet.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import {
   EXIT_UNREADABLE,
   LedgerParseError,
   exitCodeOf,
+  judgeStamps,
   parseLedger,
   readAttachments,
   renderBanner,
   renderLedgerReport,
   renderStatus,
+  stampFile,
   standingCode,
   summarizeLedger,
 } from './gate-m7-open-rows'
 
 const PROGRESS = 'docs/specs/PROGRESS-leagues.md'
+const STAMP_DIR = '.gate-m7'
 
 function refuse(message: string): never {
   console.error(`gate-m7-evidence: ${message}`)
@@ -50,6 +57,12 @@ function parseArgs(argv: string[]): { command: string; flags: Map<string, string
     flags.set(name, value)
   }
   return { command, flags }
+}
+
+function git(root: string, ...args: string[]): string {
+  const res = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' })
+  if (res.status !== 0) refuse(`git ${args.join(' ')} failed under ${root}: the verdict can't name a commit`)
+  return res.stdout.trim()
 }
 
 function main() {
@@ -74,12 +87,13 @@ function main() {
   const ledger = summarizeLedger(rows)
   const attachments = readAttachments(root)
 
-  if (out) {
-    mkdirSync(out, { recursive: true })
-    writeFileSync(join(out, 'open-rows.txt'), renderLedgerReport(ledger))
+  function writeReport(dir: string) {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'open-rows.txt'), renderLedgerReport(ledger))
   }
 
   if (command === 'status') {
+    if (out) writeReport(out)
     console.log(renderStatus({ ledger, attachments }))
     process.exit(standingCode({ ledger, attachments }))
   }
@@ -90,7 +104,18 @@ function main() {
   const elapsedSeconds = elapsedRaw === undefined ? null : Number(elapsedRaw)
   if (elapsedSeconds !== null && !Number.isFinite(elapsedSeconds)) refuse('--elapsed must be a number of seconds')
 
-  const input = { ledger, attachments, legsGreen: true, m8, elapsedSeconds } as const
+  const sha = git(root, 'rev-parse', 'HEAD')
+  const notStamped = judgeStamps(sha, (stage) => {
+    const file = join(root, STAMP_DIR, stampFile(stage))
+    return existsSync(file) ? readFileSync(file, 'utf8') : null
+  })
+  if (notStamped.length > 0) {
+    refuse(`no verdict: the automated legs are not on record for ${sha} (${notStamped.join('; ')}). Run \`npm run test:gate:m7\`; \`status\` shows what stands.`)
+  }
+  const commit = { sha, dirty: git(root, 'status', '--porcelain') !== '' }
+
+  if (out) writeReport(out)
+  const input = { ledger, attachments, legsGreen: true, m8, elapsedSeconds, commit } as const
   console.log(renderBanner(input))
   const code = exitCodeOf(input)
   if (out) writeFileSync(join(out, 'verdict.txt'), `${renderBanner(input)}\nexit ${code}\n`)

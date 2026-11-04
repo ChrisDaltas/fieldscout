@@ -17,13 +17,21 @@
 #          run that found nothing is not a pass.
 #   [4/7]  F56 settle (the reset just restarted the services) → M7's vitest BY
 #          NAME (F84): the wire suites (rate limits, migration 210's hardening)
-#          and the unit pins behind them.
-#   [5/7]  `npm run test:chaos` (F835) → the settle after it (F298).
+#          and the unit pins behind them. Its summary must say all 12 files
+#          passed and nothing skipped: vitest ignores a filter that matches
+#          nothing, and `.skip` reads green (R1762).
+#   [5/7]  `npm run test:chaos` (F835), the same check on its 7 files (the four
+#          drills + their three unit files) → the settle after it (F298).
 #   [6/7]  `npm run test:gate:m6` — continuity: its own fresh reset + the FULL
 #          pgTAP + the M6 vitest + the correction seasons + E2E + M5 → M0.
 #          (`test:gate:m8` too, the day it exists — see below.)
 #   [7/7]  The verdict: re-reads the ledger and the attachments, prints the
-#          banner. Exit codes below.
+#          banner with the commit and whether the tree was dirty. Exit codes below.
+#
+# EACH STAGE [1/7]–[6/7] STAMPS `.gate-m7/stage-N.done` with `git rev-parse HEAD`
+# when it finishes, and the verdict refuses with exit 2 unless all six are there
+# for HEAD (R1761). So `gate-m7-evidence.ts verdict` run by hand can't print a
+# pass with no leg behind it. Accident prevention, not forgery-proofing.
 #
 # WHERE EACH PROOF LIVES:
 #   Rate limits (§22.5)    pgTAP 159 at [3/7]; on the wire at [4/7].
@@ -58,27 +66,34 @@
 #                                   line: `M7-GATE-ATTACHMENT: L.F2.10 PASS`
 #                                   (needs C1; TD5 — timestamped, executed)
 #   criterion 4  the weekend + the  docs/runbooks/beta-ladder.md §6 (F761)
-#                ruling             line: `M7-GATE-ATTACHMENT: C4 PASS`
+#                ruling             line: `M7-GATE-ATTACHMENT: C4 PASS`, with
+#                                   `M7-GATE-RULING: C4 <YYYY-MM-DD> <his words>`
+#                                   on the line beside it (R1765)
 #                                   (needs C4, then Chris's ruling — TD10)
 # The line is added by whoever attaches the record, and only after the record
 # says it: standing rule (f), a miss is Chris's to rule on. An absent file, an
-# empty file, no line, or any word but PASS all read as NOT having it.
+# empty file, no line, any word but PASS, or a C4 PASS with no dated ruling all
+# read as NOT having it. A fence (``` or ~~~, any indent) or an HTML comment hides it.
 #
 # EXIT:
 #   0   M7 2026 GATE PASSED: every leg green, all three attachments, no rated
-#       S0 / S1 open.
+#       S0 / S1 open, F861 closed, F273 / F859 / F860 rated or closed.
 #   1   a test leg failed, whatever code the leg itself returned (the EXIT trap
 #       maps it, so a leg's own 3 can never read as "automated legs green").
 #   2   not runnable, nothing proven: CLI hung or stack down, an ambient
-#       non-local URL, an unreadable ledger.
-#   3   AUTOMATED LEGS GREEN — M7 2026 GATE NOT PASSED: an attachment is missing.
+#       non-local URL, an unreadable ledger, not a git checkout, or `verdict` with
+#       no stamps for HEAD.
+#   3   AUTOMATED LEGS GREEN — M7 2026 GATE NOT PASSED: an attachment is missing,
+#       or F861 is open, or F273 / F859 / F860 has no rating (R1759); named.
 #   4   same headline, and an S0 / S1 row is open (outranks 3); named row by row.
 # As of L.F2.12's build, 3 or 4 is the EXPECTED result: C1 does not exist and C4
 # has not happened. L.F2.12's box stays unticked until exit 0.
 #
 # Open rows with NO rating (most older rows) are counted and listed, never read
-# as clean and never as failures. "Zero S0/S1" therefore covers rated rows only,
-# and every banner says so (F861).
+# as clean. "Zero S0/S1" therefore covers rated rows only, and every banner says
+# so, so exit 0 stays held back while F861 is open (R1759). A row that says S0 or
+# S1 in a spelling the marks can't read fails by name instead of reading as
+# unrated (R1760).
 #
 # `test:gate:m8` DOES NOT EXIST: M8's L.G2.2 is unticked and waits on the same
 # C1. The banner prints that it did not run. When L.G2.2 adds the script, [6/7]
@@ -136,7 +151,10 @@ stage() {
   echo ""
   echo "==> $1"
 }
-took() {
+# The stage finished: its stamp is what `verdict` asks for (R1761). A leg that
+# failed never gets here, so a failed run leaves no stamp for its stage.
+stage_done() {
+  git rev-parse HEAD >"$REPORT_DIR/stage-$1.done"
   echo "    [stage: $((SECONDS - STAGE_T0))s | elapsed: $((SECONDS - GATE_T0))s]"
 }
 # `alarm` survives `exec`, so the command dies at the budget (exit 142): a hung
@@ -171,6 +189,26 @@ on_exit() {
   exit 1
 }
 trap on_exit EXIT
+# Vitest's own summary, from a captured run: exactly N files passed, at least one
+# test passed, nothing skipped or left todo (R1762). Vitest ignores a filter that
+# matches nothing and exits 0 over `.skip`, so its exit code can't say this.
+require_vitest_run() {
+  local report="$1" want="$2" plain
+  plain="$report.plain"
+  perl -pe 's/\e\[[0-9;]*[A-Za-z]//g' "$report" >"$plain"
+  grep -Eq "^ *Test Files +${want} passed \(${want}\) *$" "$plain" || {
+    echo "    vitest's summary does not say \"Test Files  ${want} passed (${want})\": the named files did not all run and pass."
+    exit 1
+  }
+  grep -Eq '^ *Tests +[1-9][0-9]* passed' "$plain" || {
+    echo "    vitest's summary shows no test passing."
+    exit 1
+  }
+  if grep -Eq '^ *(Test Files|Tests) .*(skipped|todo)' "$plain"; then
+    echo "    vitest's summary shows a skipped or todo test: a skip is not a pass here."
+    exit 1
+  fi
+}
 
 echo "======================================================================"
 echo "  M7 GATE, 2026 form (L.F2.12) — hardening: exit-criteria proof"
@@ -214,9 +252,13 @@ CHAOS_DRILLS=(
   src/lib/leagues/chaos/worker-crash-db.test.ts
   src/lib/leagues/chaos/waiver-run-failure-db.test.ts
 )
+# Every test file `npm run test:chaos` finds: the four drills + chaos-isolation,
+# faults and room-model-pin. `gate-m7-wiring.test.ts` pins this to the directory.
+CHAOS_FILE_COUNT=7
 
 stage "[1/7] Pre-flight — the CLI answers, the stack is local, the ledger parses"
 command -v perl >/dev/null || not_runnable "perl is required for the CLI time budget"
+git rev-parse HEAD >/dev/null 2>&1 || not_runnable "this is not a git checkout, so the verdict can't name a commit."
 for name in SUPABASE_URL NEXT_PUBLIC_SUPABASE_URL SUPABASE_LOCAL_URL; do
   value="${!name:-}"
   case "$value" in
@@ -241,7 +283,8 @@ echo "    CLI answered; stack is http://127.0.0.1:54321"
 for file in "${M7_PGTAP[@]}" "${M7_VITEST[@]}" "${CHAOS_DRILLS[@]}"; do
   [ -f "$file" ] || { echo "    MISSING: $file — this gate's named list is out of date"; exit 1; }
 done
-npx vitest run scripts/gate-m7-open-rows.test.ts scripts/gate-m7-wiring.test.ts
+npx vitest run scripts/gate-m7-open-rows.test.ts scripts/gate-m7-wiring.test.ts 2>&1 | tee "$REPORT_DIR/vitest-preflight.txt"
+require_vitest_run "$REPORT_DIR/vitest-preflight.txt" 2
 set +e
 npx tsx scripts/gate-m7-evidence.ts status --out "$REPORT_DIR"
 preflight=$?
@@ -250,14 +293,14 @@ case "$preflight" in
   0 | 3 | 4) ;;
   *) not_runnable "the ledger or the verdict logic could not be read (exit $preflight)." ;;
 esac
-took
+stage_done 1
 
 stage "[2/7] Fresh local stack reset (pristine, fully-migrated chain)"
 reset_code=0
 with_budget "${GATE_M7_RESET_BUDGET_S:-900}" npx supabase db reset || reset_code=$?
-[ "$reset_code" -ne 142 ] || not_runnable "\`supabase db reset\` hung past its budget, from $(pwd). See this script's header."
+[ "$reset_code" -ne 142 ] || not_runnable "\`supabase db reset\` hung past its budget, from $(pwd). The budget killed the CLI, not necessarily what it started: a child may still be changing the local DB, so check before touching it again (\`docker ps\`, or wait), then run a fresh reset. See this script's header."
 [ "$reset_code" -eq 0 ] || exit "$reset_code"
-took
+stage_done 2
 
 stage "[3/7] M7's pgTAP by name — 156, 157, 159, 160, 162, on the empty pool"
 npx supabase test db "${M7_PGTAP[@]}" 2>&1 | tee "$REPORT_DIR/pgtap-m7.txt"
@@ -265,17 +308,19 @@ grep -Eq "^Files=${#M7_PGTAP[@]}," "$REPORT_DIR/pgtap-m7.txt" || {
   echo "    pg_prove's summary does not say Files=${#M7_PGTAP[@]} — the named files did not all run."
   exit 1
 }
-took
+stage_done 3
 
 stage "[4/7] F56 settle → M7's vitest by name — ${#M7_VITEST[@]} files (wire suites + the unit pins behind them)"
 npx tsx scripts/gate-settle.ts
-npx vitest run "${M7_VITEST[@]}"
-took
+npx vitest run "${M7_VITEST[@]}" 2>&1 | tee "$REPORT_DIR/vitest-m7.txt"
+require_vitest_run "$REPORT_DIR/vitest-m7.txt" "${#M7_VITEST[@]}"
+stage_done 4
 
 stage "[5/7] The chaos drills (test:chaos, F835) → settle (F298)"
-npm run test:chaos
+npm run test:chaos 2>&1 | tee "$REPORT_DIR/vitest-chaos.txt"
+require_vitest_run "$REPORT_DIR/vitest-chaos.txt" "$CHAOS_FILE_COUNT"
 npx tsx scripts/gate-settle.ts
-took
+stage_done 5
 
 stage "[6/7] M6 gate — continuity (own reset + FULL pgTAP + M6 vitest + seasons + E2E + M5 → M0)"
 npm run test:gate:m6
@@ -284,11 +329,11 @@ if [ -n "$(node -p "require('./package.json').scripts['test:gate:m8'] || ''")" ]
   npm run test:gate:m8
   m8_state=ran
 fi
-took
+stage_done 6
 
 stage "[7/7] The verdict — the ledger and the attachments, read again"
-# Reaching this line means every stage above passed under `set -e`, so this is
-# the only caller of `verdict`. Its exit code is the gate's.
+# Reaching this line means every stage above passed under `set -e` and stamped
+# itself. `verdict` checks those stamps. Its exit code is the gate's.
 set +e
 npx tsx scripts/gate-m7-evidence.ts verdict --m8 "$m8_state" --elapsed "$((SECONDS - GATE_T0))" --out "$REPORT_DIR"
 verdict=$?
