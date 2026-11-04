@@ -18,14 +18,17 @@ import {
   BOSWELL_2025_WK1,
   BOSWELL_2026_WK8,
   BUF_2025_WK2,
+  CHI_2026_WK6,
   DAL_2026_WK5,
   DAL_2026_WK6,
   KC_2025_WK7,
   KICKOFF_DST,
+  MARKS_2025_WK15,
   MCMANUS_2025_WK2,
   MIN_2026_WK3,
   MYERS_2025_WK18,
   PHI_2026_WK8,
+  PIT_2025_WK1,
   RYLAND_2026_WK6,
   SEA_2026_WK1,
   storedLine,
@@ -73,6 +76,8 @@ describe('K0 goldens: real stored lines against ESPN table, the same under all f
     ['Dallas 2026 wk6: 3 sacks + 2 INT + PA 23 0 + YA 318 0', 'DEF', DAL_2026_WK6, 5],
     ['Arizona 2026 wk1: 3 + 2 + 2 + PA 14 1 + YA 268 2 (ESPN 12: the block is a named gap)', 'DEF', ARI_2026_WK1, 10],
     ['Minnesota 2026 wk3: 6 + 4 + PA 16 1 + YA 243 2 (ESPN 19: the return TD is a named gap)', 'DEF', MIN_2026_WK3, 13],
+    ['Chicago 2026 wk6: 5 sacks + 2 FR + PA 23 0 + YA 257 2 (ESPN 13: two special-teams recoveries are a named gap)', 'DEF', CHI_2026_WK6, 9],
+    ['Pittsburgh 2025 wk1: 1 sack + PA 32 −1 + YA 394 −1 (ESPN 1: a special-teams recovery is a named gap)', 'DEF', PIT_2025_WK1, -1],
   ]
   it.each(cases)('%s', (_name, position, raw, points) => {
     for (const system of SYSTEMS) expect(presetGamePoints(system, position, storedLine(raw)), system).toBe(points)
@@ -91,6 +96,10 @@ describe('K0 goldens: real stored lines against ESPN table, the same under all f
 
   it('named gap: a kicker line scores kicking stats only (Aubrey 2025 wk15: 14, ESPN 14.6 with 6 rushing yards)', () => {
     expect(presetGamePoints('espn_standard', 'K', storedLine(AUBREY_2025_WK15))).toBe(14)
+  })
+
+  it('named gap: a fumble-recovery TD pays nothing (Woody Marks 2025 wk15: 3 + 0.8 = 3.8, ESPN 9.8 with the TD)', () => {
+    expect(presetGamePoints('espn_standard', 'RB', storedLine(MARKS_2025_WK15))).toBe(3.8)
   })
 })
 

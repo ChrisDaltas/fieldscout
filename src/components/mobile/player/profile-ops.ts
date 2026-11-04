@@ -712,11 +712,12 @@ export function careerTable(args: {
   const seasons = [args.currentSeason, ...seasonsWithLines(args.lines, args.currentSeason)].slice(0, 4)
   const rankCell = (rank: number | null): TableCell => (rank !== null ? { value: String(rank), kind: rankTone(rank) } : dash)
   const rows = seasons.map((season): TableRow => {
+    const isCurrent = season === args.currentSeason
+    const stored = args.lines.filter((l) => l.season === season && !l.is_live)
     // A game the scorer refuses is not a game: no count, no points, no box sums.
-    const done = presetLines(
-      args.position,
-      args.lines.filter((l) => l.season === season && !l.is_live),
-    )
+    // The exception is this season on a league basis: its Gm and Fpts come from
+    // the league read, which scores what is stored, so the box sums do the same.
+    const done = isCurrent && args.core?.basis.kind === 'league' ? stored : presetLines(args.position, stored)
     const games = done.filter(appeared)
     const sums: Partial<Record<ProfileBoxColumn, number>> = {}
     for (const l of done) {
@@ -727,7 +728,6 @@ export function careerTable(args: {
         }
       }
     }
-    const isCurrent = season === args.currentSeason
     const gm = isCurrent && args.core ? args.core.games : games.length
     const fpts = isCurrent
       ? (args.core?.total_points ?? null)

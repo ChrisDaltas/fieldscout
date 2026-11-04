@@ -81,7 +81,7 @@ type Line = StatLineRow & { week: number; is_live?: boolean | null }
  * lists, so the extra `two_point_conversions` column in the reads changes nothing.
  */
 type PrepareLines = (position: string, rows: readonly Line[]) => readonly Line[]
-const storedLines: PrepareLines = (_position, rows) => rows
+export const storedLines: PrepareLines = (_position, rows) => rows
 
 async function readSeasonPool(supabase: Supabase, season: number): Promise<Map<string, Line[]>> {
   const select = ['id', 'player_id', 'week', 'is_live', 'updated_at', 'advanced', ...PRESET_LINE_COLUMNS].join(', ')
@@ -193,7 +193,9 @@ export type PoolStandings = Record<string, PoolEntry>
 /**
  * Every player's total, completed-weeks average and both ranks, scored once.
  * `week` is the current (incomplete) week: weeks at or after it, and rows
- * still flagged live, are left out of the average.
+ * still flagged live, are left out of the average. `prepare` has no default on
+ * purpose: a caller that forgot it would read a preset pool as a league pool,
+ * and only type-check would see it.
  */
 export async function computePoolStandings(
   supabase: Supabase,
@@ -201,7 +203,7 @@ export async function computePoolStandings(
   pastWeekRules: ReadonlyMap<number, ScoringRulesDoc>,
   season: number,
   week: number | null,
-  prepare: PrepareLines = storedLines,
+  prepare: PrepareLines,
 ): Promise<PoolStandings> {
   const pool = await readSeasonPool(supabase, season)
   const positions = await readPositions(supabase, [...pool.keys()])

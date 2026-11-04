@@ -44,6 +44,9 @@ export const DAL_2026_WK5 = { pts_allow: 24, sack: 1, yds_allow: 419 }
 export const DAL_2026_WK6 = { int: 1, pts_allow: 23, sack: 3, yds_allow: 318 }
 export const ARI_2026_WK1 = { blk_kick: 1, fum_rec: 1, int: 1, pts_allow: 14, sack: 3, yds_allow: 268 }
 export const MIN_2026_WK3 = { def_st_td: 1, int: 2, pts_allow: 16, sack: 6, yds_allow: 243 }
+export const CHI_2026_WK6 = { def_st_fum_rec: 2, fum_rec: 1, pts_allow: 23, sack: 5, yds_allow: 257 }
+export const PIT_2025_WK1 = { def_st_fum_rec: 1, pts_allow: 32, sack: 1, yds_allow: 394 }
+export const MARKS_2025_WK15 = { fum_rec_td: 1, rec: 1, rec_yd: 8, rush_yd: 30 }
 export const PRESCOTT_2025_WK1 = { pass_yd: 188, rush_yd: 3 }
 export const JEANTY_2025_WK2 = { rec: 3, rec_yd: 1, rush_yd: 43 }
 

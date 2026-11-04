@@ -486,6 +486,35 @@ describe('game log + career tables', () => {
       expect(career('QB', [sackOnly]).rows[1]!.cells[0]!.value).toBe('1')
     })
 
+    describe('a final D/ST row missing its yards, in the Career table', () => {
+      const cowboys = (season: number) => [
+        stat(season, 5, DAL_2026_WK5),
+        stat(season, 6, DAL_2026_WK6),
+        { ...stat(season, 7, { sack: 4, pts_allow: 14 }), def_yards_allowed: null } as ProfileStatLine,
+      ]
+      const row = (season: number, lines: ProfileStatLine[], basis: CoreStatsPayload['basis'], games: number, total_points: number) =>
+        careerTable({ currentSeason: 2026, position: 'DEF', team: 'DAL', lines, core: core({ basis, games, total_points }), system: 'espn_standard' }).rows.find(
+          (r) => r.k1 === String(season),
+        )!
+      const values = (r: { cells: ReadonlyArray<{ value: string }> }) => r.cells.map((c) => c.value)
+      // Gm, Fpts, Std, PPR, Sack, Int, FR, TD, PA.
+
+      it('league basis, this season: the box sums every stored game, matching its Gm and Fpts and the league read', () => {
+        const r = row(2026, cowboys(2026), { kind: 'league', league_name: 'League' }, 3, 8)
+        expect(values(r)).toEqual(['3', '8.0', '–', '–', '8', '1', '0', '0', '61'])
+      })
+
+      it('preset basis, this season: the refused game leaves the box too', () => {
+        const r = row(2026, cowboys(2026), { kind: 'system', system: 'espn_standard' }, 2, 3)
+        expect(values(r)).toEqual(['2', '3.0', '–', '–', '4', '1', '0', '0', '47'])
+      })
+
+      it('league basis, a past season: still the preset scorer, so still refused', () => {
+        const r = row(2025, cowboys(2025), { kind: 'league', league_name: 'League' }, 0, 0)
+        expect(values(r)).toEqual(['2', '3.0', '–', '–', '4', '1', '0', '0', '47'])
+      })
+    })
+
     it('0.25 PPR season points round the same half-up way as the phone list', () => {
       expect(stripCells(core({ total_points: 104.55 }), { position: 'RB', bye_week: null }, 2026, 'RB').find((c) => c.key === 'total')?.value).toBe('104.6')
       const t = careerTable({ currentSeason: 2026, position: 'RB', team: null, lines: [], core: core({ games: 8, total_points: 104.55 }), system: 'quarter_ppr' })

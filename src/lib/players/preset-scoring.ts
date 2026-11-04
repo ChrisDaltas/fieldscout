@@ -28,10 +28,15 @@
  * loudly and can never pay a quiet +5.
  *
  * Still short of ESPN's table, on purpose (they need storage or a league
- * ruling): blocked kicks and return TDs are not stored, a 60+ yard FG pays 5
- * rather than 6, and an engine kicker scope scores kicking stats only, so a
- * kicker's rushing yards score nothing (Brandon Aubrey 2025 wk15: 14 vs ESPN's
- * 14.6). Filed for Chris as F871.
+ * ruling). Filed for Chris as F871, with the totals against ESPN's own numbers:
+ * - D/ST: a fumble recovered on special teams (+2; the feed sends it as
+ *   `def_st_fum_rec`, and only `fum_rec` is stored: Chicago 2026 wk6 reads 9,
+ *   ESPN 13), a blocked kick (+2), a return TD (+6), a two-point return (+2).
+ * - Offense: a return TD or a fumble-recovery TD (`fum_rec_td`, +6: Woody Marks
+ *   2025 wk15 reads 3.8, ESPN 9.8).
+ * - K: a 60+ yard FG pays 5 rather than 6, and an engine kicker scope scores
+ *   kicking stats only, so a kicker's rushing yards score nothing (Brandon Aubrey
+ *   2025 wk15: 14 vs ESPN's 14.6).
  */
 import { roundHalfUp } from '@/lib/leagues/scoring/calculator'
 import type { ScoringRulesDoc } from '@/lib/leagues/scoring/rules-doc'

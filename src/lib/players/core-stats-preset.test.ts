@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 
 import type { CoreStatsPayload } from './core-stats-ops'
-import { computePoolStandings, readPlayerCoreStats } from './core-stats-service'
+import { computePoolStandings, readPlayerCoreStats, storedLines } from './core-stats-service'
 import { BASS_2026_WK1, BOSWELL_2026_WK8, cowboysThroughKickoff, fakeSupabase, storedGame } from './preset-scoring.fixtures'
 import { presetLines, systemRules } from './preset-scoring'
 
@@ -43,7 +43,7 @@ describe('computePoolStandings', () => {
   })
 
   it('league: no preparation, so these numbers do not move. Bass stays 7 + 3 (F402), the kickoff row still pays its +5, no 2-pt fill', async () => {
-    const pool = await computePoolStandings(client(), rules, new Map(), 2026, 9)
+    const pool = await computePoolStandings(client(), rules, new Map(), 2026, 9, storedLines)
     expect(pool.BASS).toMatchObject({ total: 10, games: 2 })
     // Dallas weeks 5 and 6 as stored (−2, +5), and week 7 live: the stored 0 points allowed pays +5, yards pending.
     expect(pool.DAL?.total).toBe(8)
@@ -57,6 +57,7 @@ describe('computePoolStandings', () => {
       new Map(),
       2026,
       9,
+      storedLines,
     )
     expect(pool.WR1).toMatchObject({ total: 0, games: 0 })
   })
