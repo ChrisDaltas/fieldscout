@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  calculateFantasyPoints,
-  HALF_PPR_SCORING,
-  PPR_SCORING,
-  STANDARD_SCORING,
-} from '../scoring/default'
+import { presetTotalsPoints } from '../players/preset-scoring'
 import { sleeperProjectionToStatRow } from './sleeper'
 
 // Trimmed from a real Sleeper 2026 RB projection row (Bijan Robinson).
@@ -59,17 +54,9 @@ describe('sleeperProjectionToStatRow', () => {
     const line = sleeperProjectionToStatRow(RB_PROJECTION)
     // Sleeper's internal weights differ slightly (first-down bonuses etc.),
     // so allow a small tolerance rather than exact equality.
-    expect(calculateFantasyPoints(line, STANDARD_SCORING)).toBeCloseTo(260.9, -1)
-    expect(calculateFantasyPoints(line, HALF_PPR_SCORING)).toBeCloseTo(292.9, -1)
-    expect(calculateFantasyPoints(line, PPR_SCORING)).toBeCloseTo(324.9, -1)
-  })
-
-  it('scores custom rules differently from presets', () => {
-    const line = sleeperProjectionToStatRow(RB_PROJECTION)
-    const tdHeavy = { ...PPR_SCORING, rush_tds: 8, receiving_tds: 8 }
-    expect(calculateFantasyPoints(line, tdHeavy)).toBeGreaterThan(
-      calculateFantasyPoints(line, PPR_SCORING),
-    )
+    expect(presetTotalsPoints('espn_standard', 'RB', line)).toBeCloseTo(260.9, -1)
+    expect(presetTotalsPoints('half_ppr', 'RB', line)).toBeCloseTo(292.9, -1)
+    expect(presetTotalsPoints('ppr', 'RB', line)).toBeCloseTo(324.9, -1)
   })
 
   it('maps kicker 40+/50+ buckets (no short-FG key exists on projections)', () => {
@@ -79,8 +66,9 @@ describe('sleeperProjectionToStatRow', () => {
       fg_made_50_plus: 6,
       xp_made: 42,
     })
-    // 9×4 + 6×5 + 42×1 = 108 ≈ Sleeper's 106
-    expect(calculateFantasyPoints(line, STANDARD_SCORING)).toBeCloseTo(106, -1)
+    // A season line can't be scored for a kicker: it has no short field goals.
+    // Pre-season K and D/ST read Sleeper's stored totals instead.
+    expect(() => presetTotalsPoints('espn_standard', 'K', line)).toThrow(/per game/)
   })
 
   it('returns an empty line for null stats', () => {
