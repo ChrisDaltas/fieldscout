@@ -518,7 +518,7 @@ describe('LeagueActionsBody — a render per state', () => {
   })
   it('theirs: Propose trade opens the builder toward his team with him picked; past the deadline, the reason instead', () => {
     const out = body({ player: player('p-theirs') })
-    expect(out).toContain('href="/app/leagues/lg/trades?with=them&player=p-theirs"')
+    expect(out).toContain('href="/app/leagues/lg/trades?with=them&target=p-theirs"')
     expect(out).toContain('>Propose trade</a>')
     const late = body({ player: player('p-theirs'), tradesClosed: true })
     expect(late).not.toContain('Propose trade')

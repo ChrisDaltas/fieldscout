@@ -155,7 +155,7 @@ async function openTrades(page: Page, leagueId: string): Promise<void> {
 }
 
 /** Propose give → get through the builder the player-row door opens
- *  (`?with=<team>&player=<id>`, D419(6)); returns the new trade's id. */
+ *  (`?with=<team>&target=<id>`, D419(6)); returns the new trade's id. */
 async function proposeInBrowser(
   page: Page,
   leagueId: string,
@@ -163,7 +163,7 @@ async function proposeInBrowser(
   give: RosterEntry,
   get: RosterEntry,
 ): Promise<string> {
-  await page.goto(`/app/leagues/${leagueId}/trades?with=${toTeamId}&player=${get.player_id}`)
+  await page.goto(`/app/leagues/${leagueId}/trades?with=${toTeamId}&target=${get.player_id}`)
   const builder = page.locator('[data-trade-builder="propose"]')
   await expect(builder).toBeVisible({ timeout: 60_000 })
   // The door pre-picked the player we are asking for.
@@ -716,7 +716,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       const get1 = await takePlayer(commishTeam, used)
       const get2 = await takePlayer(commishTeam, used)
       const drop1 = await takePlayer(managerTeam, used)
-      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&player=${get1.player_id}`)
+      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&target=${get1.player_id}`)
       const builder = mPage.locator('[data-trade-builder="propose"]')
       await expect(builder).toBeVisible({ timeout: 60_000 })
       await expect(builder.locator(`[data-trade-side="get"] [data-trade-pick="${get1.player_id}"]`)).toHaveAttribute('data-picked', 'true', {
@@ -747,7 +747,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       const give3 = await takePlayer(managerTeam, used)
       const get3 = await takePlayer(commishTeam, used)
       const drop2 = await takePlayer(commishTeam, used)
-      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&player=${get3.player_id}`)
+      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&target=${get3.player_id}`)
       await expect(builder).toBeVisible({ timeout: 60_000 })
       await expect(builder.locator(`[data-trade-side="get"] [data-trade-pick="${get3.player_id}"]`)).toHaveAttribute('data-picked', 'true', {
         timeout: 30_000,
@@ -827,7 +827,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       await teamRead
       await expect(mPage.locator('[data-team-waiver-seat]')).toBeVisible({ timeout: 60_000 })
       await expect(mPage.locator('[data-propose-trade]')).toHaveCount(0, { timeout: 30_000 })
-      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&player=${get1.player_id}`)
+      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&target=${get1.player_id}`)
       const closed = mPage.locator('[data-trade-door-closed="deadline"]')
       await expect(closed).toBeVisible({ timeout: 60_000 })
       await expect(closed).toContainText('Offers can’t be made, accepted or countered now')

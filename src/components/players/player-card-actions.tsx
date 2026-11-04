@@ -47,7 +47,7 @@ import {
  * The player card's actions block (League UX batch 2, built to the Claude
  * Design prototype's PlayerCard): a line saying where he is, then the one
  * move that fits — through the verbs that already exist (`useAddDrop`,
- * `useSubmitClaim`, the trade builder's `?with=&player=` door). Every
+ * `useSubmitClaim`, the trade builder's `?with=&target=` door). Every
  * closed door says why instead of offering a button the server would
  * refuse. The commissioner sees HIS OWN team's actions only — acting for
  * another team stays in the commissioner tools.

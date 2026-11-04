@@ -118,7 +118,7 @@ import {
 
 interface TradesPageProps {
   leagueId: string
-  /** `?with=<team>` / `?player=<id>` — the doors from a player row and a team page. */
+  /** `?with=<team>` / `?target=<id>` — the doors from a player row and a team page. */
   initialWith?: string | null
   initialPlayer?: string | null
 }
@@ -169,7 +169,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   const fmt = (iso: string) => formatInstantWithDate(iso, leagueTimeZone).local
 
   const [tab, setTab] = useState<Tab>('pending')
-  // The `?with=` / `?player=` door (D419(6)). It needs the viewer's own team,
+  // The `?with=` / `?target=` door (D419(6)). It needs the viewer's own team,
   // which needs the signed-in user — and `useAuth`'s session can resolve AFTER
   // the league read (a fresh page load races the two). Deciding only in the
   // initial state lost the door whenever the league won that race: the page

@@ -294,7 +294,7 @@ describe('PoolTable â€” the rostered scope: Drop for mine (disabled by the viewâ
     const theirs = html.slice(html.indexOf('data-pool-row="theirs"'), html.indexOf('</tr>', html.indexOf('data-pool-row="theirs"')))
     expect(theirs).toContain('Their Team')
     expect(theirs).not.toMatch(/data-action="(add|drop|claim)"/)
-    expect(theirs).toMatch(/<a data-action="trade"[^>]*href="\/app\/leagues\/league-1\/trades\?with=team-other&player=theirs">Trade<\/a>/)
+    expect(theirs).toMatch(/<a data-action="trade"[^>]*href="\/app\/leagues\/league-1\/trades\?with=team-other&target=theirs">Trade<\/a>/)
     expect(theirs).toContain(ROSTERED_ELSEWHERE_TITLE)
     expect(theirs).not.toMatch(/later update/)
   })
