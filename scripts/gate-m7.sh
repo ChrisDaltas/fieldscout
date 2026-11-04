@@ -15,9 +15,10 @@
 #          G1–G4), 159 (rate limits, L.F2.6), 160 (L.F2.8's remaining groups),
 #          162 (the archive, F716). The summary line must say Files=5, so a
 #          run that found nothing is not a pass.
-#   [4/7]  M7's vitest BY NAME (F84): the wire suites (rate limits, migration
-#          210's hardening) and the unit pins behind them.
-#   [5/7]  F56 settle → `npm run test:chaos` (F835) → settle after (F298).
+#   [4/7]  F56 settle (the reset just restarted the services) → M7's vitest BY
+#          NAME (F84): the wire suites (rate limits, migration 210's hardening)
+#          and the unit pins behind them.
+#   [5/7]  `npm run test:chaos` (F835) → the settle after it (F298).
 #   [6/7]  `npm run test:gate:m6` — continuity: its own fresh reset + the FULL
 #          pgTAP + the M6 vitest + the correction seasons + E2E + M5 → M0.
 #          (`test:gate:m8` too, the day it exists — see below.)
@@ -45,8 +46,8 @@
 # [6/7] resets again as its first step, so chaos residue can't reach it. The
 # drills are built for a fresh or shared DB (`chaos-f23` namespace, season 2072,
 # swept before and after — D760); CI's Database job runs them on a fresh chain,
-# which is the state here. They need realtime up, which a reset has just
-# restarted, hence the settle first (its probe does a realtime round trip).
+# which is the state here. They need realtime up, which [4/7]'s settle has just
+# proved (its probe does a realtime round trip).
 #
 # THE HONEST VERDICT. Exit criteria 1, 2 and 4 are not scripts. Each needs a
 # file holding its own line, at column 0, outside any code fence:
@@ -266,12 +267,12 @@ grep -Eq "^Files=${#M7_PGTAP[@]}," "$REPORT_DIR/pgtap-m7.txt" || {
 }
 took
 
-stage "[4/7] M7's vitest by name — ${#M7_VITEST[@]} files (wire suites + the unit pins behind them)"
+stage "[4/7] F56 settle → M7's vitest by name — ${#M7_VITEST[@]} files (wire suites + the unit pins behind them)"
+npx tsx scripts/gate-settle.ts
 npx vitest run "${M7_VITEST[@]}"
 took
 
-stage "[5/7] F56 settle → the chaos drills (test:chaos, F835) → settle (F298)"
-npx tsx scripts/gate-settle.ts
+stage "[5/7] The chaos drills (test:chaos, F835) → settle (F298)"
 npm run test:chaos
 npx tsx scripts/gate-settle.ts
 took
