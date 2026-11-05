@@ -43,7 +43,7 @@ import { assetsOf, rowPill } from './trades-mobile-ops'
  * this page extends the handoff's language: a 52px top bar, the deadline
  * line, "Propose a trade", Pending / History, and a row per trade that opens
  * the Trade offer screen (§2.4). The builder (§2.5–2.6) and the detail are
- * full-screen overlays over it. `?with=&player=` (the doors from a team page,
+ * full-screen overlays over it. `?with=&target=` (the doors from a team page,
  * a player) opens the builder; `?trade=` opens one trade — closing either
  * goes back to where the door was.
  *
@@ -140,7 +140,7 @@ function TradesBody({
   const [builder, setBuilder] = useState<Builder | null>(null)
   const [openTrade, setOpenTrade] = useState<{ id: string; fromDoor: boolean } | null>(initialTrade ? { id: initialTrade, fromDoor: true } : null)
 
-  // The `?with=` / `?player=` door — decided the first time the viewer's team
+  // The `?with=` / `?target=` door — decided the first time the viewer's team
   // is known, once (the desktop trade center's `tradeDoorStep`, F480).
   const decided = useRef(false)
   useEffect(() => {

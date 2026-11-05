@@ -49,7 +49,8 @@ import { STORAGE_STATE } from './helpers/local-env'
  *
  *   1. WAIVER MORNING — two managers put in claims on the same free agent in
  *      the browser (blind FAAB bids), the run happens at an INJECTED instant,
- *      and each manager's claims panel shows won / lost with the reason.
+ *      and each manager's My Team → Transactions shows won / lost with the
+ *      reason.
  *   2. A TRADE UNDER EACH REVIEW MODE, each to execution — commissioner
  *      review (approved by the commissioner in the browser), no review
  *      (executes at accept), league vote (votes by the other managers; one
@@ -155,7 +156,7 @@ async function openTrades(page: Page, leagueId: string): Promise<void> {
 }
 
 /** Propose give → get through the builder the player-row door opens
- *  (`?with=<team>&player=<id>`, D419(6)); returns the new trade's id. */
+ *  (`?with=<team>&target=<id>`, D419(6)); returns the new trade's id. */
 async function proposeInBrowser(
   page: Page,
   leagueId: string,
@@ -163,7 +164,7 @@ async function proposeInBrowser(
   give: RosterEntry,
   get: RosterEntry,
 ): Promise<string> {
-  await page.goto(`/app/leagues/${leagueId}/trades?with=${toTeamId}&player=${get.player_id}`)
+  await page.goto(`/app/leagues/${leagueId}/trades?with=${toTeamId}&target=${get.player_id}`)
   const builder = page.locator('[data-trade-builder="propose"]')
   await expect(builder).toBeVisible({ timeout: 60_000 })
   // The door pre-picked the player we are asking for.
@@ -294,10 +295,12 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
         `dev drops ${commishDrop.full_name}; bids $${WINNING_BID} / $${LOSING_BID}`,
     )
 
-    const claimInBrowser = async (context: BrowserContext, bid: number, drop: RosterEntry): Promise<Page> => {
+    // D492 (Chris 2026-10-04: "Waivers should be a panel on My Team page, not
+    // Players"; PR feat/waivers-panel-my-team): the claim is PLACED from the
+    // Players page and READ on the claimant's own My Team → Transactions.
+    const claimInBrowser = async (context: BrowserContext, bid: number, drop: RosterEntry, teamId: string): Promise<Page> => {
       const page = await context.newPage()
       await page.goto(`/app/leagues/${league.leagueId}/players`)
-      await expect(page.locator('[data-waiver-claims-panel]')).toBeVisible({ timeout: 60_000 })
       await page.getByLabel('Search players').fill(target.full_name)
       const row = page.locator(`[data-pool-row="${target.player_id}"]`)
       await expect(row).toBeVisible({ timeout: 60_000 })
@@ -321,17 +324,19 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       expect((await posted).status(), 'the claim route answers 200').toBe(200)
       await expect(dialog.locator('[data-claim-result]')).toContainText(`$${bid}`)
       await dialog.getByRole('button', { name: 'Done' }).click()
-      // The pending claim is in the panel, in the run's order.
-      await expect(page.locator('[data-claims-pending] [data-claim]')).toHaveCount(1, { timeout: 30_000 })
-      await expect(page.locator('[data-claims-pending] [data-claim-bid]')).toHaveAttribute('data-claim-bid', String(bid))
+      // The pending claim is in My Team's Transactions feed, with its bid (D492).
+      await page.goto(`/app/leagues/${league.leagueId}/team/${teamId}`)
+      const feed = page.locator('[data-team-transactions] [data-transactions-items]')
+      await expect(feed.locator('[data-transaction="claim"]')).toHaveCount(1, { timeout: 60_000 })
+      await expect(feed.locator('[data-transaction="claim"] [data-claim-bid]')).toHaveAttribute('data-claim-bid', String(bid))
       return page
     }
 
     const managerContext = await browser.newContext({ storageState: STORAGE_STATE.devPro })
     const commishContext = await browser.newContext({ storageState: STORAGE_STATE.dev })
     try {
-      const managerPage = await claimInBrowser(managerContext, WINNING_BID, managerDrop)
-      const commishPage = await claimInBrowser(commishContext, LOSING_BID, commishDrop)
+      const managerPage = await claimInBrowser(managerContext, WINNING_BID, managerDrop, managerTeam)
+      const commishPage = await claimInBrowser(commishContext, LOSING_BID, commishDrop, commishTeam)
 
       const pending = await readLeagueClaims(service, league.leagueId)
       expect(pending.map((c) => c.status)).toEqual(['pending', 'pending'])
@@ -355,19 +360,27 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       expect(await readFaabBalance(service, league.leagueId, commishTeam)).toBe(100)
 
       // ---- WON / LOST on each manager's own screen, with the reason --------
+      // D492(5): a claim that WON is a move in the feed (its `waiver_claim`
+      // transaction, with the price), never a pending row any more.
       await managerPage.reload()
-      const wonRow = managerPage.locator('[data-claims-results] [data-claim-result="won"]')
+      const managerFeed = managerPage.locator('[data-team-transactions] [data-transactions-items]')
+      const wonRow = managerFeed.locator('[data-transaction="move"]').filter({ hasText: target.full_name })
       await expect(wonRow).toBeVisible({ timeout: 60_000 })
-      await expect(wonRow).toContainText(target.full_name)
-      await expect(wonRow).toContainText(`Won for $${WINNING_BID}.`)
-      await expect(managerPage.locator('[data-claims-budget]')).toContainText(`$${100 - WINNING_BID}`)
+      await expect(wonRow).toContainText(`off waivers for $${WINNING_BID}`)
+      await expect(managerFeed.locator('[data-transaction="claim"]')).toHaveCount(0)
+      await expect(managerPage.locator('[data-team-transactions] [data-claims-budget]')).toContainText(`$${100 - WINNING_BID}`)
 
+      // D495 (Chris 2026-10-05): a LOST claim names who won and why yours failed
+      // — "Team X won Puka Nacua ($14). Your $9 claim was outbid."
       await commishPage.reload()
-      const lostRow = commishPage.locator('[data-claims-results] [data-claim-result="lost"]')
+      const commishFeed = commishPage.locator('[data-team-transactions] [data-transactions-items]')
+      const lostRow = commishFeed.locator('[data-transaction="claim-result"][data-claim-result="lost"]')
       await expect(lostRow).toBeVisible({ timeout: 60_000 })
       await expect(lostRow).toContainText(target.full_name)
-      await expect(lostRow).toContainText('Another team bid more.')
-      await expect(commishPage.locator('[data-claims-budget]')).toContainText('$100')
+      await expect(lostRow.locator('[data-claim-winner]')).toHaveAttribute('data-claim-winner', managerTeam)
+      await expect(lostRow).toContainText(`($${WINNING_BID}). Your $${LOSING_BID} claim was outbid.`)
+      await expect(commishFeed.locator('[data-transaction="claim"]')).toHaveCount(0)
+      await expect(commishPage.locator('[data-team-transactions] [data-claims-budget]')).toContainText('$100')
       test.info().annotations.push({
         type: 'waiver-morning',
         description: `run @ ${runAt}: dev-pro won ${target.player_id} for $${WINNING_BID}; dev lost (${lost.result_reason})`,
@@ -389,16 +402,17 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
     const used = new Set<string>()
 
     // F296's target is RESERVED before any trade can move him: a player the
-    // draft put on dev-pro's roster that nothing has touched, so he holds no
-    // `league_player_pool` row (the lock tick refreshes existing rows only —
-    // `119:775-780`) and the lineup editor can never show him a 🔒.
+    // draft put on dev-pro's roster that nothing has touched. (He used to be
+    // chosen for having no `league_player_pool` row; D496 / migration 181 gives
+    // every rostered player one within a minute, so that no longer tells.)
+    const claimed = new Set((await readLeagueClaims(service, league.leagueId)).map((c) => c.add_player_id))
     for (const p of await readTeamRoster(service, league.leagueId, managerTeam)) {
-      if (p.nfl_team !== null && (await readPoolRow(service, league.leagueId, p.player_id)) === null) {
+      if (p.nfl_team !== null && !claimed.has(p.player_id)) {
         reserved.add(p.player_id)
         break
       }
     }
-    if (reserved.size !== 1) throw new Error('dev-pro holds no untouched player without a pool row — F296 has no target')
+    if (reserved.size !== 1) throw new Error('dev-pro holds no untouched drafted player — F296 has no target')
 
     const botAct = async (bot: BotSeatUser, tradeId: string, body: Record<string, unknown>) =>
       assertOk(`bot ${bot.username} ${JSON.stringify(body)}`, await actOnTrade(bot.client, league.leagueId, tradeId, { ...body, action_id: randomUUID() }))
@@ -508,7 +522,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
     const managerRoster = await readTeamRoster(service, league.leagueId, managerTeam)
     const f296 = managerRoster.find((p) => reserved.has(p.player_id))
     if (!f296) throw new Error('F296’s reserved target left dev-pro’s roster')
-    expect(await readPoolRow(service, league.leagueId, f296.player_id), 'F296’s premise: no pool row, so no 🔒').toBeNull()
+    expect((await readPoolRow(service, league.leagueId, f296.player_id))?.locked_until ?? null, 'F296’s premise: no 🔒 before his game').toBeNull()
     const played = await takePlayer(managerTeam, used)
     const theirs = await takePlayer(commishTeam, used)
 
@@ -578,10 +592,30 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       await expect((await historyCard(mPage, league.leagueId, t5)).locator('[data-trade-status-label]')).toHaveText('Completed')
 
       // ---- (6) F296 — `set_lineup`'s SERVER lock refusal in a browser --------
-      // He has no pool row, so the editor shows no 🔒 and lets the move be
-      // sent (the client decides nothing — `lineup-editor-ops.ts` reads the
-      // pool view only); the server judges his kickoff at the transaction's
-      // `now()` and refuses by name.
+      // The editor shows no 🔒 and lets the move be sent (the client decides
+      // nothing — `lineup-editor-ops.ts` reads the pool view only); the server
+      // judges his kickoff at the transaction's `now()` and refuses by name.
+      // THE VIEW'S LAG, AT THE NETWORK EDGE: since D496 / migration 181 the
+      // minute tick judges every rostered player, so the view catches up within
+      // a minute of kickoff, and that minute is the window a stale screen can
+      // send the move in. The route below holds the window open: it returns the
+      // server's real roster read with his `game_lock` as it read before the
+      // kickoff, so which side of a cron minute this runs on cannot decide the
+      // test. The refusal itself is entirely the server's.
+      const rostersPath = `/api/leagues/${league.leagueId}/rosters`
+      await managerContext.route(
+        (url) => url.pathname === rostersPath,
+        async (route) => {
+          const response = await route.fetch()
+          const doc = (await response.json()) as { teams: Array<{ roster: Array<{ player_id: string; game_lock: unknown }> }> }
+          for (const team of doc.teams) {
+            for (const row of team.roster) {
+              if (row.player_id === f296.player_id) row.game_lock = { state: 'unlocked', until: null }
+            }
+          }
+          await route.fulfill({ response, json: doc })
+        },
+      )
       const stored = await readTeamLineup(service, managerTeam, 1)
       const storedSlot = Object.entries(stored?.slot_map ?? {}).find(([, pid]) => pid === f296.player_id)?.[0] ?? null
       await mPage.goto(`/app/leagues/${league.leagueId}/team/${managerTeam}`)
@@ -664,7 +698,9 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       await mPage.goto(`/app/leagues/${league.leagueId}/standings`)
       const orderList = mPage.locator('[data-waiver-order="order"]')
       await expect(orderList).toBeVisible({ timeout: 60_000 })
-      await expect(orderList.getByRole('heading')).toHaveText('Tie order for equal bids')
+      // D489(3) / F494: the list is a titled Card now; the region is named by its title.
+      await expect(orderList).toHaveAccessibleName('Tie order for equal bids')
+      await expect(orderList.locator('#waiver-order-title')).toHaveText('Tie order for equal bids')
       const shownTeams = orderList.locator('[data-waiver-order-team]')
       await expect(shownTeams).toHaveCount(TEAM_COUNT)
       const shown = await shownTeams.evaluateAll((els) =>
@@ -681,7 +717,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       const get1 = await takePlayer(commishTeam, used)
       const get2 = await takePlayer(commishTeam, used)
       const drop1 = await takePlayer(managerTeam, used)
-      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&player=${get1.player_id}`)
+      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&target=${get1.player_id}`)
       const builder = mPage.locator('[data-trade-builder="propose"]')
       await expect(builder).toBeVisible({ timeout: 60_000 })
       await expect(builder.locator(`[data-trade-side="get"] [data-trade-pick="${get1.player_id}"]`)).toHaveAttribute('data-picked', 'true', {
@@ -712,7 +748,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       const give3 = await takePlayer(managerTeam, used)
       const get3 = await takePlayer(commishTeam, used)
       const drop2 = await takePlayer(commishTeam, used)
-      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&player=${get3.player_id}`)
+      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&target=${get3.player_id}`)
       await expect(builder).toBeVisible({ timeout: 60_000 })
       await expect(builder.locator(`[data-trade-side="get"] [data-trade-pick="${get3.player_id}"]`)).toHaveAttribute('data-picked', 'true', {
         timeout: 30_000,
@@ -792,7 +828,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       await teamRead
       await expect(mPage.locator('[data-team-waiver-seat]')).toBeVisible({ timeout: 60_000 })
       await expect(mPage.locator('[data-propose-trade]')).toHaveCount(0, { timeout: 30_000 })
-      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&player=${get1.player_id}`)
+      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&target=${get1.player_id}`)
       const closed = mPage.locator('[data-trade-door-closed="deadline"]')
       await expect(closed).toBeVisible({ timeout: 60_000 })
       await expect(closed).toContainText('Offers can’t be made, accepted or countered now')

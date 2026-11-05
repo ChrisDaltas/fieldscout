@@ -44,11 +44,13 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** The trade center, optionally opening the builder toward a team (and a
- *  player on it) — the door from a player row and the team page. */
+ *  player on it) — the door from a player row and the team page. The player
+ *  param is `target`, never `player`: `?player=` opens the player view on any
+ *  `/app` page (D488), which would cover the builder (F881). */
 export function tradesHref(leagueId: string, target?: { teamId?: string | null; playerId?: string | null }): string {
   const params = new URLSearchParams()
   if (target?.teamId) params.set('with', target.teamId)
-  if (target?.playerId) params.set('player', target.playerId)
+  if (target?.playerId) params.set('target', target.playerId)
   const qs = params.toString()
   return `/app/leagues/${leagueId}/trades${qs ? `?${qs}` : ''}`
 }
@@ -843,7 +845,7 @@ export function isTradesUnavailable(error: unknown): boolean {
 }
 
 /**
- * THE `?with=` / `?player=` DOOR — PROGRESS F480 / R1268 (D423). One step of
+ * THE `?with=` / `?target=` DOOR — PROGRESS F480 / R1268 (D423). One step of
  * the trade center's door, run once per render with the viewer's team as it
  * is known THEN. The team needs the signed-in user, and `useAuth`'s session
  * can land AFTER the league read, so the first renders may carry `null`. The

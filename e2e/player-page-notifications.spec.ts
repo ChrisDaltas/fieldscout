@@ -172,8 +172,9 @@ test.describe('the full player page + rail notifications (real browser)', () => 
     await expect(global.locator('[data-season-week="1"] td').last()).toHaveText(/^\d+\.\d$/, { timeout: 30_000 })
     // D486(14) Key stats from the seeded box lines (3 completed games).
     if (seeded.position === 'RB') {
-      await expect(global.locator('[data-key-stat="carries_pg"] p').first()).toHaveText('16.0')
-      await expect(global.locator('[data-key-stat="rush_yds"] p').first()).toHaveText('180')
+      // v7 (be5a38f, the player-view pass): the tile reads label then value.
+      await expect(global.locator('[data-key-stat="carries_pg"] p').last()).toHaveText('16.0')
+      await expect(global.locator('[data-key-stat="rush_yds"] p').last()).toHaveText('180')
     } else {
       await expect(global.locator('[data-key-stats="primary"]')).toBeVisible()
     }
@@ -195,18 +196,41 @@ test.describe('the full player page + rail notifications (real browser)', () => 
     await page.keyboard.press('Escape')
     await expect(modal).toHaveCount(0)
 
-    // Mobile: the modal is a full-screen sheet, no horizontal scroll.
-    await page.setViewportSize({ width: 390, height: 844 })
-    await link.click()
-    await page.getByRole('button', { name: 'Open player view' }).click()
-    await expect(modal).toBeVisible({ timeout: 30_000 })
-    const box = await modal.boundingBox()
+    // A phone: a full-screen sheet, no horizontal scroll. The layout follows the
+    // DEVICE since PR #432 (Chris 2026-10-13) — a narrow mouse window stays the
+    // desktop layout, so the phone here is a touch context, and its player view
+    // is the FieldScout Mobile profile (`player-view-modal.tsx`, the mobile pass).
+    const phone = await browser.newContext({
+      storageState: STORAGE_STATE.devPro,
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+    })
+    const phonePage = await phone.newPage()
+    await phonePage.goto(teamUrl)
+    // A phone's row has no player attribute: the name button is told from the
+    // row's slot chip ("Bench: <name> — swap") by starting with the name.
+    const { data: tapped, error: tappedError } = await serviceClient().from('players').select('full_name').eq('id', playerId!).single()
+    if (tappedError) throw tappedError
+    const nameStart = new RegExp(`^${tapped.full_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+    const row = phonePage.locator('[data-lineup-row], [data-view-row]').getByRole('button', { name: nameStart })
+    await expect(row).toBeVisible({ timeout: 60_000 })
+    await row.tap()
+    const sheet = phonePage.locator(`[data-player-profile="${playerId}"]`)
+    await expect(sheet).toBeVisible({ timeout: 60_000 })
+    const box = await sheet.boundingBox()
     expect(box?.width).toBe(390)
-    expect(await modal.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
-    await page.waitForTimeout(300)
-    await page.screenshot({ path: process.env.PP_MOBILE_SHOT ?? test.info().outputPath('player-modal-mobile.png') })
-    await page.keyboard.press('Escape')
-    await page.setViewportSize({ width: 1280, height: 900 })
+    expect(await sheet.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    await phonePage.waitForTimeout(300)
+    // The outer sheet clips, so it can't see overflow: the body scroller can
+    // (`mobile-player-profile.tsx`). It must have content for this to mean anything.
+    const scroller = sheet.locator('[role="tabpanel"]')
+    await expect(scroller).toBeVisible({ timeout: 30_000 })
+    const fit = await scroller.evaluate((el) => ({ children: el.childElementCount, fits: el.scrollWidth <= el.clientWidth }))
+    expect(fit.children).toBeGreaterThan(0)
+    expect(fit.fits).toBe(true)
+    await phonePage.screenshot({ path: process.env.PP_MOBILE_SHOT ?? test.info().outputPath('player-modal-mobile.png') })
+    await phone.close()
 
     // The old deep link lands on Home with the modal open (Chris 2026-10-04,
     // "Player links open the modal"); closing it clears the param.
@@ -240,8 +264,8 @@ test.describe('the full player page + rail notifications (real browser)', () => 
       await page.goto(`/app/players/${p.id}`)
       const view = page.locator('[data-player-view="modal"]')
       await expect(view.locator('[data-key-stats="primary"]')).toBeVisible({ timeout: 60_000 })
-      if (pos === 'QB') await expect(view.locator('[data-key-stat="comp_pct"] p').first()).toHaveText('66.7%')
-      if (pos === 'WR') await expect(view.locator('[data-key-stat="ypt"] p').first()).toHaveText(/^\d+\.\d$/)
+      if (pos === 'QB') await expect(view.locator('[data-key-stat="comp_pct"] p').last()).toHaveText('66.7%')
+      if (pos === 'WR') await expect(view.locator('[data-key-stat="ypt"] p').last()).toHaveText(/^\d+\.\d$/)
       await page.screenshot({ path: process.env[`PP_KEY_${pos}_SHOT`] ?? test.info().outputPath(`player-key-stats-${pos}.png`) })
     }
     await context.close()
