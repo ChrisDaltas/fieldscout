@@ -28,7 +28,9 @@
  *      ruled columns is empty, so a late provider line can't slip in. A fill
  *      only raises: a ruled value the feed reads below a non-zero stored one
  *      is a problem, named by player, and every move from a non-zero stored
- *      value is listed by player. A partial read is a problem too: a position
+ *      value is listed by player, as is every move on a column the feed sums
+ *      with a part already stored (`SUMMED_RULED_COLUMNS`, 0 → n included:
+ *      F890 holds the values). A partial read is a problem too: a position
  *      with stored lines that the feed carried none of this week, or a stored
  *      D/ST line the feed doesn't carry. A missing offense line is counted by
  *      position, not blocked.
@@ -85,6 +87,25 @@ export const RULED_COLUMNS = [
 ] as const
 export type RuledColumn = (typeof RULED_COLUMNS)[number]
 const RULED: ReadonlySet<string> = new Set(RULED_COLUMNS)
+
+/**
+ * Ruled columns the feed hands over already summed with a part the old map
+ * stored (PROGRESS F890, D832; review round 2). `def_fumble_recoveries` reads
+ * `fum_rec + def_st_fum_rec`; its stored value is `fum_rec` alone, a locked
+ * week's value. A late provider fix raising `fum_rec` on a team-week that is
+ * filling anyway is one move, the same count as a clean fill, and from a
+ * stored 0 it isn't a move off a stored value either. This checkout can't
+ * split the sum (the canonical key arrives summed), so every move on such a
+ * column is listed by player, stored → feed, and F890 carries the values a
+ * run must print: any other value is a provider fix hiding inside the fill.
+ */
+export const SUMMED_RULED_COLUMNS = ['def_fumble_recoveries'] as const satisfies readonly RuledColumn[]
+const SUMMED: ReadonlySet<string> = new Set(SUMMED_RULED_COLUMNS)
+
+/** Code-point order: the same on every machine, whatever its locale. */
+function byCodePoint(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
 
 // ── The refusals ───────────────────────────────────────────────────────────
 
@@ -196,7 +217,7 @@ export interface OtherDifference {
   feed: number | null
 }
 
-/** A ruled value moving off a non-zero stored value. Listed by player; a lowered one is also a problem. */
+/** One ruled value's move, by player. `stored` is 0 for a line with no stored row. */
 export interface StoredValueMove {
   player_id: string
   column: RuledColumn
@@ -228,8 +249,10 @@ export interface FillWeekPlan {
   newRows: StatRow[]
   /** How many values each ruled column moves, new lines included. */
   moves: Record<RuledColumn, number>
-  /** Every move whose stored value is not 0, by player: the ones a count alone can't explain. */
+  /** Every move whose stored value is not 0, by player: the ones a count alone can't explain. A lowered one is also a problem. */
   fromStoredValue: StoredValueMove[]
+  /** Every move on a `SUMMED_RULED_COLUMNS` column, 0 → n and new lines included, by column then player id. */
+  summedMoves: StoredValueMove[]
   otherDifferences: OtherDifference[]
   /** Display-only `advanced` keys that differ, by key: can't score, never written. */
   contextDifferences: Record<string, number>
@@ -307,6 +330,7 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
     newRows: [],
     moves: Object.fromEntries(RULED_COLUMNS.map((column) => [column, 0])) as Record<RuledColumn, number>,
     fromStoredValue: [],
+    summedMoves: [],
     otherDifferences: [],
     contextDifferences: {},
     problems: [],
@@ -398,7 +422,12 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
       } else {
         plan.newRows.push(row)
         wouldBe.set(id, row.columns)
-        for (const column of RULED_COLUMNS) if ((row.columns[column] ?? 0) !== 0) plan.moves[column] += 1
+        for (const column of RULED_COLUMNS) {
+          const now = row.columns[column] ?? 0
+          if (now === 0) continue
+          plan.moves[column] += 1
+          if (SUMMED.has(column)) plan.summedMoves.push({ player_id: id, column, stored: 0, feed: now })
+        }
       }
       continue
     }
@@ -415,6 +444,7 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
       plan.moves[column] += 1
       const was = prior.columns[column] ?? 0
       const now = row.columns[column] ?? 0
+      if (SUMMED.has(column)) plan.summedMoves.push({ player_id: id, column, stored: was, feed: now })
       if (was === 0) continue
       plan.fromStoredValue.push({ player_id: id, column, stored: was, feed: now })
       // A fill only adds plays the old map dropped. A lower reading is a provider fix or a map that reads less.
@@ -432,6 +462,8 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
   for (const [id, columns] of wouldBe) {
     if (positions.get(id) === 'K') plan.problems.push(...kIdentityFailures(id, columns).map((failure) => `week ${week}: ${failure}`))
   }
+  // A fixed order, so the printed line compares with F890's text as it stands.
+  plan.summedMoves.sort((a, b) => byCodePoint(a.column, b.column) || byCodePoint(a.player_id, b.player_id))
   return plan
 }
 
@@ -720,6 +752,14 @@ export function renderFill(report: FillReport): string[] {
     for (const problem of plan.problems) lines.push(`      PROBLEM: ${problem}`)
   }
   lines.push(`  all weeks: ${updated + inserted} lines (${updated} updated, ${inserted} new), ${sumMoves(totals)} moves: ${movesText(totals)}; ${fromStored} from a non-zero stored value; ${others} other-column differences`)
+  // Every move on a summed column, 0 → n included: the line F890's values are compared with, value by value.
+  for (const column of SUMMED_RULED_COLUMNS) {
+    const byWeek = report.weeks
+      .map((plan) => ({ week: plan.week, moves: plan.summedMoves.filter((move) => move.column === column) }))
+      .filter((entry) => entry.moves.length > 0)
+      .map((entry) => `wk${entry.week} ${entry.moves.map((move) => `${move.player_id} ${move.stored}→${move.feed}`).join(', ')}`)
+    lines.push(`  all weeks ${column} by player, stored → feed: ${byWeek.join('; ') || 'none'}`)
+  }
   if (report.mode === 'apply' && report.wrote) {
     lines.push(`  written: ${report.linesWritten} lines; queue rows ${report.door.stats.enqueued + report.door.stats.restamped}; events ${report.door.corrections.recorded + report.door.corrections.replayed + report.door.corrections.unchangedAtWrite}`)
   }

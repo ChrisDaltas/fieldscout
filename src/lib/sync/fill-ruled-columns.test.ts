@@ -37,6 +37,7 @@ import {
   renderFill,
   RULED_COLUMNS,
   runFillCli,
+  SUMMED_RULED_COLUMNS,
   type FillOptions,
   type FillReport,
   type FillWeekPlan,
@@ -230,6 +231,9 @@ const WR = line('wr-1', 1, { targets: 7, receptions: 5, receiving_yards: 61 }, {
 /** Arizona and the Chargers, week 1 (real): Arizona's blocked kick, and a D/ST line with nothing to fill. */
 const ARI = line('ARI', 1, { def_sack: 3, def_int: 1, def_fumble_rec: 1, def_points_allowed: 14, def_yards_allowed: 268, def_block: 1 }, {}, 'ARI', 'LAC')
 const LAC = line('LAC', 1, { def_sack: 1, def_points_allowed: 26, def_yards_allowed: 393 }, {}, 'LAC', 'ARI')
+/** Chicago and the Jets, week 1 (real): each recovered a fumble on special teams. Chicago's sits on one main stored; the Jets' is their only one, so main stored 0. */
+const CHI1 = line('CHI', 1, { def_sack: 2, def_int: 1, def_fumble_rec: 2, def_points_allowed: 37, def_yards_allowed: 478, def_block: 1 }, {}, 'CHI', 'CAR')
+const NYJ1 = line('NYJ', 1, { def_sack: 3, def_fumble_rec: 1, def_points_allowed: 10, def_yards_allowed: 195 }, {}, 'NYJ', 'TEN')
 /** Plain offense lines, so weeks 6 and 8 hold every position a partial read can drop. */
 const WR6 = line('wr-6', 6, { targets: 4, receptions: 3, receiving_yards: 41 }, { off_snaps: 35 }, 'TEN', 'IND')
 const QB8 = line('qb-8', 8, { pass_attempts: 31, pass_completions: 20, pass_yards: 228, pass_tds: 1 }, { off_snaps: 60 })
@@ -245,6 +249,7 @@ const POSITIONS: Record<string, string> = {
   MIN: 'DEF',
   ARI: 'DEF',
   LAC: 'DEF',
+  NYJ: 'DEF',
   '13075': 'WR',
   '11574': 'RB',
   '8170': 'TE',
@@ -258,11 +263,15 @@ const POSITIONS: Record<string, string> = {
 
 const CTX: ToStatRowContext = { providerName: 'sleeper+nflverse', gameStatus: new Map(), anyGameOpen: false }
 
+/** Where the feed's `def_fumble_rec` adds a special-teams recovery, what main stored: `fum_rec` alone (real, 2026). */
+const STORED_FUM_REC: Readonly<Record<string, number>> = { 'CHI-1': 1, 'NYJ-1': 0, 'CHI-6': 1 }
+
 /** A stored line the way main stores it today: the same feed line, with the ruled columns empty. */
 function storedToday(feed: ProviderPlayerWeekStats, over: Row = {}): Row {
   const ruledKeys = new Set(['fg_0_39', 'fg_missed', 'def_block', 'def_return_td', 'return_td', 'fumble_recovery_td'])
   const stats = Object.fromEntries(Object.entries(feed.stats).filter(([key]) => !ruledKeys.has(key)))
-  if (feed.playerId === 'CHI') stats.def_fumble_rec = 1
+  const fumRec = STORED_FUM_REC[`${feed.playerId}-${feed.week}`]
+  if (fumRec !== undefined) stats.def_fumble_rec = fumRec
   const { row } = toStatRow({ ...feed, stats }, CTX)
   return { player_id: feed.playerId, season: SEASON, week: feed.week, stat_type: 'weekly', game_id: null, team: feed.team ?? null, is_live: false, source: 'sleeper+nflverse', advanced: feed.advanced, updated_at: PAST, ...row?.columns, ...over }
 }
@@ -1127,6 +1136,66 @@ describe('a fill only raises: a stored value the feed reads lower is a named pro
   })
 })
 
+describe('def_fumble_recoveries: every move is listed by player, 0 → n included (round 2)', () => {
+  // The Jets ahead of Chicago, as the feed doesn't promise an order: the printed line sorts.
+  const LINES = [NYJ1, CHI1, BASS, WR, MIN, PRICE, TEN, CHI, BOSWELL, LAUBE, MITCHELL]
+  const ROLL_UP = '  all weeks def_fumble_recoveries by player, stored → feed: '
+  const move = (player_id: string, stored: number, feed: number) => ({ player_id, column: 'def_fumble_recoveries', stored, feed })
+
+  it('is the one ruled column the feed sums with a part main already stores', () => {
+    expect([...SUMMED_RULED_COLUMNS]).toEqual(['def_fumble_recoveries'])
+    for (const column of SUMMED_RULED_COLUMNS) expect(RULED_COLUMNS).toContain(column)
+  })
+
+  it('the Jets 0 → 1 is listed beside Chicago’s two; the list holds every move the count holds', async () => {
+    const report = await run(worldWith(LINES), LINES)
+    expect(report.ok).toBe(true)
+    expect(report.weeks.map((w) => [w.week, w.summedMoves])).toEqual([
+      [1, [move('CHI', 1, 2), move('NYJ', 0, 1)]],
+      [3, []],
+      [6, [move('CHI', 1, 3)]],
+      [8, []],
+    ])
+    for (const w of report.weeks) expect(w.summedMoves, `week ${w.week}`).toHaveLength(w.moves.def_fumble_recoveries)
+    // The non-zero list is unchanged by this: the Jets aren't on it.
+    expect(report.weeks.flatMap((w) => w.fromStoredValue)).toEqual([move('CHI', 1, 2), move('CHI', 1, 3)])
+  })
+
+  it('the CLI prints the Jets by name on the one line F890 is compared with', async () => {
+    const { code, out } = await cli(SPEC, worldWith(LINES), LINES)
+    expect(code).toBe(0)
+    expect(out).toContain(`${ROLL_UP}wk1 CHI 1→2, NYJ 0→1; wk6 CHI 1→3`)
+  })
+
+  it('a late fix to the stored part (the Jets’ fum_rec 0 → 1): every count reads as before, the by-player line shows it', async () => {
+    const late = LINES.map((l) => (l === NYJ1 ? { ...NYJ1, stats: { ...NYJ1.stats, def_fumble_rec: 2 } } : l))
+    const clean = renderFill(await run(worldWith(LINES), LINES))
+    const fixed = renderFill(await run(worldWith(LINES), late))
+    expect(fixed).toHaveLength(clean.length)
+    expect(fixed.filter((l, i) => l !== clean[i])).toEqual([`${ROLL_UP}wk1 CHI 1→2, NYJ 0→2; wk6 CHI 1→3`])
+  })
+
+  it('the same on a non-zero stored part (Chicago week 6, fum_rec 1 → 2): the line reads 1→4, not 1→3', async () => {
+    const late = LINES.map((l) => (l === CHI ? { ...CHI, stats: { ...CHI.stats, def_fumble_rec: 4 } } : l))
+    const lines = renderFill(await run(worldWith(LINES), late))
+    expect(lines).toContain(`${ROLL_UP}wk1 CHI 1→2, NYJ 0→1; wk6 CHI 1→4`)
+  })
+
+  it('a new line on the column is listed from 0', () => {
+    const plan = planFillWeek({ week: 1, lines: [line('NYJ', 1, { def_fumble_rec: 1 })], stored: new Map(), positions: new Map([['NYJ', 'DEF']]), ctx: CTX })
+    expect(plan.problems).toEqual([])
+    expect(plan.newRows.map((row) => row.player_id)).toEqual(['NYJ'])
+    expect(plan.summedMoves).toEqual([move('NYJ', 0, 1)])
+  })
+
+  it('nothing moved on the column prints "none", never no line', async () => {
+    const lines = [BASS, WR, ARI, LAC]
+    const report = await run(worldWith(lines), lines, { weeks: [1] })
+    expect(report.ok).toBe(true)
+    expect(renderFill(report)).toContain(`${ROLL_UP}none`)
+  })
+})
+
 describe('a one-week run with an empty or conflicting feed names the feed, not the checkout (round 1, finding 4)', () => {
   const ONE_WEEK = ['--season', '2026', '--weeks', '3', '--apply', '--confirm-target', HOST]
 
@@ -1201,6 +1270,7 @@ describe('the printed output', () => {
       '      new line 8170: fumble_recovery_td=1',
       '      PROBLEM: week 8: player nobody is not in players, and its line carries return_td=1',
       '  all weeks: 8 lines (5 updated, 3 new), 10 moves: fg_0_39=2 fg_missed=1 def_block=1 def_return_td=2 def_fumble_recoveries=1 return_td=2 fumble_recovery_td=1; 1 from a non-zero stored value; 1 other-column differences',
+      '  all weeks def_fumble_recoveries by player, stored → feed: wk6 CHI 1→3',
     ])
   })
 
