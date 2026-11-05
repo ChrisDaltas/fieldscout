@@ -113,11 +113,11 @@ describe('V1 GOLDEN vs SLEEPER — the recorded week-4 lines through the canonic
     ['7547', 11.94, 18.78], // St. Brown WR
     ['8130', 9.32, 16.43], // McBride TE
     ['11604', 8.29, 14.3], // Bowers TE
-    ['12185', 6.86, 6.86], // Shrader K
-    ['3451', 6.53, 6.53], // Fairbairn K
-    ['MIN', 8.33, 8.33], // Vikings DEF
-    ['BAL', 8.66, 8.66], // Ravens DEF
-    ['PIT', 7.66, 7.66], // Steelers DEF — pts_allow 17.5, FRACTIONAL
+    ['12185', 9.19, 9.19], // Shrader K — 6.86 + short makes 0.91 × 3 − misses 0.4 (F870)
+    ['3451', 8.91, 8.91], // Fairbairn K — 6.53 + short makes 0.86 × 3 − misses 0.2 (F870)
+    ['MIN', 8.89, 8.89], // Vikings DEF — 8.33 + block 0.07 × 2 + return TD 0.07 × 6 (F870)
+    ['BAL', 8.8, 8.8], // Ravens DEF — 8.66 + block 0.07 × 2 (F870)
+    ['PIT', 7.8, 7.8], // Steelers DEF — pts_allow 17.5, FRACTIONAL; 7.66 + block 0.07 × 2 (F870)
   ]
 
   it('V1a every projected fixture row, both presets, BY VALUE (17 of 17 — none skipped)', () => {
@@ -139,43 +139,46 @@ describe('V1 GOLDEN vs SLEEPER — the recorded week-4 lines through the canonic
     }
   })
 
-  it('V1c K: the value NAMES fg_0_39 and fg_missed as unscored — restoring the short makes (3 each) lands within 0.05 of Sleeper (Shrader 6.86 → 9.59 vs 9.63)', () => {
+  it('V1c K (re-cut, F870): nothing is named, and the only gap to Sleeper\'s own number is the FG miss it doesn\'t project: Shrader 9.19 + misses 0.4 = 9.59 vs 9.63', () => {
+    // Sleeper's 2026 projected pts_std is 3/4/5 + xpm − xpmiss; it charges no FG
+    // miss (feed.md §7), and the Sleeper Standard template does.
     for (const id of ['12185', '3451']) {
       const scored = weekly(SLEEPER_STD, id)
-      expect(scored.unscored).toEqual(['fg_0_39', 'fg_missed'])
+      expect(scored.unscored).toEqual([])
       const raw = find(id).row.stats
-      const shortMakes = (raw.fgm_0_19 ?? 0) + (raw.fgm_20_29 ?? 0) + (raw.fgm_30_39 ?? 0)
-      const restored = scored.points + SLEEPER_STD.fg_0_39 * shortMakes
-      expect(Math.abs(restored - raw.pts_std), `${id} ${restored} vs ${raw.pts_std}`).toBeLessThanOrEqual(0.05)
+      const misses = (raw.fgmiss_20_29 ?? 0) + (raw.fgmiss_30_39 ?? 0) + (raw.fgmiss_40_49 ?? 0) + (raw.fgmiss_50p ?? 0)
+      expect(misses).toBeGreaterThan(0)
+      const withoutMisses = scored.points - SLEEPER_STD.fg_missed * misses
+      expect(Math.abs(withoutMisses - raw.pts_std), `${id} ${withoutMisses} vs ${raw.pts_std}`).toBeLessThanOrEqual(0.05)
     }
   })
 
-  it('V1d DEF: the value NAMES def_block and def_return_td — restoring them (+ Sleeper\'s forced-fumble point, a stat no template scores) lands within 0.05 of Sleeper, the FRACTIONAL-PA PIT included', () => {
+  it('V1d DEF (re-cut, F870): nothing is named, blocks and return TDs are in the value, and only Sleeper\'s forced-fumble point (a stat no template scores) is left: within 0.05 of Sleeper, the FRACTIONAL-PA PIT included', () => {
     for (const id of ['MIN', 'BAL', 'PIT']) {
       const scored = weekly(SLEEPER_STD, id)
-      expect(scored.unscored).toEqual(['def_block', 'def_return_td'])
+      expect(scored.unscored).toEqual([])
       const raw = find(id).row.stats
-      // Sleeper's own special-teams TD total is `st_td` (kick + punt return;
-      // measured live over weeks 1–6, 186 DEF rows — D374(5)).
-      const restored = scored.points + SLEEPER_STD.def_block * (raw.blk_kick ?? 0) + SLEEPER_STD.def_return_td * (raw.st_td ?? 0) + 1 * (raw.ff ?? 0)
-      expect(Math.abs(restored - raw.pts_std), `${id} ${restored} vs ${raw.pts_std}`).toBeLessThanOrEqual(0.05)
+      const withForcedFumbles = scored.points + 1 * (raw.ff ?? 0)
+      expect(Math.abs(withForcedFumbles - raw.pts_std), `${id} ${withForcedFumbles} vs ${raw.pts_std}`).toBeLessThanOrEqual(0.05)
     }
   })
 
   it('V1e ESPN scoring now SCORES the yards-allowed tier from the projected line (L.E1.26 / F390 — re-cut; it was named unscored under F386(a))', () => {
     // MIN projects 300.39 yards → floor 300 → def_ya_300_349 (ESPN 0);
-    // PIT 296.73 → 296 → def_ya_200_299 (ESPN +2). Only the two keys the
-    // source still cannot supply stay named.
-    expect(weekly(ESPN_STD, 'MIN').unscored).toEqual(['def_block', 'def_return_td'])
-    expect(weekly(ESPN_STD, 'PIT').unscored).toEqual(['def_block', 'def_return_td'])
+    // PIT 296.73 → 296 → def_ya_200_299 (ESPN +2). F870: the source now
+    // supplies blocks and return TDs too, so nothing stays named.
+    expect(weekly(ESPN_STD, 'MIN').unscored).toEqual([])
+    expect(weekly(ESPN_STD, 'PIT').unscored).toEqual([])
     // Sleeper Standard scores no yards-allowed tier: its value does not move.
-    expect(weekly(SLEEPER_STD, 'MIN').unscored).toEqual(['def_block', 'def_return_td'])
+    expect(weekly(SLEEPER_STD, 'MIN').unscored).toEqual([])
   })
 
-  it('V1f the source vocabulary is the one Sleeper → canonical map (derived, not hand-listed)', () => {
+  it('V1f the source vocabulary is the shared map plus the projections tables (derived, not hand-listed), never the actuals-only table', () => {
     expect(WEEKLY_SOURCE_KEYS.has('def_points_allowed')).toBe(true)
-    expect(WEEKLY_SOURCE_KEYS.has('fg_0_39')).toBe(false)
     expect(WEEKLY_SOURCE_KEYS.has('def_yards_allowed')).toBe(true) // L.E1.26: yds_allow mapped (F390)
+    for (const key of ['fg_0_39', 'fg_missed', 'def_block', 'def_return_td', 'return_td']) expect(WEEKLY_SOURCE_KEYS.has(key), key).toBe(true)
+    // The projections feed never sends it, so it must stay NAMED, not silently 0.
+    expect(WEEKLY_SOURCE_KEYS.has('fumble_recovery_td')).toBe(false)
   })
 })
 
@@ -185,12 +188,11 @@ describe('V1 GOLDEN vs SLEEPER — the recorded week-4 lines through the canonic
 describe('V2 F386(b) — a fractional projected PA / YA takes the tier of its floor (the source\'s own reading)', () => {
   const dst = (pa: number) => scoreWeeklyProjection(SLEEPER_STD, 'DST', { def_sack: 2, def_points_allowed: pa })
 
-  it('V2a PIT 17.5 scores its 14–20 tier (+1): 7.66 under Sleeper, not the 6.66 a withheld family would give (ESPN 9.66 — its yards tier, L.E1.26)', () => {
-    expect(weekly(SLEEPER_STD, 'PIT').points).toBe(7.66)
+  it('V2a PIT 17.5 scores its 14–20 tier (+1): 7.8 under Sleeper, not the 6.8 a withheld family would give (ESPN 9.8 — its yards tier, L.E1.26)', () => {
+    expect(weekly(SLEEPER_STD, 'PIT').points).toBe(7.8)
     // ESPN: 17 → 14–17 (+1); and since L.E1.26 (F390) the projected 296.73
-    // yards → 296 → def_ya_200_299 (+2): 7.66 + 2 = 9.66 (was 7.66 with the
-    // yards family unscored).
-    expect(weekly(ESPN_STD, 'PIT').points).toBe(9.66)
+    // yards → 296 → def_ya_200_299 (+2): 7.8 + 2 = 9.8 (F870 added the 0.14 block).
+    expect(weekly(ESPN_STD, 'PIT').points).toBe(9.8)
   })
 
   it('V2b the boundary instants Sleeper itself decided (measured live): 20.75 → 14–20 (+1), 21.25 → 21–27 (0), 13.5 → 7–13 (+4)', () => {
@@ -199,7 +201,7 @@ describe('V2 F386(b) — a fractional projected PA / YA takes the tier of its fl
     expect(dst(21.25).points).toBe(2)
     expect(dst(13.5).points).toBe(6)
     expect(dst(14).points).toBe(3)
-    expect(dst(20.75).unscored).toEqual(['def_block', 'def_return_td'])
+    expect(dst(20.75).unscored).toEqual([])
   })
 
   it('V2c the floor touches only the two D/ST tier sources, only when fractional', () => {
@@ -347,7 +349,7 @@ describe('V7 computePlayerValue — freshness, absence named, NULL never zero', 
     expect(PROJECTION_MAX_AGE_MS).toBe(21_600_000)
     const fresh = computePlayerValue(SCOUT_STD, ctx, { ...base, weekly: { stats: line, fetched_at: '2099-09-24T06:00:00.000Z' } })
     expect([fresh.projected_points, fresh.projected_missing, fresh.projected_unscored, fresh.projection_fetched_at]).toEqual([
-      8, null, ['fumble_recovery_td', 'return_td'], '2099-09-24T06:00:00.000Z',
+      8, null, ['fumble_recovery_td'], '2099-09-24T06:00:00.000Z',
     ])
     const stale = computePlayerValue(SCOUT_STD, ctx, { ...base, weekly: { stats: line, fetched_at: '2099-09-24T05:59:59.999Z' } })
     expect([stale.projected_points, stale.projected_missing, stale.projected_unscored, stale.projection_fetched_at]).toEqual([
@@ -393,7 +395,7 @@ describe('V8 the projected line\'s position scope — the worker\'s scope, WITHO
   it('V8b a D/ST projected line WITHOUT points allowed scores its events only (no shutout tier), the PA family named', () => {
     const scored = scoreWeeklyProjection(SLEEPER_STD, 'DST', { def_sack: 3 })
     expect(scored.points).toBe(3)
-    expect(scored.unscored).toEqual(['def_block', 'def_pa_0', 'def_pa_14_20', 'def_pa_1_6', 'def_pa_28_34', 'def_pa_35_plus', 'def_pa_7_13', 'def_return_td'])
+    expect(scored.unscored).toEqual(['def_pa_0', 'def_pa_14_20', 'def_pa_1_6', 'def_pa_28_34', 'def_pa_35_plus', 'def_pa_7_13'])
   })
 })
 

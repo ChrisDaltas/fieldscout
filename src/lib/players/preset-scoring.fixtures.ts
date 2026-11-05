@@ -4,6 +4,9 @@
  * columns a read selected, so a wrong SELECT fails the way it would for real.
  * Imported by tests only.
  */
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { StatLineRow } from '@/lib/leagues/scoring/score-week-worker'
@@ -27,14 +30,41 @@ export function storedGame(playerId: string, season: number, week: number, raw: 
   return { ...storedLine(raw), id: `${playerId}-${season}-${week}`, player_id: playerId, season, week, source: 'sleeper+nflverse', is_live: false, ...over }
 }
 
-// Real Sleeper lines, trimmed to the scoring fields.
-export const BASS_2026_WK1 = { fga: 3, fgm: 3, fgm_30_39: 2, fgm_40_49: 1, xpa: 3, xpm: 3 }
+type RecordedRow = { player_id: string; stats: Record<string, number> }
+
+const LEAGUE_PLAYS = JSON.parse(
+  readFileSync(fileURLToPath(new URL('../leagues/stats/fixtures/sleeper-league-plays.json', import.meta.url)), 'utf8'),
+) as { actuals: Record<string, RecordedRow>; projections: Record<string, RecordedRow> }
+
+/** One recorded actuals row, by its key in `sleeper-league-plays.json`. */
+export function recordedActual(key: string): RecordedRow {
+  const row = LEAGUE_PLAYS.actuals[key]
+  if (!row) throw new Error(`sleeper-league-plays.json has no actuals row "${key}"`)
+  return row
+}
+
+/** One recorded weekly projections row, by its key in `sleeper-league-plays.json`. */
+export function recordedProjection(key: string): RecordedRow {
+  const row = LEAGUE_PLAYS.projections[key]
+  if (!row) throw new Error(`sleeper-league-plays.json has no projections row "${key}"`)
+  return row
+}
+
+// Real Sleeper lines, every field Sleeper sent (F870). Add new lines here: a
+// trimmed line can't see a wrong map.
+export const BASS_2026_WK1 = recordedActual('bass_2026_wk1').stats
+export const BOSWELL_2026_WK8 = recordedActual('boswell_2026_wk8').stats
+export const BOSWELL_2025_WK1 = recordedActual('boswell_2025_wk1').stats
+export const AUBREY_2025_WK15 = recordedActual('aubrey_2025_wk15').stats
+export const ARI_2026_WK1 = recordedActual('ari_2026_wk1').stats
+export const MIN_2026_WK3 = recordedActual('min_2026_wk3').stats
+export const CHI_2026_WK6 = recordedActual('chi_2026_wk6').stats
+export const MARKS_2025_WK15 = recordedActual('marks_2025_wk15').stats
+
+// K0's older real lines, trimmed to the scoring fields. Nothing new goes here.
 export const RYLAND_2026_WK6 = { fga: 6, fgm: 6, fgm_20_29: 2, fgm_30_39: 3, fgm_40_49: 1 }
-export const BOSWELL_2026_WK8 = { fga: 3, fgm: 2, fgm_20_29: 1, fgm_30_39: 1, fgmiss: 1, fgmiss_50_59: 1, fgmiss_50p: 1, xpa: 3, xpm: 3 }
 export const MYERS_2025_WK18 = { fga: 4, fgm: 2, fgm_30_39: 1, fgm_40_49: 1, fgmiss: 2, fgmiss_20_29: 1, fgmiss_40_49: 1, xpa: 1, xpm: 1 }
 export const MCMANUS_2025_WK2 = { fga: 3, fgm: 2, fgm_20_29: 1, fgm_50_59: 1, fgm_50p: 1, fgmiss: 1, fgmiss_40_49: 1, xpa: 3, xpm: 3 }
-export const BOSWELL_2025_WK1 = { fga: 2, fgm: 2, fgm_50_59: 1, fgm_50p: 2, fgm_60p: 1, xpa: 4, xpm: 4 }
-export const AUBREY_2025_WK15 = { fga: 6, fgm: 4, fgm_20_29: 1, fgm_30_39: 1, fgm_40_49: 2, fgmiss: 2, fgmiss_50_59: 2, fgmiss_50p: 2, rush_yd: 6, xpa: 2, xpm: 2 }
 export const SEA_2026_WK1 = { int: 3, pts_allow: 10, sack: 3, yds_allow: 277 }
 export const TB_2026_WK8 = { int: 4, pts_allow_0: 1, yds_allow: 224 }
 export const KC_2025_WK7 = { fum_rec: 1, pts_allow_0: 1, sack: 1, yds_allow: 95, yds_allow_0_100: 1 }
@@ -42,11 +72,7 @@ export const BUF_2025_WK2 = { fum_rec: 1, pts_allow: 10, sack: 4, yds_allow: 154
 export const PHI_2026_WK8 = { fum_rec: 1, pts_allow: 27, sack: 2, yds_allow: 339 }
 export const DAL_2026_WK5 = { pts_allow: 24, sack: 1, yds_allow: 419 }
 export const DAL_2026_WK6 = { int: 1, pts_allow: 23, sack: 3, yds_allow: 318 }
-export const ARI_2026_WK1 = { blk_kick: 1, fum_rec: 1, int: 1, pts_allow: 14, sack: 3, yds_allow: 268 }
-export const MIN_2026_WK3 = { def_st_td: 1, int: 2, pts_allow: 16, sack: 6, yds_allow: 243 }
-export const CHI_2026_WK6 = { def_st_fum_rec: 2, fum_rec: 1, pts_allow: 23, sack: 5, yds_allow: 257 }
 export const PIT_2025_WK1 = { def_st_fum_rec: 1, pts_allow: 32, sack: 1, yds_allow: 394 }
-export const MARKS_2025_WK15 = { fum_rec_td: 1, rec: 1, rec_yd: 8, rush_yd: 30 }
 export const PRESCOTT_2025_WK1 = { pass_yd: 188, rush_yd: 3 }
 export const JEANTY_2025_WK2 = { rec: 3, rec_yd: 1, rush_yd: 43 }
 

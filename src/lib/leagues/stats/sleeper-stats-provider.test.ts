@@ -3,12 +3,17 @@ import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { WeeklyProjectionPosition } from '@/lib/sync/weekly-projections'
+
 import type { TimeProvider } from '../time/time-provider'
 import {
   mapSleeperGameStatus,
   mapToCanonicalKeys,
   mapUsageKeys,
   readZeroOmittedYardsAllowed,
+  type SleeperFeed,
+  SLEEPER_ACTUALS_ONLY_MAP,
+  SLEEPER_PROJECTIONS_ONLY_MAP,
   SLEEPER_STAT_KEY_MAP,
   SLEEPER_USAGE_KEY_MAP,
   SleeperStatsProvider,
@@ -160,12 +165,29 @@ describe('SleeperStatsProvider', () => {
       safe: 'def_safety',
       pts_allow: 'def_points_allowed',
       yds_allow: 'def_yards_allowed', // L.E1.26 / F390 — measured on the live /stats endpoint (fixture below)
+      // F870 / F871 — measured on both endpoints, 2026-11-05 (adapter comment)
+      fgm_0_19: 'fg_0_39',
+      fgm_20_29: 'fg_0_39',
+      fgm_30_39: 'fg_0_39',
+      def_st_fum_rec: 'def_fumble_rec',
+      blk_kick: 'def_block',
+    })
+    expect(SLEEPER_ACTUALS_ONLY_MAP).toEqual({ fgmiss: 'fg_missed', def_st_td: 'def_return_td', st_td: 'return_td', fum_rec_td: 'fumble_recovery_td' })
+    const projectedOffense = { pr_td: 'return_td', def_kr_td: 'return_td' }
+    expect(SLEEPER_PROJECTIONS_ONLY_MAP).toEqual({
+      QB: projectedOffense,
+      RB: projectedOffense,
+      WR: projectedOffense,
+      TE: projectedOffense,
+      K: { fgmiss_0_19: 'fg_missed', fgmiss_20_29: 'fg_missed', fgmiss_30_39: 'fg_missed', fgmiss_40_49: 'fg_missed', fgmiss_50p: 'fg_missed' },
+      DEF: { st_td: 'def_return_td' },
     })
   })
 
   it('emits only registry-canonical core_box keys (§7.3.3 one-namespace rule)', () => {
     const byKey = new Map(STAT_KEYS.map((def) => [def.key, def]))
-    for (const canonical of Object.values(SLEEPER_STAT_KEY_MAP)) {
+    const tables = [SLEEPER_STAT_KEY_MAP, SLEEPER_ACTUALS_ONLY_MAP, ...Object.values(SLEEPER_PROJECTIONS_ONLY_MAP)]
+    for (const canonical of tables.flatMap((table) => Object.values(table))) {
       const def = byKey.get(canonical)
       expect(def, `adapter emits unregistered key: ${canonical}`).toBeDefined()
       expect(def?.tier, canonical).toBe('core_box')
@@ -396,6 +418,67 @@ describe('mapSleeperGameStatus', () => {
     expect(mapSleeperGameStatus('anything_else')).toBe('scheduled')
     expect(mapSleeperGameStatus(null)).toBe('scheduled')
     expect(mapSleeperGameStatus(undefined)).toBe('scheduled')
+  })
+})
+
+// F870 / F871: what each feed's spellings fill. Goldens on full real lines:
+// `leagues/scoring/league-plays-golden.test.ts`.
+describe('the map, by feed (F870 / F871)', () => {
+  const PLAYS = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/sleeper-league-plays.json', import.meta.url)), 'utf8')) as {
+    actuals: Record<string, { player_id: string; team: string; opponent: string; stats: Record<string, number> }>
+  }
+
+  it('adds: three short buckets fill fg_0_39, two recovery fields fill def_fumble_rec, and a null or NaN adds nothing', () => {
+    expect(mapToCanonicalKeys({ fgm_0_19: 1, fgm_20_29: 2, fgm_30_39: 4 }, ACTUALS)).toEqual({ fg_0_39: 7 })
+    expect(mapToCanonicalKeys({ fum_rec: 1, def_st_fum_rec: 2 }, ACTUALS)).toEqual({ def_fumble_rec: 3 })
+    expect(mapToCanonicalKeys({ fgm_20_29: 2, fgm_30_39: null, fgm_0_19: Number.NaN }, ACTUALS)).toEqual({ fg_0_39: 2 })
+  })
+
+  it('actuals read their own spellings and ignore what only the projections send', () => {
+    expect(mapToCanonicalKeys({ fgmiss: 2, fgmiss_40_49: 2, st_td: 1, pr_td: 1, def_kr_td: 1, fum_rec_td: 1, def_st_td: 1 }, ACTUALS)).toEqual({
+      fg_missed: 2,
+      return_td: 1,
+      fumble_recovery_td: 1,
+      def_return_td: 1,
+    })
+  })
+
+  it('projections read the position\'s spellings: st_td is a team\'s on a DEF row and nobody\'s on a WR row', () => {
+    const projected = (position: WeeklyProjectionPosition, stats: Record<string, number>) => mapToCanonicalKeys(stats, { feed: 'projections', position })
+    expect(projected('WR', { st_td: 1, pr_td: 0.5, def_kr_td: 0.25, fum_rec_td: 1 })).toEqual({ return_td: 0.75 })
+    expect(projected('DEF', { st_td: 0.5, pr_td: 1, def_st_td: 1, fgmiss: 1 })).toEqual({ def_return_td: 0.5 })
+    expect(projected('K', { fgmiss: 9, fgmiss_0_19: 0.25, fgmiss_20_29: 0.25, fgmiss_30_39: 0.25, fgmiss_40_49: 0.25, fgmiss_50p: 0.5 })).toEqual({ fg_missed: 1.5 })
+    expect(projected('QB', { pr_td: 0.5 })).toEqual({ return_td: 0.5 })
+    expect(projected('RB', { def_kr_td: 0.5 })).toEqual({ return_td: 0.5 })
+    expect(projected('TE', { pr_td: 0.5 })).toEqual({ return_td: 0.5 })
+  })
+
+  it('a position with no table throws by name, with stats or without: never a silent drop', () => {
+    const wrong = (position: string) => ({ feed: 'projections', position }) as unknown as SleeperFeed
+    expect(() => mapToCanonicalKeys({ st_td: 0.1, blk_kick: 0.1 }, wrong('DST'))).toThrow('no projections map for position "DST"')
+    expect(() => mapToCanonicalKeys(null, wrong('DST'))).toThrow(/DST/)
+    expect(() => mapToCanonicalKeys({ st_td: 0.1 }, wrong('constructor'))).toThrow(/constructor/)
+  })
+
+  it('the fields that double count or pay the wrong team are on no table', () => {
+    const tables = [SLEEPER_STAT_KEY_MAP, SLEEPER_ACTUALS_ONLY_MAP, ...Object.values(SLEEPER_PROJECTIONS_ONLY_MAP)]
+    for (const field of ['fg_blkd', 'misc_td', 'fum_rec_ez_tds', 'anytime_tds', 'xp_blkd', 'fgmiss_50_59', 'fgmiss_60p', 'fgm_50_59', 'def_st_ff', 'st_fum_rec']) {
+      for (const table of tables) expect(table[field], field).toBeUndefined()
+    }
+  })
+
+  it('a line holding only a newly paid key is a line now: the real Mitchell and Laube rows reach ingest, with their usage keys', async () => {
+    const mitchell = PLAYS.actuals.mitchell_2026_wk8
+    const laube = PLAYS.actuals.laube_2026_wk8
+    stubFetch((url) => {
+      const position = /position\[\]=(\w+)/.exec(url)?.[1]
+      return ok(position === 'TE' ? [mitchell] : position === 'RB' ? [laube] : [])
+    })
+    const rows = await new SleeperStatsProvider(frozenTime).getWeekStats(2026, 8)
+    expect(rows.map((r) => [r.playerId, r.stats])).toEqual([
+      [laube.player_id, { return_td: 1 }],
+      [mitchell.player_id, { fumble_recovery_td: 1 }],
+    ])
   })
 })
 

@@ -42,9 +42,9 @@ describe('computePoolStandings', () => {
     expect(pool.WR1).toMatchObject({ total: 3, games: 1 })
   })
 
-  it('league: no preparation, so these numbers do not move. Bass stays 7 + 3 (F402), the kickoff row still pays its +5, no 2-pt fill', async () => {
+  it('league: no preparation, the stored columns as they are. Bass is 13 + 8 now the map fills short FGs and misses (F870), the kickoff row still pays its +5, no 2-pt fill', async () => {
     const pool = await computePoolStandings(client(), rules, new Map(), 2026, 9, storedLines)
-    expect(pool.BASS).toMatchObject({ total: 10, games: 2 })
+    expect(pool.BASS).toMatchObject({ total: 21, games: 2 })
     // Dallas weeks 5 and 6 as stored (−2, +5), and week 7 live: the stored 0 points allowed pays +5, yards pending.
     expect(pool.DAL?.total).toBe(8)
     expect(pool.WR1?.total).toBe(1)
@@ -118,13 +118,13 @@ describe('readPlayerCoreStats', () => {
     expect((await read('WR1', { kind: 'system', system: 'espn_standard' })).total_points).toBe(3)
   })
 
-  it('a league: the same rows score exactly as stored, so these numbers do not move (F402)', async () => {
+  it('a league: the same rows score exactly as stored, and a filled kicker row equals the preset\'s number (F870)', async () => {
     const league = { kind: 'league', leagueId: 'L' } as const
     const k = await read('BASS', league)
-    expect(k.total_points).toBe(10)
+    expect(k.total_points).toBe(21)
     expect(pointsByWeek(k)).toEqual([
-      [1, 7],
-      [8, 3],
+      [1, 13],
+      [8, 8],
     ])
     expect((await read('WR1', league)).total_points).toBe(1)
     expect((await read('DAL', league)).total_points).toBe(8)

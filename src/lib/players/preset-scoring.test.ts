@@ -3,7 +3,9 @@
  * every list and card score a stored game the SAME way. Golden values are
  * stored literals, hand-checked against ESPN's table (the sum is written out on
  * each line). The inputs are real Sleeper lines run through the code ingest uses,
- * so a golden sees what is actually stored: no `fg_0_39`, no `fg_missed`.
+ * so a golden sees what ingest stores. The 2025 pins moved with F870 because the
+ * fixtures run raw lines through the new map; production's 2025 rows don't move
+ * without F872. `league-plays-golden.test.ts` holds the plays F870 / F871 opened.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -66,6 +68,7 @@ describe('K0 goldens: real stored lines against ESPN table, the same under all f
     ['Chris Boswell 2026 wk8: two short 6 − 1 miss + 3 PAT', 'K', BOSWELL_2026_WK8, 8],
     ['Jason Myers 2025 wk18: 3 + 4 − 2 misses + 1 PAT', 'K', MYERS_2025_WK18, 6],
     ['Brandon McManus 2025 wk2: 3 + 5 − 1 miss + 3 PAT', 'K', MCMANUS_2025_WK2, 10],
+    // The 60+ point is F871's next step (PR 4 moves this pin to 15).
     ['Chris Boswell 2025 wk1: 50–59 5 + 60+ 5 + 4 PAT (ESPN 15: the 60+ tier is a named gap)', 'K', BOSWELL_2025_WK1, 14],
     ['Seattle 2026 wk1: 3 sacks + 6 INT + PA 10 3 + YA 277 2', 'DEF', SEA_2026_WK1, 14],
     ['Tampa Bay 2026 wk8: 8 INT + shutout by omission 5 + YA 224 2', 'DEF', TB_2026_WK8, 15],
@@ -74,10 +77,10 @@ describe('K0 goldens: real stored lines against ESPN table, the same under all f
     ['Philadelphia 2026 wk8: 2 sacks + 2 FR + PA 27 0 + YA 339 0', 'DEF', PHI_2026_WK8, 4],
     ['Dallas 2026 wk5: 1 sack + PA 24 0 + YA 419 −3', 'DEF', DAL_2026_WK5, -2],
     ['Dallas 2026 wk6: 3 sacks + 2 INT + PA 23 0 + YA 318 0', 'DEF', DAL_2026_WK6, 5],
-    ['Arizona 2026 wk1: 3 + 2 + 2 + PA 14 1 + YA 268 2 (ESPN 12: the block is a named gap)', 'DEF', ARI_2026_WK1, 10],
-    ['Minnesota 2026 wk3: 6 + 4 + PA 16 1 + YA 243 2 (ESPN 19: the return TD is a named gap)', 'DEF', MIN_2026_WK3, 13],
-    ['Chicago 2026 wk6: 5 sacks + 2 FR + PA 23 0 + YA 257 2 (ESPN 13: two special-teams recoveries are a named gap)', 'DEF', CHI_2026_WK6, 9],
-    ['Pittsburgh 2025 wk1: 1 sack + PA 32 −1 + YA 394 −1 (ESPN 1: a special-teams recovery is a named gap)', 'DEF', PIT_2025_WK1, -1],
+    ['Arizona 2026 wk1: 3 + 2 + 2 + block 2 + PA 14 1 + YA 268 2 (= ESPN)', 'DEF', ARI_2026_WK1, 12],
+    ['Minnesota 2026 wk3: 6 + 4 + return TD 6 + PA 16 1 + YA 243 2 (= ESPN)', 'DEF', MIN_2026_WK3, 19],
+    ['Chicago 2026 wk6: 5 sacks + 1 FR 2 + two special-teams recoveries 4 + PA 23 0 + YA 257 2 (= ESPN)', 'DEF', CHI_2026_WK6, 13],
+    ['Pittsburgh 2025 wk1: 1 sack + special-teams recovery 2 + PA 32 −1 + YA 394 −1 (= ESPN)', 'DEF', PIT_2025_WK1, 1],
   ]
   it.each(cases)('%s', (_name, position, raw, points) => {
     for (const system of SYSTEMS) expect(presetGamePoints(system, position, storedLine(raw)), system).toBe(points)
@@ -94,12 +97,12 @@ describe('K0 goldens: real stored lines against ESPN table, the same under all f
     expect(scoreStarter(systemRules('ppr'), 'dal', 'DST', live).points).toBe(11)
   })
 
-  it('named gap: a kicker line scores kicking stats only (Aubrey 2025 wk15: 14, ESPN 14.6 with 6 rushing yards)', () => {
-    expect(presetGamePoints('espn_standard', 'K', storedLine(AUBREY_2025_WK15))).toBe(14)
+  it('a kicker\'s rushing yards pay (Aubrey 2025 wk15: 14 + 6 yards 0.6 = 14.6, = ESPN)', () => {
+    expect(presetGamePoints('espn_standard', 'K', storedLine(AUBREY_2025_WK15))).toBe(14.6)
   })
 
-  it('named gap: a fumble-recovery TD pays nothing (Woody Marks 2025 wk15: 3 + 0.8 = 3.8, ESPN 9.8 with the TD)', () => {
-    expect(presetGamePoints('espn_standard', 'RB', storedLine(MARKS_2025_WK15))).toBe(3.8)
+  it('a fumble-recovery TD pays (Woody Marks 2025 wk15: 3 + 0.8 + 6 = 9.8, = ESPN)', () => {
+    expect(presetGamePoints('espn_standard', 'RB', storedLine(MARKS_2025_WK15))).toBe(9.8)
   })
 })
 
@@ -137,6 +140,13 @@ describe('K0 missing data: refuse rather than show a plausible number', () => {
     expect(presetGamePoints('ppr', 'K', empty)).toBeNull()
     expect(presetGamePoints('ppr', 'K', kLine({ fg_made: 1, fg_made_40_plus: 1, fg_made_50_plus: 1 }))).toBeNull()
     expect(presetGamePoints('ppr', 'K', kLine({ fg_attempted: 1 }))).toBeNull()
+  })
+
+  it('a K whose only stat is rushing yards is a game, not an empty row: stats page and league both read 0.8', () => {
+    const rushOnly = storedLine({ rush_att: 1, rush_yd: 8, gp: 1 })
+    expect(presetGamePoints('espn_standard', 'K', rushOnly)).toBe(0.8)
+    expect(scoreStarter(systemRules('espn_standard'), 'k', 'K', rushOnly).points).toBe(0.8)
+    expect(presetLines('K', [rushOnly])).toHaveLength(1)
   })
 
   it('any position outside the six is refused', () => {
@@ -219,9 +229,9 @@ describe('the one select', () => {
   })
 })
 
-describe('league pin: K0 did not move league scores', () => {
-  it('on Bass 2026 wk1 the engine with no preset step stays 7 (short FGs unpaid). F402: this flips only when Chris rules on league kickers', () => {
-    expect(seasonToDate(systemRules('espn_standard'), 'k', 'K', [storedLine(BASS_2026_WK1)]).points).toBe(7)
+describe('league pin: the engine with no preset step', () => {
+  it('on Bass 2026 wk1 reads 13, the stats page\'s number: the map fills short FGs (F870, ruled 2026-11-05; it read 7 until then)', () => {
+    expect(seasonToDate(systemRules('espn_standard'), 'k', 'K', [storedLine(BASS_2026_WK1)]).points).toBe(13)
   })
 
   it('a stored 2-pt total alone pays nothing through the engine with no preset step', () => {
