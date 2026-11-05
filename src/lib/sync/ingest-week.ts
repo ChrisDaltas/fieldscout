@@ -566,7 +566,7 @@ export interface StatDiff {
 }
 
 /** Key-sorted JSON — two rows are the same line iff these strings are equal. */
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'undefined'
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
   const entries = Object.entries(value as Record<string, unknown>)
@@ -856,7 +856,7 @@ export function withoutHeldGames(
 /** The stored games (the diff's shape) — and, into `observedAt`, each row's
  *  `updated_at` (F511's settle grace: when a final game was first seen final);
  *  into `held`, the ids an operator has marked (migration 184). */
-async function readGames(
+export async function readGames(
   db: SyncClient,
   season: number,
   observedAt?: Map<string, string | null>,
@@ -938,7 +938,7 @@ async function readWeeks(db: SyncClient, season: number): Promise<Map<string, St
   return out
 }
 
-type DbStatRow = {
+export type DbStatRow = {
   player_id: string
   game_id: string | null
   team?: string | null
@@ -958,7 +958,16 @@ export async function statTeamColumn(db: SyncClient): Promise<boolean> {
   throw new Error(`player_stats.team probe failed: ${error.message}`)
 }
 
-async function readStats(db: SyncClient, season: number, week: number, teamColumn: boolean): Promise<Map<string, StatRow>> {
+/** The week's stored lines as the diff reads them. `onRawRow` sees each row as
+ *  stored, before NULLs read as defaults — for a caller that sends a line's
+ *  metadata back unchanged (`fill-ruled-columns.ts`). */
+export async function readStats(
+  db: SyncClient,
+  season: number,
+  week: number,
+  teamColumn: boolean,
+  onRawRow?: (row: DbStatRow) => void,
+): Promise<Map<string, StatRow>> {
   const select = ['player_id', 'game_id', ...(teamColumn ? ['team'] : []), 'is_live', 'source', 'advanced', ...STAT_COLUMN_SURFACE].join(', ')
   const rows = await pageAll<DbStatRow>(
     (from, to) =>
@@ -972,6 +981,7 @@ async function readStats(db: SyncClient, season: number, week: number, teamColum
   )
   const out = new Map<string, StatRow>()
   for (const row of rows) {
+    onRawRow?.(row)
     const columns: Record<string, number | null> = {}
     for (const column of STAT_COLUMN_SURFACE) {
       const value = row[column]
@@ -1086,13 +1096,19 @@ interface DoorReport {
   week_state: 'open' | 'final' | null
 }
 
+/** The door's own counts, added up across a run's batches. */
+export interface DoorTally {
+  stats: Pick<IngestStatsReport, 'enqueued' | 'restamped'>
+  corrections: Pick<IngestCorrectionsReport, 'recorded' | 'replayed' | 'unchangedAtWrite' | 'weekState'>
+}
+
 /**
  * Migration 167's door (F267, TD3): each batch's lines, their correction
  * events and their enqueue in ONE transaction. Any error — a missing door
  * (PGRST202) included, since F508 — throws by name. Every count is asserted
  * — loud, never a quiet zero.
  */
-async function writeThroughDoor(
+export async function writeThroughDoor(
   db: SyncClient,
   door: string,
   season: number,
@@ -1101,7 +1117,7 @@ async function writeThroughDoor(
   statWrites: StatRow[],
   deltaIds: ReadonlySet<string>,
   corrections: ReadonlyMap<string, MovedKey[]>,
-  report: IngestReport,
+  report: DoorTally,
   teamColumn: boolean,
 ): Promise<void> {
   for (let i = 0; i < statWrites.length; i += BATCH) {
