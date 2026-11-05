@@ -68,7 +68,7 @@ const GOLDENS: readonly Golden[] = [
   G('bass_2026_wk1', 'K', [12, 13, 13, 13], 13, 'two short FGs, the 7 → 13 of F870'),
   G('boswell_2026_wk8', 'K', [8, 8, 9, 8], 8, 'a miss; Yahoo charges none'),
   G('aubrey_2026_wk2', 'K', [13, 16, 16, 16], 17, 'a 60-yarder pays 5 until F871 adds the key'),
-  G('aubrey_2025_wk15', 'K', [12.6, 14.6, 16.6, 14.6], 14.6, 'his 6 rushing yards pay 0.6'),
+  G('aubrey_2025_wk15', 'K', [12.6, 14.6, 16.6, 14.6], 14.6, 'the 6 rushing yards pay 0.6'),
   G('boswell_2025_wk1', 'K', [10, 14, 14, 14], 15, 'a 60-yarder pays 5 until F871 adds the key'),
   G('lutz_2026_wk5', 'K', [10, 10, 11, 10], 10, 'fgm_0_19 is part of the short-FG sum'),
   G('santos_2026_wk2', 'K', [2, 4, 5, 4], 4, 'K fg_blkd is already inside fgmiss'),

@@ -226,7 +226,7 @@ describe('E61 — pending, never zero; scoped to what the position can deliver',
     }
   })
 
-  it('F871 a kicker delivers his rushing yards at the document\'s base value, and the scope law stands: no K override, no other position gains them', () => {
+  it('F871 a kicker delivers rushing yards at the document\'s base value, and the scope law stands: no K override, no other position gains them', () => {
     const rusher = row('sw-k2', { rush_yards: 6 })
     expect(applicableKeys('K').has('rush_yards')).toBe(true)
     // Exactly the scope law plus rushing yards: nothing else rides along.

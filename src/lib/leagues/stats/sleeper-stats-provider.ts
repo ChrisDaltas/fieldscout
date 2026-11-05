@@ -159,7 +159,7 @@ const PROJECTED_OFFENSE: Readonly<Record<string, string>> = { pr_td: 'return_td'
 /**
  * F870 / F871: the spellings only the PROJECTIONS endpoint sends, per position,
  * because the same field means different things by row (`def_kr_td` on a WR is
- * his kick-return TD). MEASURED 2026-11-05, 835 K and 844 D/ST rows: no row has
+ * the player's own kick-return TD). MEASURED 2026-11-05, 835 K and 844 D/ST rows: no row has
  * `fgmiss`, `def_st_td`, `def_st_fum_rec` or `fum_rec_td`.
  *
  * A projected kicker's short makes and misses come from the buckets, not from

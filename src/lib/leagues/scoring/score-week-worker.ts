@@ -280,7 +280,7 @@ export function deliverableKeys(position: string): readonly string[] {
 
 /**
  * The rules keys a player of `position` can DELIVER: `deliverableKeys` plus the
- * advanced keys. A rules key outside this set is inapplicable to him: not
+ * advanced keys. A rules key outside this set is inapplicable to that position: not
  * delivered, not pending. A position outside the six (an IDP slot) has no
  * scorable key in the registry; only advanced keys can apply.
  */

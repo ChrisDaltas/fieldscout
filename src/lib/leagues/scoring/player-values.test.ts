@@ -392,7 +392,7 @@ describe('V8 the projected line\'s position scope — the worker\'s scope, WITHO
     expect(scopedProjectedLine({ pass_yards: 250 }, 'IDP')).toEqual({})
   })
 
-  it('V8c F871: a K keeps his rushing yards, the worker\'s own scope (deliverableKeys); his other offense keys and a D/ST still drop', () => {
+  it('V8c F871: a K keeps its rushing yards, the worker\'s own scope (deliverableKeys); a K\'s other offense keys and a D/ST still drop', () => {
     expect(scopedProjectedLine({ fg_0_39: 1, rush_yards: 6, rush_tds: 1, receptions: 2 }, 'K')).toEqual({ fg_0_39: 1, rush_yards: 6 })
     expect(scopedProjectedLine({ rush_yards: 6 }, 'K')).toEqual({ rush_yards: 6 })
     expect(scopedProjectedLine({ def_sack: 1, rush_yards: 6 }, 'DST')).toEqual({ def_sack: 1 })
