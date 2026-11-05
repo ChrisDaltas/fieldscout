@@ -78,6 +78,8 @@ class World {
   afterDoor: ((world: World) => void) | null = null
   /** Laid over the door's report: a door that misreports. */
   doorReport: Row = {}
+  /** Once the door has been called, every player_stats read answers this error: the re-read after a write fails. */
+  statReadErrorAfterDoor: string | null = null
 
   client(): SyncClient {
     return {
@@ -135,6 +137,9 @@ class World {
           if (wrote) {
             this.tableWrites.push(name)
             return { data: [], error: null }
+          }
+          if (name === 'player_stats' && this.statReadErrorAfterDoor !== null && this.doorCalls.length > 0) {
+            return { data: null, error: { message: this.statReadErrorAfterDoor }, count: null }
           }
           const columns = selected === '*' ? null : selected.split(',').map((c) => c.trim())
           if (name === 'player_stats' && !this.teamColumn && columns?.includes('team')) {
@@ -222,8 +227,34 @@ const LAUBE = line('11574', 8, { return_td: 1 }, { off_snaps: 1 }, 'LV', 'NYJ')
 const MITCHELL = line('8170', 8, { fumble_recovery_td: 1 }, { off_snaps: 31 }, 'DAL', 'ARI')
 /** A plain receiver whose ruled columns don't move. */
 const WR = line('wr-1', 1, { targets: 7, receptions: 5, receiving_yards: 61 }, { off_snaps: 40 }, 'BUF', 'HOU')
+/** Arizona and the Chargers, week 1 (real): Arizona's blocked kick, and a D/ST line with nothing to fill. */
+const ARI = line('ARI', 1, { def_sack: 3, def_int: 1, def_fumble_rec: 1, def_points_allowed: 14, def_yards_allowed: 268, def_block: 1 }, {}, 'ARI', 'LAC')
+const LAC = line('LAC', 1, { def_sack: 1, def_points_allowed: 26, def_yards_allowed: 393 }, {}, 'LAC', 'ARI')
+/** Plain offense lines, so weeks 6 and 8 hold every position a partial read can drop. */
+const WR6 = line('wr-6', 6, { targets: 4, receptions: 3, receiving_yards: 41 }, { off_snaps: 35 }, 'TEN', 'IND')
+const QB8 = line('qb-8', 8, { pass_attempts: 31, pass_completions: 20, pass_yards: 228, pass_tds: 1 }, { off_snaps: 60 })
+const RB8 = line('rb-8', 8, { rush_yards: 48, receptions: 2, receiving_yards: 11 }, { off_snaps: 30 })
+const WR8 = line('wr-8', 8, { targets: 6, receptions: 4, receiving_yards: 52 }, { off_snaps: 44 })
+const TE8 = line('te-8', 8, { targets: 3, receptions: 2, receiving_yards: 19 }, { off_snaps: 38 })
 
-const POSITIONS: Record<string, string> = { '7042': 'K', '1945': 'K', TEN: 'DEF', CHI: 'DEF', MIN: 'DEF', '13075': 'WR', '11574': 'RB', '8170': 'TE', 'wr-1': 'WR' }
+const POSITIONS: Record<string, string> = {
+  '7042': 'K',
+  '1945': 'K',
+  TEN: 'DEF',
+  CHI: 'DEF',
+  MIN: 'DEF',
+  ARI: 'DEF',
+  LAC: 'DEF',
+  '13075': 'WR',
+  '11574': 'RB',
+  '8170': 'TE',
+  'wr-1': 'WR',
+  'wr-6': 'WR',
+  'qb-8': 'QB',
+  'rb-8': 'RB',
+  'wr-8': 'WR',
+  'te-8': 'TE',
+}
 
 const CTX: ToStatRowContext = { providerName: 'sleeper+nflverse', gameStatus: new Map(), anyGameOpen: false }
 
@@ -291,6 +322,27 @@ const ALL_LINES = [BASS, WR, MIN, PRICE, TEN, CHI, BOSWELL, LAUBE, MITCHELL]
 
 function snapshot(world: World): string {
   return JSON.stringify(world.stats)
+}
+
+const HOST = 'abc.supabase.co'
+const URL_ = `https://${HOST}`
+const SPEC = ['--season', '2026', '--weeks', '1,3,6,8']
+
+/** The real CLI over the fake world and feed. */
+async function cli(argv: string[], world = worldWith(ALL_LINES), lines: readonly ProviderPlayerWeekStats[] = ALL_LINES, supabaseUrl: string | undefined = URL_) {
+  const out: string[] = []
+  const err: string[] = []
+  let connected = 0
+  const code = await runFillCli(argv, {
+    supabaseUrl,
+    connect: () => {
+      connected += 1
+      return { db: world.client(), provider: feed(lines), time: new VirtualClock(NOW) }
+    },
+    log: (line) => out.push(line),
+    error: (line) => err.push(line),
+  })
+  return { code, out, err, connected, world }
 }
 
 function expectNothingWritten(world: World, before: string): void {
@@ -592,8 +644,9 @@ describe('the map check: a checkout without the mapping fails loudly, never "not
     const report = await run(world, STALE, { weeks: [1, 6, 8], apply: true })
     expect(report.ok).toBe(false)
     expect(report.weeks).toEqual([])
-    expect(report.refused).toMatch(/this checkout has no field-goal mapping: the feed for weeks 1, 6, 8 read no fg_0_39 on any of its 2 K lines/)
-    expect(report.refused).toMatch(/this checkout has no blocked-kick mapping: the feed for weeks 1, 6, 8 read no def_block on any of its 2 D\/ST lines/)
+    // Each arm names only the weeks that read its kind of line (review round 1, finding 4).
+    expect(report.refused).toMatch(/this checkout has no field-goal mapping: the feed for weeks 1, 8 read no fg_0_39 on any of its 2 K lines/)
+    expect(report.refused).toMatch(/this checkout has no blocked-kick mapping: the feed for weeks 6 read no def_block on any of its 2 D\/ST lines/)
     expectNothingWritten(world, before)
   })
 
@@ -629,9 +682,22 @@ describe('the map check: a checkout without the mapping fails loudly, never "not
   })
 
   it('mappingRefusals counts what the plans carry', () => {
-    const plan = { week: 3, kLines: 30, kLinesWithShortFg: 0, dstLines: 32, dstLinesWithBlock: 0 } as FillWeekPlan
+    const plan = { week: 3, kLines: 30, kLinesWithShortFg: 0, dstLines: 32, dstLinesWithBlock: 0, problems: [] as string[] } as FillWeekPlan
     expect(mappingRefusals([plan])).toHaveLength(2)
     expect(mappingRefusals([{ ...plan, kLinesWithShortFg: 1, dstLinesWithBlock: 1 }])).toEqual([])
+  })
+
+  it('mappingRefusals reads only the weeks that planned lines of each kind', () => {
+    const read = { week: 3, kLines: 30, kLinesWithShortFg: 2, dstLines: 32, dstLinesWithBlock: 1, problems: [] as string[] } as FillWeekPlan
+    const unread = { week: 4, kLines: 0, kLinesWithShortFg: 0, dstLines: 0, dstLinesWithBlock: 0, problems: ['week 4: the feed returned zero lines'] } as FillWeekPlan
+    expect(mappingRefusals([read, unread])).toEqual([])
+    // No week read a line of either kind, and a plan names why: that problem is the reason, not the checkout.
+    expect(mappingRefusals([unread])).toEqual([])
+    // No week read one, and nothing else is wrong: the map can't be proved, which still refuses.
+    expect(mappingRefusals([{ ...unread, problems: [] }])).toEqual([
+      "this checkout's field-goal mapping can't be proved: the feed for weeks 4 planned no K line to read fg_0_39 on",
+      "this checkout's blocked-kick mapping can't be proved: the feed for weeks 4 planned no D/ST line to read def_block on",
+    ])
   })
 })
 
@@ -907,6 +973,216 @@ describe('other plan edges', () => {
   })
 })
 
+// ── Review round 1 (2026-11-05) ──────────────────────────────────────────
+
+/** Every position a week stores, on weeks 1, 6 and 8: a read that drops one is visible. */
+const FULL = [...ALL_LINES, ARI, LAC, WR6, QB8, RB8, WR8, TE8]
+const without = (drop: (l: ProviderPlayerWeekStats) => boolean) => FULL.filter((l) => !drop(l))
+const weekOf = (report: FillReport, week: number) => {
+  const plan = report.weeks.find((w) => w.week === week)
+  if (plan === undefined) throw new Error(`no plan for week ${week}`)
+  return plan
+}
+const missing = (week: number, position: string, stored: number) => `week ${week}: the feed carried no ${position} lines, against ${stored} stored — a partial read, not a week with nothing to fill`
+const lowered = (week: number, id: string, column: string, from: number, to: number) =>
+  `week ${week}: ${id} ${column} would go down from ${from} to ${to} — lowering a stored value is not a fill (a late provider fix, or a map that reads less)`
+const omit = (stats: ProviderPlayerWeekStats['stats'], key: string) => Object.fromEntries(Object.entries(stats).filter(([k]) => k !== key))
+
+describe('a partial feed read is a problem, never a quiet success (round 1, findings 1 and 3)', () => {
+  it('the complete feed names no partial read and nothing stored-only', async () => {
+    const report = await run(worldWith(FULL), FULL)
+    expect(report.ok).toBe(true)
+    expect(report.weeks.flatMap((w) => w.problems)).toEqual([])
+    expect(report.weeks.map((w) => w.storedOnly)).toEqual([0, 0, 0, 0])
+  })
+
+  it('Sleeper answers [] for DEF in week 6 only: named, --apply blocked, Tennessee left unfilled', async () => {
+    const world = worldWith(FULL)
+    const before = snapshot(world)
+    const report = await run(world, without((l) => l.week === 6 && POSITIONS[l.playerId] === 'DEF'), { apply: true })
+    expect(report.refused).toBeUndefined()
+    expect(report.ok).toBe(false)
+    expect(weekOf(report, 6).problems).toEqual([missing(6, 'DEF', 2)])
+    expect(weekOf(report, 6).storedOnlyByPosition).toEqual({ DEF: 2 })
+    expectNothingWritten(world, before)
+    expect(world.stored('TEN', 6)).toMatchObject({ def_block: 0, def_return_td: 0 })
+  })
+
+  it('RB, WR and TE answer [] in week 8: each named; Laube and Mitchell are not inserted', async () => {
+    const world = worldWith(FULL)
+    const before = snapshot(world)
+    const report = await run(world, without((l) => l.week === 8 && ['RB', 'WR', 'TE'].includes(POSITIONS[l.playerId])), { apply: true })
+    expect(report.ok).toBe(false)
+    expect(weekOf(report, 8).problems).toEqual([missing(8, 'RB', 1), missing(8, 'WR', 1), missing(8, 'TE', 1)])
+    expect(weekOf(report, 8).newRows).toEqual([])
+    expectNothingWritten(world, before)
+  })
+
+  it('each of the six positions, dropped alone from a week that stores it, is named and blocks', async () => {
+    const cases: Array<[string, number, number]> = [
+      ['QB', 8, 1],
+      ['RB', 8, 1],
+      ['WR', 8, 1],
+      ['TE', 8, 1],
+      ['K', 8, 1],
+      ['DEF', 1, 2],
+    ]
+    for (const [position, week, stored] of cases) {
+      const world = worldWith(FULL)
+      const before = snapshot(world)
+      const report = await run(world, without((l) => l.week === week && POSITIONS[l.playerId] === position), { apply: true })
+      expect(report.ok, position).toBe(false)
+      expect(weekOf(report, week).problems, position).toContain(missing(week, position, stored))
+      expectNothingWritten(world, before)
+    }
+  })
+
+  it('Arizona alone missing from week 1: named; a re-run once the feed carries it fills the block', async () => {
+    const world = worldWith(FULL)
+    const before = snapshot(world)
+    const report = await run(world, without((l) => l === ARI), { apply: true })
+    expect(report.ok).toBe(false)
+    expect(weekOf(report, 1).problems).toEqual(["week 1: the feed doesn't carry D/ST ARI, which has a stored line — a partial read"])
+    expect(weekOf(report, 1).storedOnlyByPosition).toEqual({ DEF: 1 })
+    expectNothingWritten(world, before)
+    expect(world.stored('ARI', 1).def_block).toBe(0)
+    const again = await run(world, FULL, { apply: true })
+    expect(again.ok).toBe(true)
+    expect(world.stored('ARI', 1).def_block).toBe(1)
+  })
+
+  it('one offense line missing, while the feed still carries its position, is counted by position and printed, not blocked', async () => {
+    // A second week-8 receiver, so dropping one leaves the position read.
+    const other = line('wr-8b', 8, { targets: 2, receptions: 1, receiving_yards: 9 })
+    const world = worldWith([...FULL, other])
+    world.players.push({ id: 'wr-8b', position: 'WR' })
+    const report = await run(world, [...FULL, other].filter((l) => l !== WR8))
+    expect(report.weeks.flatMap((w) => w.problems)).toEqual([])
+    expect(report.ok).toBe(true)
+    expect(weekOf(report, 8).storedOnly).toBe(1)
+    expect(weekOf(report, 8).storedOnlyByPosition).toEqual({ WR: 1 })
+    expect(renderFill(report).find((l) => l.startsWith('  week 8:'))).toMatch(/ storedOnly=1 \(WR 1\)$/)
+  })
+
+  it('through the CLI, each of the three exits 1 under --apply, prints its problem, and never says Done', async () => {
+    const cases: Array<[ProviderPlayerWeekStats[], string]> = [
+      [without((l) => l.week === 6 && POSITIONS[l.playerId] === 'DEF'), `      PROBLEM: ${missing(6, 'DEF', 2)}`],
+      [without((l) => l.week === 8 && ['RB', 'WR', 'TE'].includes(POSITIONS[l.playerId])), `      PROBLEM: ${missing(8, 'RB', 1)}`],
+      [without((l) => l === ARI), "      PROBLEM: week 1: the feed doesn't carry D/ST ARI, which has a stored line — a partial read"],
+    ]
+    for (const [lines, printed] of cases) {
+      const world = worldWith(FULL)
+      const { code, out, err } = await cli([...SPEC, '--apply', '--confirm-target', HOST], world, lines)
+      expect(code, printed).toBe(1)
+      expect(out, printed).toContain(printed)
+      expect(out.join('\n'), printed).not.toContain('Done')
+      expect(err, printed).toEqual(['REFUSED — problems above; nothing written'])
+      expect(world.doorCalls, printed).toEqual([])
+    }
+  })
+})
+
+describe('a fill only raises: a stored value the feed reads lower is a named problem (round 1, finding 2)', () => {
+  it('the first fill lists each move off a non-zero stored value by player, and goes ahead', async () => {
+    const report = await run(worldWith(ALL_LINES), ALL_LINES)
+    expect(report.ok).toBe(true)
+    expect(report.weeks.flatMap((w) => w.fromStoredValue)).toEqual([{ player_id: 'CHI', column: 'def_fumble_recoveries', stored: 1, feed: 3 }])
+  })
+
+  it('after a clean fill, a feed that omits Arizona’s block: named by player, column and values; exit 1, nothing written', async () => {
+    const world = worldWith(FULL)
+    expect((await run(world, FULL, { apply: true })).ok).toBe(true)
+    const calls = world.doorCalls.length
+    const before = snapshot(world)
+    const next = FULL.map((l) => (l === ARI ? { ...ARI, stats: omit(ARI.stats, 'def_block') } : l))
+    const { code, out } = await cli([...SPEC, '--apply', '--confirm-target', HOST], world, next)
+    expect(code).toBe(1)
+    expect(out).toContain(`      PROBLEM: ${lowered(1, 'ARI', 'def_block', 1, 0)}`)
+    expect(out).toContain('      from a stored value ARI def_block: stored 1 → feed 0')
+    expect(out.join('\n')).not.toContain('Done')
+    expect(world.doorCalls).toHaveLength(calls)
+    expect(snapshot(world)).toBe(before)
+  })
+
+  it('a re-run from a checkout whose map reads less (plain fum_rec, no D/ST return TD): every lowered value named', async () => {
+    const world = worldWith(ALL_LINES)
+    expect((await run(world, ALL_LINES, { apply: true })).ok).toBe(true)
+    const calls = world.doorCalls.length
+    const before = snapshot(world)
+    const narrower = ALL_LINES.map((l) => (l === CHI ? { ...CHI, stats: { ...CHI.stats, def_fumble_rec: 1 } } : l === MIN ? { ...MIN, stats: omit(MIN.stats, 'def_return_td') } : l))
+    const report = await run(world, narrower, { apply: true })
+    expect(report.refused).toBeUndefined()
+    expect(report.ok).toBe(false)
+    expect(report.weeks.flatMap((w) => w.problems)).toEqual([lowered(3, 'MIN', 'def_return_td', 1, 0), lowered(6, 'CHI', 'def_fumble_recoveries', 3, 1)])
+    expect(world.doorCalls).toHaveLength(calls)
+    expect(snapshot(world)).toBe(before)
+  })
+
+  it('a raise off a non-zero stored value is listed, never a problem', async () => {
+    const world = worldWith([CHI, BASS, TEN], [storedToday(CHI, { def_fumble_recoveries: 2 }), storedToday(BASS), storedToday(TEN)])
+    const report = await run(world, [CHI, BASS, TEN], { weeks: [1, 6], apply: true })
+    expect(report.ok).toBe(true)
+    expect(report.weeks.flatMap((w) => w.fromStoredValue)).toEqual([{ player_id: 'CHI', column: 'def_fumble_recoveries', stored: 2, feed: 3 }])
+    expect(world.stored('CHI', 6).def_fumble_recoveries).toBe(3)
+  })
+})
+
+describe('a one-week run with an empty or conflicting feed names the feed, not the checkout (round 1, finding 4)', () => {
+  const ONE_WEEK = ['--season', '2026', '--weeks', '3', '--apply', '--confirm-target', HOST]
+
+  it('two different lines for Minnesota: the F831 problem prints and blocks; no mapping text', async () => {
+    const world = worldWith(ALL_LINES)
+    const { code, out, err } = await cli(ONE_WEEK, world, [...ALL_LINES, { ...MIN, stats: { ...MIN.stats, def_sack: 1 } }])
+    expect(code).toBe(1)
+    expect(out).toContain('      PROBLEM: week 3: the feed carries two different lines for MIN — this week is not planned (F831)')
+    expect(out.join('\n')).not.toMatch(/mapping/)
+    expect(err).toEqual(['REFUSED — problems above; nothing written'])
+    expect(world.doorCalls).toEqual([])
+  })
+
+  it('an empty feed: "the feed returned zero lines" prints and blocks; no mapping text', async () => {
+    const world = worldWith(ALL_LINES)
+    const { code, out, err } = await cli(ONE_WEEK, world, [])
+    expect(code).toBe(1)
+    expect(out).toContain('      PROBLEM: week 3: the feed returned zero lines')
+    expect(out.join('\n')).not.toMatch(/mapping/)
+    expect(err).toEqual(['REFUSED — problems above; nothing written'])
+    expect(world.doorCalls).toEqual([])
+  })
+
+  it('the report keeps the plan: not refused, the week and its one problem', async () => {
+    const report = await run(worldWith(ALL_LINES), [], { weeks: [3] })
+    expect(report.refused).toBeUndefined()
+    expect(report.ok).toBe(false)
+    expect(report.weeks.map((w) => [w.week, w.problems])).toEqual([[3, ['week 3: the feed returned zero lines']]])
+  })
+})
+
+describe('a re-read that fails after writing still prints what landed (round 1, finding 5)', () => {
+  it('exit 1; the plan, the written count and the failure all print; never Done', async () => {
+    const world = worldWith(ALL_LINES)
+    world.statReadErrorAfterDoor = 'upstream 502'
+    const { code, out, err } = await cli([...SPEC, '--apply', '--confirm-target', HOST], world)
+    expect(code).toBe(1)
+    expect(world.doorCalls.length).toBeGreaterThan(0)
+    expect(out.some((l) => l.startsWith('  week 8: 3 lines to write'))).toBe(true)
+    expect(out).toContain('  written: 8 lines; queue rows 0; events 0')
+    expect(out).toContain('  FAILED AFTER WRITING: could not re-read week 1: upstream 502; 8 lines were written in this run; nothing after this was checked — re-run (it plans against what landed) to re-check')
+    expect(out.join('\n')).not.toContain('Done')
+    expect(err).toEqual(['FAILED — see the lines above'])
+  })
+
+  it('the report says it, ok false', async () => {
+    const world = worldWith(ALL_LINES)
+    world.statReadErrorAfterDoor = 'upstream 502'
+    const report = await run(world, ALL_LINES, { apply: true })
+    expect(report.ok).toBe(false)
+    expect(report.wrote).toBe(true)
+    expect(report.afterProblems).toHaveLength(1)
+    expect(report.afterProblems[0]).toMatch(/^could not re-read week 1: upstream 502; 8 lines were written in this run/)
+  })
+})
+
 describe('the printed output', () => {
   it('names the weeks, the keys, each new line, each other-column difference, each problem', async () => {
     const receiver = line('wr-1', 1, { targets: 8, receptions: 5, receiving_yards: 61 }, { off_snaps: 41 })
@@ -919,11 +1195,12 @@ describe('the printed output', () => {
       '  week 3: 2 lines to write (1 updated, 1 new), 2 moves: def_return_td=1 return_td=1 | feed lines=2 unchanged=0 unknownPlayers=0 empty=0 repeats=0 zeroNewLines=0 storedOnly=0',
       '      new line 13075: return_td=1',
       '  week 6: 2 lines to write (2 updated, 0 new), 3 moves: def_block=1 def_return_td=1 def_fumble_recoveries=1 | feed lines=2 unchanged=0 unknownPlayers=0 empty=0 repeats=0 zeroNewLines=0 storedOnly=0',
+      '      from a stored value CHI def_fumble_recoveries: stored 1 → feed 3',
       '  week 8: 3 lines to write (1 updated, 2 new), 4 moves: fg_0_39=1 fg_missed=1 return_td=1 fumble_recovery_td=1 | feed lines=4 unchanged=0 unknownPlayers=1 empty=0 repeats=0 zeroNewLines=0 storedOnly=0',
       '      new line 11574: return_td=1',
       '      new line 8170: fumble_recovery_td=1',
       '      PROBLEM: week 8: player nobody is not in players, and its line carries return_td=1',
-      '  all weeks: 8 lines (5 updated, 3 new), 10 moves: fg_0_39=2 fg_missed=1 def_block=1 def_return_td=2 def_fumble_recoveries=1 return_td=2 fumble_recovery_td=1; 1 other-column differences',
+      '  all weeks: 8 lines (5 updated, 3 new), 10 moves: fg_0_39=2 fg_missed=1 def_block=1 def_return_td=2 def_fumble_recoveries=1 return_td=2 fumble_recovery_td=1; 1 from a non-zero stored value; 1 other-column differences',
     ])
   })
 
@@ -937,25 +1214,6 @@ describe('the printed output', () => {
 })
 
 describe('the CLI', () => {
-  const HOST = 'abc.supabase.co'
-  const URL_ = `https://${HOST}`
-
-  async function cli(argv: string[], world = worldWith(ALL_LINES), lines: readonly ProviderPlayerWeekStats[] = ALL_LINES, supabaseUrl: string | undefined = URL_) {
-    const out: string[] = []
-    const err: string[] = []
-    let connected = 0
-    const code = await runFillCli(argv, {
-      supabaseUrl,
-      connect: () => {
-        connected += 1
-        return { db: world.client(), provider: feed(lines), time: new VirtualClock(NOW) }
-      },
-      log: (line) => out.push(line),
-      error: (line) => err.push(line),
-    })
-    return { code, out, err, connected, world }
-  }
-  const SPEC = ['--season', '2026', '--weeks', '1,3,6,8']
 
   it('refuses any flag it doesn’t know: exit 2, named, nothing connected', async () => {
     for (const bad of ['--only-ruled-columns', '--bogus', '--dry-run', '--season=2026', '--Apply', '-a', 'stray']) {

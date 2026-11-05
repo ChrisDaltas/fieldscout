@@ -25,7 +25,13 @@
  *   3. PLANS. Diffs only `RULED_COLUMNS`. Any other difference is reported by
  *      player and key and never written. A stored line's metadata goes back
  *      as stored. A new line goes in only if everything it carries outside the
- *      ruled columns is empty, so a late provider line can't slip in.
+ *      ruled columns is empty, so a late provider line can't slip in. A fill
+ *      only raises: a ruled value the feed reads below a non-zero stored one
+ *      is a problem, named by player, and every move from a non-zero stored
+ *      value is listed by player. A partial read is a problem too: a position
+ *      with stored lines that the feed carried none of this week, or a stored
+ *      D/ST line the feed doesn't carry. A missing offense line is counted by
+ *      position, not blocked.
  *   4. WRITES ONLY WITH `apply`, and only with no problem anywhere: through
  *      `ingest_write_batch` with `enqueue: false` and `corrections: []` (legal
  *      at 167:291), so no event and no queue row. The door sets exactly the
@@ -42,6 +48,7 @@
 import { z } from 'zod'
 
 import type { ProviderPlayerWeekStats } from '@/lib/leagues/stats/stats-provider'
+import { FANTASY_POSITIONS } from '@/lib/sports-data/sleeper'
 import { pageAll } from '@/lib/supabase/page-all'
 
 import {
@@ -189,6 +196,14 @@ export interface OtherDifference {
   feed: number | null
 }
 
+/** A ruled value moving off a non-zero stored value. Listed by player; a lowered one is also a problem. */
+export interface StoredValueMove {
+  player_id: string
+  column: RuledColumn
+  stored: number
+  feed: number
+}
+
 export interface FillWeekPlan {
   week: number
   /** Lines the provider returned. */
@@ -205,12 +220,16 @@ export interface FillWeekPlan {
   zeroNewLines: number
   /** Stored lines the feed doesn't carry (untouched). */
   storedOnly: number
+  /** The same, by `players.position` ('' when the player has none). */
+  storedOnlyByPosition: Record<string, number>
   /** Stored lines to rewrite: stored metadata plus the ruled columns only. */
   updates: StatRow[]
   /** New lines: the full `toStatRow` surface. */
   newRows: StatRow[]
   /** How many values each ruled column moves, new lines included. */
   moves: Record<RuledColumn, number>
+  /** Every move whose stored value is not 0, by player: the ones a count alone can't explain. */
+  fromStoredValue: StoredValueMove[]
   otherDifferences: OtherDifference[]
   /** Display-only `advanced` keys that differ, by key: can't score, never written. */
   contextDifferences: Record<string, number>
@@ -283,9 +302,11 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
     unchanged: 0,
     zeroNewLines: 0,
     storedOnly: 0,
+    storedOnlyByPosition: {},
     updates: [],
     newRows: [],
     moves: Object.fromEntries(RULED_COLUMNS.map((column) => [column, 0])) as Record<RuledColumn, number>,
+    fromStoredValue: [],
     otherDifferences: [],
     contextDifferences: {},
     problems: [],
@@ -309,6 +330,38 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
       if (carried.length > 0) plan.problems.push(`week ${week}: player ${row.player_id} is not in players, and its line carries ${carried.join(', ')}`)
     }
   }
+  // A partial read: the provider reads each position on its own, and a 200
+  // carrying no lines for one of them looks like a week with nothing to fill.
+  const feedIds = new Set(known.map((row) => row.player_id))
+  const storedByPosition = new Map<string, number>()
+  const feedByPosition = new Map<string, number>()
+  for (const id of stored.keys()) {
+    const position = positions.get(id) ?? ''
+    storedByPosition.set(position, (storedByPosition.get(position) ?? 0) + 1)
+    if (!feedIds.has(id)) {
+      plan.storedOnly += 1
+      plan.storedOnlyByPosition[position] = (plan.storedOnlyByPosition[position] ?? 0) + 1
+    }
+  }
+  for (const id of feedIds) {
+    const position = positions.get(id) ?? ''
+    feedByPosition.set(position, (feedByPosition.get(position) ?? 0) + 1)
+  }
+  if (lines.length > 0) {
+    for (const position of FANTASY_POSITIONS) {
+      const storedLines = storedByPosition.get(position) ?? 0
+      if (storedLines > 0 && (feedByPosition.get(position) ?? 0) === 0) {
+        plan.problems.push(`week ${week}: the feed carried no ${position} lines, against ${storedLines} stored — a partial read, not a week with nothing to fill`)
+      }
+    }
+    // Only where the feed carried D/ST lines at all: the line above already names a whole missing position.
+    if ((feedByPosition.get('DEF') ?? 0) > 0) {
+      for (const id of stored.keys()) {
+        if (positions.get(id) === 'DEF' && !feedIds.has(id)) plan.problems.push(`week ${week}: the feed doesn't carry D/ST ${id}, which has a stored line — a partial read`)
+      }
+    }
+  }
+
   const unique = collapseIdenticalRows(known)
   plan.duplicates = unique.collapsed
   // F831's reading: which of two different lines to believe is not decided here.
@@ -320,11 +373,9 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
 
   const wouldBe = new Map<string, Readonly<Record<string, number | null>>>()
   for (const [id, prior] of stored) wouldBe.set(id, prior.columns)
-  const feedIds = new Set<string>()
 
   for (const row of unique.rows) {
     const id = row.player_id
-    feedIds.add(id)
     const position = positions.get(id)
     if (position === 'K') {
       plan.kLines += 1
@@ -360,7 +411,15 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
       plan.unchanged += 1
       continue
     }
-    for (const column of moved) plan.moves[column] += 1
+    for (const column of moved) {
+      plan.moves[column] += 1
+      const was = prior.columns[column] ?? 0
+      const now = row.columns[column] ?? 0
+      if (was === 0) continue
+      plan.fromStoredValue.push({ player_id: id, column, stored: was, feed: now })
+      // A fill only adds plays the old map dropped. A lower reading is a provider fix or a map that reads less.
+      if (now < was) plan.problems.push(`week ${week}: ${id} ${column} would go down from ${was} to ${now} — lowering a stored value is not a fill (a late provider fix, or a map that reads less)`)
+    }
     const ruled = Object.fromEntries(RULED_COLUMNS.map((column) => [column, row.columns[column] ?? 0]))
     // `team` stays off the line: the door leaves a column it isn't sent alone.
     plan.updates.push({ player_id: id, game_id: prior.game_id, is_live: prior.is_live, source: prior.source, advanced: prior.advanced, columns: ruled })
@@ -369,7 +428,6 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
     if (why !== undefined) plan.problems.push(`week ${week}: ${id} can't be rewritten — ${why}`)
   }
 
-  plan.storedOnly = [...stored.keys()].filter((id) => !feedIds.has(id)).length
   // Checked here as well as after the write, so a failing identity blocks the run instead of being found once it is written.
   for (const [id, columns] of wouldBe) {
     if (positions.get(id) === 'K') plan.problems.push(...kIdentityFailures(id, columns).map((failure) => `week ${week}: ${failure}`))
@@ -377,16 +435,31 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
   return plan
 }
 
-/** The mapping proof, across every requested week (PROGRESS D832(3)). */
+/**
+ * The mapping proof, across every requested week (PROGRESS D832(3)). Each arm
+ * reads only the weeks that planned lines of its kind: a week the feed left
+ * empty, or that a conflict stopped (F831), proves nothing either way. When no
+ * week did and a plan already names a problem, that problem is the reason, so
+ * the arm says nothing and the problem prints and blocks. When no week did and
+ * nothing else is wrong, the map can't be proved, which is a refusal too.
+ */
 export function mappingRefusals(plans: readonly FillWeekPlan[]): string[] {
-  const weeks = plans.map((plan) => plan.week).join(', ')
-  const total = (read: (plan: FillWeekPlan) => number): number => plans.reduce((sum, plan) => sum + read(plan), 0)
+  const explained = plans.some((plan) => plan.problems.length > 0)
   const out: string[] = []
-  if (total((plan) => plan.kLinesWithShortFg) === 0) {
-    out.push(`this checkout has no field-goal mapping: the feed for weeks ${weeks} read no fg_0_39 on any of its ${total((plan) => plan.kLines)} K lines`)
-  }
-  if (total((plan) => plan.dstLinesWithBlock) === 0) {
-    out.push(`this checkout has no blocked-kick mapping: the feed for weeks ${weeks} read no def_block on any of its ${total((plan) => plan.dstLines)} D/ST lines (if these weeks truly hold no blocked kick, request a week that does)`)
+  const arms = [
+    { kind: 'field-goal', key: 'fg_0_39', who: 'K', lines: (plan: FillWeekPlan) => plan.kLines, hits: (plan: FillWeekPlan) => plan.kLinesWithShortFg, hint: '' },
+    { kind: 'blocked-kick', key: 'def_block', who: 'D/ST', lines: (plan: FillWeekPlan) => plan.dstLines, hits: (plan: FillWeekPlan) => plan.dstLinesWithBlock, hint: ' (if these weeks truly hold no blocked kick, request a week that does)' },
+  ]
+  for (const arm of arms) {
+    const read = plans.filter((plan) => arm.lines(plan) > 0)
+    if (read.length === 0) {
+      if (!explained) out.push(`this checkout's ${arm.kind} mapping can't be proved: the feed for weeks ${plans.map((plan) => plan.week).join(', ')} planned no ${arm.who} line to read ${arm.key} on`)
+      continue
+    }
+    if (read.reduce((sum, plan) => sum + arm.hits(plan), 0) > 0) continue
+    const weeks = read.map((plan) => plan.week).join(', ')
+    const count = read.reduce((sum, plan) => sum + arm.lines(plan), 0)
+    out.push(`this checkout has no ${arm.kind} mapping: the feed for weeks ${weeks} read no ${arm.key} on any of its ${count} ${arm.who} lines${arm.hint}`)
   }
   return out
 }
@@ -585,7 +658,17 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
   }
 
   for (const plan of report.weeks) {
-    const after = await readStats(db, season, plan.week, teamColumn)
+    let after: Map<string, StatRow>
+    try {
+      after = await readStats(db, season, plan.week, teamColumn)
+    } catch (err) {
+      // The writes landed: say so, and let the report print, rather than throw past it.
+      report.afterProblems.push(
+        `could not re-read week ${plan.week}: ${err instanceof Error ? err.message : String(err)}; ${report.linesWritten} lines were written in this run; ` +
+          'nothing after this was checked — re-run (it plans against what landed) to re-check',
+      )
+      break
+    }
     report.afterProblems.push(...afterWriteProblems(plan, before.get(plan.week)!, after, positions))
   }
   const { stats, corrections } = report.door
@@ -613,22 +696,30 @@ export function renderFill(report: FillReport): string[] {
   let updated = 0
   let inserted = 0
   let others = 0
+  let fromStored = 0
   for (const plan of report.weeks) {
     updated += plan.updates.length
     inserted += plan.newRows.length
     others += plan.otherDifferences.length
+    fromStored += plan.fromStoredValue.length
     for (const column of RULED_COLUMNS) totals[column] += plan.moves[column]
+    const byPosition = Object.entries(plan.storedOnlyByPosition)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([position, count]) => `${position || 'no position'} ${count}`)
+      .join(', ')
     lines.push(
       `  week ${plan.week}: ${plan.updates.length + plan.newRows.length} lines to write (${plan.updates.length} updated, ${plan.newRows.length} new), ` +
         `${sumMoves(plan.moves)} moves: ${movesText(plan.moves)} | feed lines=${plan.feedLines} unchanged=${plan.unchanged} ` +
-        `unknownPlayers=${plan.unknownPlayers} empty=${plan.empty} repeats=${plan.duplicates} zeroNewLines=${plan.zeroNewLines} storedOnly=${plan.storedOnly}`,
+        `unknownPlayers=${plan.unknownPlayers} empty=${plan.empty} repeats=${plan.duplicates} zeroNewLines=${plan.zeroNewLines} storedOnly=${plan.storedOnly}` +
+        (byPosition === '' ? '' : ` (${byPosition})`),
     )
     for (const row of plan.newRows) lines.push(`      new line ${row.player_id}: ${ruledValues(row).join(', ')}`)
+    for (const move of plan.fromStoredValue) lines.push(`      from a stored value ${move.player_id} ${move.column}: stored ${move.stored} → feed ${move.feed}`)
     for (const other of plan.otherDifferences) lines.push(`      other (not written) ${other.player_id} ${other.key}: stored ${other.stored} → feed ${other.feed}`)
     for (const [key, count] of Object.entries(plan.contextDifferences)) lines.push(`      display-only (not written) ${key}: ${count} lines differ`)
     for (const problem of plan.problems) lines.push(`      PROBLEM: ${problem}`)
   }
-  lines.push(`  all weeks: ${updated + inserted} lines (${updated} updated, ${inserted} new), ${sumMoves(totals)} moves: ${movesText(totals)}; ${others} other-column differences`)
+  lines.push(`  all weeks: ${updated + inserted} lines (${updated} updated, ${inserted} new), ${sumMoves(totals)} moves: ${movesText(totals)}; ${fromStored} from a non-zero stored value; ${others} other-column differences`)
   if (report.mode === 'apply' && report.wrote) {
     lines.push(`  written: ${report.linesWritten} lines; queue rows ${report.door.stats.enqueued + report.door.stats.restamped}; events ${report.door.corrections.recorded + report.door.corrections.replayed + report.door.corrections.unchangedAtWrite}`)
   }
