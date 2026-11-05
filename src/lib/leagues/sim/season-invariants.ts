@@ -657,6 +657,14 @@ export function checkStandingsRecompute(a: SeasonAudit): SeasonInvariantFailure[
  * function red. The paragraph below still describes the DEFAULT season run
  * — the gate-m4 population, which drives no transactions and is unchanged.
  *
+ * **D810 SUPERSEDES THE F300 / R950 PARAGRAPHS BELOW (history, not current
+ * truth).** The day they foretold came with D496 / migration 181: the lock tick
+ * gives every rostered player a `rostered` row, so a default season run's pool
+ * is the roster mirror, and `gate-m4-evidence.ts` requires `poolRows` to equal
+ * `rosterRows`. This function's rostered arm and reconcile's
+ * `pool_mirror_broken` now judge a real population in a default run; its other
+ * arms still see rows only in a transacting run (`POOL_MIRROR_GAP`).
+ *
  * **F300 — READ THIS BEFORE TRUSTING A PASS FROM THIS FUNCTION IN A SEASON
  * RUN.** `league_player_pool` is a SPARSE table whose only writers are
  * `roster_add_drop_internal`'s two INSERTs (113:713/734, 115:646/667). The

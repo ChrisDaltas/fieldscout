@@ -8,7 +8,7 @@
  * install and secret to no one), overridable through the same
  * `SUPABASE_LOCAL_*` env names. playwright.config.ts injects them into the
  * `next dev` webServer env — explicit process env beats `.env.local` in
- * Next.js, the exact mechanism the gitignored `dev-local` launch config
+ * Next.js, the exact mechanism the gitignored `test` launch config
  * proves daily — and `auth.setup.ts` ASSERTS the app's own auth traffic
  * lands on 127.0.0.1:54321 before any spec runs.
  */
@@ -24,7 +24,7 @@ export const LOCAL_SERVICE_ROLE_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU'
 
 /** The `next dev` webServer port — dedicated to E2E (3000 = dev, 3123 =
- *  dev-local); baseURL in playwright.config.ts derives from it. */
+ *  test); baseURL in playwright.config.ts derives from it. */
 export const E2E_PORT = 4310
 
 export const E2E_BASE_URL = `http://127.0.0.1:${E2E_PORT}`

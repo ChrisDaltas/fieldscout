@@ -18,6 +18,8 @@ import { STORAGE_STATE } from './helpers/local-env'
  *   2. As the commissioner (dev@) on the manager's team: the card shows HIS
  *      own view — "On <Team>" with Propose trade, never a Drop for someone
  *      else's player (acting-as stays in the commissioner tools).
+ *   3. Pressing that Propose trade lands on the builder with nothing on top of
+ *      it, from the card, the full view and a `?player=` link (F881).
  *
  * TIME: the 2099 synthetic season's week 1, from WALL time — nothing has
  * kicked off, so no player is locked (the `inseason-week` shape).
@@ -117,6 +119,48 @@ test.describe('the player card — open from My Team, drop with confirmation (re
     await expect(actions.locator('[data-card-action="drop"]')).toHaveCount(0)
     // D481: another team's player has no "+".
     await expect(actions.locator('[data-card-action="acquire"]')).toHaveCount(0)
+    await context.close()
+  })
+  // F881: the REAL door, pressed, from everywhere it renders. `?player=` is the
+  // one that can go wrong differently: closing the view strips that param with
+  // a `router.replace`, which would discard the door's own navigation.
+  test('commissioner: pressing Propose trade shows the builder — from the card, the full view and a ?player= link', async ({ browser }) => {
+    test.setTimeout(180_000)
+    const { leagueId, managerTeamId } = fixture()
+    const context = await browser.newContext({ storageState: STORAGE_STATE.dev, viewport: { width: 1280, height: 900 } })
+    const page = await context.newPage()
+    await openTeam(page, leagueId, managerTeamId!)
+    const name = page.locator('[data-bench] [data-player-link]').first()
+    const playerId = (await name.getAttribute('data-player-link'))!
+    const onTheBuilder = async () => {
+      const url = new RegExp(`/app/leagues/${leagueId}/trades\\?with=${managerTeamId}&target=${playerId}$`)
+      await expect(page).toHaveURL(url, { timeout: 60_000 })
+      await expect(page.locator('[data-player-modal]')).toHaveCount(0)
+      await expect(page.locator('[data-card-actions="league"]')).toHaveCount(0)
+      const builder = page.locator('[data-trade-builder="propose"]')
+      await expect(builder).toBeVisible({ timeout: 60_000 })
+      await expect(builder.locator(`[data-trade-side="get"] [data-trade-pick="${playerId}"]`)).toHaveAttribute('data-picked', 'true', { timeout: 30_000 })
+      // By role: anything a dialog left open aria-hides the page and this finds nothing.
+      await expect(builder.locator('[data-trade-side="give"]').getByRole('checkbox').first()).toBeVisible()
+      await expect(page).toHaveURL(url)
+    }
+
+    // The mini card.
+    await name.click()
+    await page.locator('[data-card-actions="league"] [data-card-action="trade"]').click()
+    await onTheBuilder()
+
+    // The full player view, opened from the card.
+    await openTeam(page, leagueId, managerTeamId!)
+    await name.click()
+    await page.getByRole('button', { name: 'Open player view' }).click()
+    await page.locator(`[data-player-modal="${playerId}"] [data-card-action="trade"]`).click()
+    await onTheBuilder()
+
+    // The full player view, opened by a link.
+    await page.goto(`/app/leagues/${leagueId}/team/${managerTeamId}?player=${playerId}&league=${leagueId}`)
+    await page.locator(`[data-player-modal="${playerId}"] [data-card-action="trade"]`).click()
+    await onTheBuilder()
     await context.close()
   })
   // D481(n) (Chris 2026-10-03, "Always confirm first"; clarified: an instant

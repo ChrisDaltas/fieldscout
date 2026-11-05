@@ -833,7 +833,7 @@ decision this file would record.)*
   `.env.local` points at the **hosted production** project, so `npm run dev`
   straight out of the box drives a real users' database — LV.12 did exactly
   that and left seven soft-deleted `LV12 tmp` rows in production (**R207**).
-  Use the gitignored `.claude/launch.json` config **`dev-local`** (port 3123),
+  Use the gitignored `.claude/launch.json` config **`test`** (port 3123; `real` is the one on production data),
   which overrides `NEXT_PUBLIC_SUPABASE_URL` to `http://127.0.0.1:54321` with
   the keys from `npx supabase status`; confirm it took by checking a network
   request goes to `127.0.0.1:54321`. **State the verification environment in

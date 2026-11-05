@@ -25,6 +25,7 @@ import { tradeDeadlinePassed, useTradeDeadline } from '@/hooks/use-trade-deadlin
 import { useAddDrop } from '@/hooks/use-transactions'
 import { deriveRosterSize } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
+import { usePlayerModalStore } from '@/stores/player-modal-store'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 import { leagueCardContext, type PlayerCardContext } from './player-card-context'
@@ -47,7 +48,7 @@ import {
  * The player card's actions block (League UX batch 2, built to the Claude
  * Design prototype's PlayerCard): a line saying where he is, then the one
  * move that fits — through the verbs that already exist (`useAddDrop`,
- * `useSubmitClaim`, the trade builder's `?with=&player=` door). Every
+ * `useSubmitClaim`, the trade builder's `?with=&target=` door). Every
  * closed door says why instead of offering a button the server would
  * refuse. The commissioner sees HIS OWN team's actions only — acting for
  * another team stays in the commissioner tools.
@@ -124,6 +125,15 @@ export function RailPickup({ player, leagueId }: { player: PoolPlayer; leagueId:
   return <PickupActions view={card.view} leagueId={leagueId} teamId={card.myTeamId} inline />
 }
 
+/** The trade door leaves the page, but the player view and the mini card are
+ *  mounted at the root and would stay on top of the builder (F881), so both go
+ *  with the press. A modified click opens a new tab and changes nothing here. */
+function closeForTradeDoor(e: React.MouseEvent, playerId: string) {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+  usePlayerModalStore.getState().leavePlayerView()
+  usePlayerWindowsStore.getState().close(playerId)
+}
+
 /** The block for one computed view — exported for the render tests. */
 type MoveHandle = ReturnType<typeof useAddDrop>
 
@@ -151,7 +161,11 @@ export function LeagueActionsBody({
         (view.trade.open ? (
           <span>
             <Button variant="stroke" size="sm" asChild>
-              <Link href={tradesHref(leagueId, { teamId: view.teamId, playerId: view.row.player.id })} data-card-action="trade">
+              <Link
+                href={tradesHref(leagueId, { teamId: view.teamId, playerId: view.row.player.id })}
+                onClick={(e) => closeForTradeDoor(e, view.row.player.id)}
+                data-card-action="trade"
+              >
                 Propose trade
               </Link>
             </Button>

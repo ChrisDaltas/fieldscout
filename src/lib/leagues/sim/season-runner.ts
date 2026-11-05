@@ -420,6 +420,7 @@ export async function runSeasonSim(
     jobs: { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0, skippedOnLock: 0 },
     provenance: { statRows: 0, synthetic: 0, foreign: 0 },
     poolRows: 0,
+    rosterRows: 0,
     unmanagedSeats: 0,
     unmanagedSeatWeeksAsserted: 0,
     autopilotOnSeats: 0,
@@ -636,6 +637,7 @@ export async function runSeasonSim(
       // F300: MEASURE what invariant 4 had to work with. 0 means the
       // pool/roster mirror asserted nothing for this league.
       report.poolRows += audit.pool.length
+      report.rosterRows += audit.rosters.length
       const bridgeCounts = audit.rosters.filter((r) => bridgedIds.has(r.player_id)).length
       const startedBridged = new Set<string>()
       for (const lineup of audit.lineups) {
@@ -4318,29 +4320,27 @@ async function buildScenarioEvidence(
  * covered · WHAT CLOSES it.
  */
 export /**
- * F300 — invariant 4 (pool/roster mirror) ASSERTS NOTHING in a season run, and
- * says so here rather than passing on an empty table. `league_player_pool`'s
- * only writers are `roster_add_drop_internal`'s two INSERTs (113:713/734,
- * 115:646/667); the season harness drives no add/drop traffic, so the table is
- * empty for every sim league and `checkPoolMirror`'s loop iterates nothing —
- * it would return clean with the mirror rule deleted.
+ * F300, RE-REASONED by D810. Until 2026-10-05 invariant 4 (pool/roster mirror)
+ * asserted nothing in a season run, because `league_player_pool` was empty for
+ * every sim league; this string withdrew the claim and `gate-m4-evidence.ts`
+ * required `poolRows = 0`, so that the day the pool stopped being empty the
+ * gate would red and force this. That day was D496 / migration 181: the lock
+ * tick gives every rostered player a `rostered` row. So a default season run's
+ * pool IS the roster mirror, the rostered arm of `checkPoolMirror` and of
+ * reconcile's `pool_mirror_broken` judges a real population, and the evidence
+ * stage requires `poolRows = rosterRows` (a pool gone empty or partial reds).
  *
- * This string is the WITHDRAWAL OF THE CLAIM, and `gate-m4-evidence.ts`
- * asserts BOTH that it is present on every report AND that `report.poolRows`
- * is 0, so the withdrawal cannot be quietly dropped and the emptiness cannot
- * be quietly converted back into an apparent pass.
+ * This string now declares what is STILL not exercised, and the evidence stage
+ * still requires it on every report.
  */
 const POOL_MIRROR_GAP =
-  'INVARIANT 4 (pool/roster mirror, §12.19/D294) IS NOT EXERCISED by a season run and its clean result ' +
-  'is VACUOUS, not evidence: `league_player_pool` is written ONLY by `roster_add_drop_internal` ' +
-  '(113:713/734, 115:646/667), this harness performs no add/drops, so the table is EMPTY for every sim ' +
-  'league (`report.poolRows` — asserted 0 by the evidence stage) and the mirror loop iterates nothing. ' +
-  'R950 CORRECTS an earlier clause here that called reconcile\'s `pool_mirror_broken` the one surviving ' +
-  'live half: it is DEAD FOR THE SAME REASON — reconcile builds its pool state from the SAME empty table ' +
-  'over the SAME seeded leagues (reconcile.ts:645-647), so its first loop iterates nothing and its second ' +
-  'never sees a defined state, and a season run cannot emit that finding either. REAL coverage lives ' +
-  'elsewhere: the `roster_add_drop` door is walked by pgTAP and by L.D6.2\'s inseason-lock.spec.ts, and ' +
-  'mirror coverage itself waits on M5\'s transactions/waivers sim work. F300.'
+  'INVARIANT 4 (pool/roster mirror, §12.19/D294) IS EXERCISED ON ITS ROSTERED ARM ONLY in a default season ' +
+  'run: since D496 / migration 181 the lock tick writes a `rostered` row for every rostered player, so ' +
+  '`report.poolRows` equals `report.rosterRows` (asserted by the evidence stage, D810) and both ' +
+  '`checkPoolMirror` and reconcile\'s `pool_mirror_broken` judge that population. This harness performs no ' +
+  'add/drops, so the `free_agent` / `on_waivers` / `locked_in_game` arms see no row here. REAL coverage of ' +
+  'those arms lives in the transacting run (`--transact`, gate-m5, with `--probe pool-mirror` red by name), ' +
+  'in pgTAP, and in L.D6.2\'s inseason-lock.spec.ts. F300.'
 
 /**
  * M5 L.D3.8 — what a TRANSACTING run (`--transact`) still does not assert.

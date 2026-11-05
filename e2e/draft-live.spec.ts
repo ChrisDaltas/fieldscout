@@ -273,7 +273,9 @@ test.describe('full snake draft to completion (two live clients)', () => {
         readFinalBoardText(manager),
       ])
       expect(commishBoard).toBe(managerBoard)
-      expect(commishBoard).toContain(`${TOTAL_PICKS} picks`)
+      // v7 (a6b739f, the draft-room pass of redesign/v7): the total is a stat
+      // tile now — "Picks 16" — not the old "16 picks" line.
+      expect(commishBoard).toContain(`Picks ${TOTAL_PICKS} `)
 
       // ---- Authoritative completion state (harness reads — job 4) --------
       const picks = await readPickSheet(service, draftId)
