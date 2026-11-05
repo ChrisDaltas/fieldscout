@@ -632,6 +632,29 @@ interface ResultRow {
   is_final: boolean
 }
 
+/**
+ * `week_held`'s words for what holds the week (216 / F863). R1796: each mode
+ * names its OWN hold — an h2h week holds on a blank matchup cell (or a round
+ * with no games); a total-points week reads no matchup and holds on a seated
+ * team with no result row, finalize's `pending_results`.
+ */
+export function weekHeldHolds(
+  mode: 'h2h' | 'total_points',
+  week: number,
+  matchups: ReadonlyArray<Pick<MatchupRow, 'week' | 'away_team_id' | 'home_score' | 'away_score'>>,
+  results: ReadonlyArray<Pick<ResultRow, 'week' | 'team_id'>>,
+  teamIds: readonly string[],
+): string {
+  if (mode === 'h2h') {
+    if (!matchups.some((m) => m.week === week)) return 'its round has no games yet'
+    const blanks = matchups.filter((m) => m.week === week && (m.home_score === null || (m.away_team_id !== null && m.away_score === null))).length
+    return `${blanks} matchup(s) hold a blank score`
+  }
+  const resulted = new Set(results.filter((r) => r.week === week).map((r) => r.team_id))
+  const missing = teamIds.filter((t) => !resulted.has(t)).length
+  return `${missing} team(s) have no result row yet (pending_results)`
+}
+
 interface LineupRow {
   team_id: string
   week: number
@@ -902,15 +925,14 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
       // reason on its own report; this is the page a held week can't hide from.
       const heldWindowEnds = weekByNumber.get(week)?.correction_window_ends_at ?? null
       if (lw.status === 'correction_window' && heldWindowEnds !== null && now.getTime() - Date.parse(heldWindowEnds) > WEEK_HELD_GRACE_MS) {
-        const blanks = matchups.filter((m) => m.week === week && (m.home_score === null || (m.away_team_id !== null && m.away_score === null))).length
-        const noRows = mode === 'h2h' && !matchups.some((m) => m.week === week)
+        const holds = weekHeldHolds(mode, week, matchups, results, teams)
         findings.push({
           kind: 'week_held',
           severity: SEVERITY.week_held,
           season,
           week,
           league_id: league.id,
-          message: `league_id=${league.id} (${league.name}) week ${week} is past its correction window (${new Date(heldWindowEnds).toISOString()}) and not final — ${noRows ? 'its round has no games yet' : `${blanks} matchup(s) hold a blank score`}; finalize_matchups' report names the reason (F863)`,
+          message: `league_id=${league.id} (${league.name}) week ${week} is past its correction window (${new Date(heldWindowEnds).toISOString()}) and not final — ${holds}; finalize_matchups' report names the reason (F863)`,
         })
       }
       // THE WEEK's rules (144 / F397 — Chris: "F397 yes build it"): a finished

@@ -4,8 +4,9 @@
 -- blank until they've actually been scored." "Updates that were lost get scored
 -- again." "A week can't close while it's still owed a score.").
 --
---   §A  Form: the columns, DEFINER / search_path / REVOKE per function, refused
---       callers, no write policy per role with RETURNING counts (§4.1 / §4.2).
+--   §A  Form: the columns, DEFINER / search_path / REVOKE per function (the
+--       one-time backfill closed to service_role too, R1795), refused callers,
+--       no write policy per role with RETURNING counts (§4.1 / §4.2).
 --   §B  THE BACKFILL on a fixture shaped like production: 1 league, 12 teams,
 --       weeks 1–7 final, week 8 correction_window, week 9 live, weeks 10–14
 --       upcoming. Never-scored 0s go blank; a written 0, a non-zero, an
@@ -32,7 +33,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(79);
+select plan(80);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select '00000000-0000-0000-0000-000000000000', ('99166000-0000-4000-8000-00000000000' || i)::uuid, 'authenticated', 'authenticated',
@@ -153,6 +154,14 @@ select is(
      'week_scores_owed_internal', 'matchups_blank_never_scored_internal', 'finalize_matchups', 'score_fanout_ack')),
   'finalize_matchups=t:search_path="":f:f league_week_close_stamp=t:search_path="":f:f league_week_scores_digest_internal=f:search_path="":f:f league_weeks_to_close=t:search_path="":f:f matchups_blank_never_scored_internal=f:search_path="":f:f score_fanout_ack=t:search_path="":f:f week_scores_owed_internal=f:search_path="":f:f',
   'A3 the worker''s doors DEFINER + search_path '''' + closed to anon and authenticated; helpers plain + closed');
+-- R1795: the backfill ran once inside 216; a stray call later would re-blank an
+-- empty-lineup team's real 0 in a non-final week. No API role may run it —
+-- service_role included; the owner keeps it (§B runs the rule as the owner).
+select is(
+  (select string_agg(r || '=' || has_function_privilege(r, 'public.matchups_blank_never_scored_internal()', 'EXECUTE'), ' ' order by r)
+   from unnest(array['anon', 'authenticated', 'public', 'service_role']) r),
+  'anon=false authenticated=false public=false service_role=false',
+  'A3b R1795: the one-time backfill is closed to every API role after its run, service_role included');
 select pg_temp.mk('A');
 select pg_temp.pair('A');
 select set_config('request.jwt.claims', json_build_object('sub', '99166000-0000-4000-8000-000000000001', 'role', 'authenticated')::text, true);

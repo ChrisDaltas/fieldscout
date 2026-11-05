@@ -84,8 +84,9 @@
 -- close pass writes the same 0 back. Non-zero cells, overridden rows and final
 -- weeks are never touched, whatever else is true.
 --
--- SAFE TO PUSH MID-GAME. The file takes matchups' write lock first, so no door
--- call can interleave with the backfill. A live team that was never scored goes
+-- SAFE TO PUSH MID-GAME. The file takes league_weeks' and matchups' ACCESS
+-- EXCLUSIVE locks first, in the door's order (R1791), so no door call can
+-- interleave with the backfill and none can deadlock with the file. A live team that was never scored goes
 -- from "0.00" to pending; its next update writes the number. A team already
 -- scored is untouched. `updated_at` is left alone (nothing was scored). The
 -- archive freeze (212) is lifted for the one statement only: an archived
@@ -116,13 +117,36 @@
 --   * Rollback: restore the four bodies from their files, DROP the five new
 --     functions and two columns, `ALTER COLUMN … SET DEFAULT 0` on both scores.
 --     Blank cells then stay blank until scored, which reads correctly.
+--     THE APP CAN'T ROLL BACK ALONE (R1792): an app older than the F863 merge
+--     has no close pass, so with this file in place nothing calls
+--     league_week_close_stamp and every league's week holds as
+--     scores_owed / never_closed. Roll the app back only with this rollback.
+--   * FIRST PASS AFTER THE PUSH (R1792): it recomputes every team of an open
+--     correction-window week from the stored stats, so a cell reconcile calls
+--     `drift` moves on screen. Pre-push check: reconcile week 8, zero drift.
 -- pgTAP 166_lost_scores.sql; stack vitest lost-scores-db.test.ts.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
--- 1. The columns, under matchups' write lock (nothing interleaves)
+-- 1. The columns, under both tables' ACCESS EXCLUSIVE lock (nothing interleaves)
 -- ---------------------------------------------------------------------------
-LOCK TABLE public.matchups IN SHARE ROW EXCLUSIVE MODE;
+-- R1791: every lock this file needs on the two tables, taken FIRST and at the
+-- strongest mode its statements need (ALTER TABLE is ACCESS EXCLUSIVE), so no
+-- statement below upgrades a lock it already holds. The order is the order the
+-- write door and finalize touch them in: `score_write_week_batch` (177) reads
+-- league_weeks (its step 4) before it writes matchups, and `finalize_matchups`
+-- (below, 212's body) takes league_weeks FOR UPDATE before it reads or writes
+-- matchups — so a door or finalize call in flight is waited out before this
+-- file holds anything on matchups (one that already holds matchups holds
+-- league_weeks too). Any other session that touches matchups BEFORE
+-- league_weeks can still meet the file in a deadlock; Postgres aborts one side,
+-- and if that is this file the whole push rolls back and is simply re-run.
+-- Before this, 216 took SHARE ROW EXCLUSIVE on matchups
+-- and then needed ACCESS EXCLUSIVE for the ALTER: a session that had read both
+-- tables and then UPDATEd matchups deadlocked with it (the review's probe).
+-- Both locks are held to the end of the file, so the backfill (§2) runs under
+-- them; ACCESS EXCLUSIVE on both was already held from the ALTERs to COMMIT.
+LOCK TABLE public.league_weeks, public.matchups IN ACCESS EXCLUSIVE MODE;
 
 ALTER TABLE matchups ALTER COLUMN home_score DROP DEFAULT;
 ALTER TABLE matchups ALTER COLUMN away_score DROP DEFAULT;
@@ -176,11 +200,16 @@ END;
 $$;
 REVOKE ALL ON FUNCTION matchups_blank_never_scored_internal() FROM PUBLIC, anon, authenticated;
 COMMENT ON FUNCTION matchups_blank_never_scored_internal() IS
-  'Migration 216 (F273, D821): the one-time backfill rule — a cell that is exactly 0 with no stored per-player row for its team-week, on a row not overridden and not final, in a week not final, becomes blank. Run once by migration 216, under the matchups lock. Its return is the rows it touched.';
+  'Migration 216 (F273, D821): the one-time backfill rule — a cell that is exactly 0 with no stored per-player row for its team-week, on a row not overridden and not final, in a week not final, becomes blank. Run once by migration 216, under the matchups lock; then REVOKEd from every API role, service_role included (R1795). Its return is the rows it touched.';
 
 ALTER TABLE matchups DISABLE TRIGGER tr_aa_league_archived_guard;
 SELECT public.matchups_blank_never_scored_internal();
 ALTER TABLE matchups ENABLE TRIGGER tr_aa_league_archived_guard;
+-- R1795: run once — then no API role may run it again. A stray call would
+-- re-blank an empty-lineup team's real 0 in a week not yet final. REVOKEd from
+-- service_role too (it keeps the owner's EXECUTE, so pgTAP 166 still runs the
+-- rule on its fixture as the owner); 166 pins that no API role holds EXECUTE.
+REVOKE ALL ON FUNCTION matchups_blank_never_scored_internal() FROM service_role;
 
 -- ---------------------------------------------------------------------------
 -- 3. The digest and the hold

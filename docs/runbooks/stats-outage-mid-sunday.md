@@ -41,11 +41,28 @@ report says why, in `skipped`: `games_not_final` · `recently_restored` ·
 pass; it clears itself within a minute or two once `score-week-ping` runs) ·
 `round_not_built` (a playoff round has no games yet: read `bracket_waiting` /
 `bracket_blocked` on the same report). A week the close pass can't close is an
-alert in the `score-week` log (`CLOSE FAILED`), retried every minute. A team
+alert in the `score-week` log (`CLOSE FAILED`), retried every minute; a close
+pass that errors outright (a timeout, a lost connection) is one `CLOSE PASS
+ERROR` alert there, and scoring keeps running that minute. In a total-points
+league the blank-score hold is `pending_results` (a team with no result row
+yet). A team
 stuck on a failed save retries every 5 minutes (`QUARANTINED` in the same log),
 and a new stat update for that player retries it at once. No stat line for any
 player that week means the feed never arrived: nothing is zero-filled, wait for
 the feed. There is no "finalize anyway" (M8 ruled it out): take it to Chris.
+
+**After migration 216 is pushed (F863, once):**
+
+- The first close pass recomputes **every** team of an open correction-window
+  week (week 8 on push day) from the stored stats, so any score that was
+  already wrong moves on screen at that minute. Before the push, run
+  `npm run reconcile -- <season>` and check week 8 shows **zero `drift`**; a
+  drift cell is a score that will change, and it is Chris's call first.
+- **The app can't be rolled back past the F863 merge while 216 is in the
+  database.** The older app has no close pass, nothing would record a week's
+  close, and every league's week would sit held as `scores_owed`
+  (`never_closed`). Roll the app back only with 216's own rollback (its
+  banner), or fix forward.
 
 ## What you cannot do (not built in 2026)
 

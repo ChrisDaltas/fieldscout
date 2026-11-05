@@ -30,7 +30,9 @@
  *      the first drain: `runCloseScoring` scores every team of each
  *      correction-window week that needs it and records what it read, which is
  *      what lets `finalize_matchups` close the week. A league-week it can't
- *      close is an ALERT by name; a database without 216 is INFO.
+ *      close is an ALERT by name; a database without 216 is INFO. A pass that
+ *      THROWS is one `CLOSE PASS ERROR` alert and the drain loop carries on
+ *      (R1790) — the close never costs the minute its scoring.
  *   3. REPEAT while the budget allows: immediately when the claim came back
  *      FULL (`more`), else after `DRAIN_INTERVAL_MS`; STOP early when the
  *      queue is empty AND no game window is hot (the same table-derived
@@ -132,6 +134,12 @@ export function classifyClose(report: CloseScoringReport): DrainVerdict {
   return { alerts, infos }
 }
 
+/** R1790: the one alert a THROWN close pass becomes — the drain loop carries on. */
+export function closePassErrorAlert(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  return `CLOSE PASS ERROR: ${message} — the pass stopped there; any week it had not closed stays held (scores_owed) and is retried next invocation; draining continues (F863 / R1790)`
+}
+
 // ── The invocation ─────────────────────────────────────────────────────────
 
 export interface ScoreWeekInvokerDeps {
@@ -156,7 +164,7 @@ export interface ScoreWeekInvocationReport {
   started_at: string
   finished_at: string
   drains: BatchReport[]
-  /** The close pass's report (F863), null if the invocation died before it. */
+  /** The close pass's report (F863); null if the pass threw (its `CLOSE PASS ERROR` alert says why — R1790) or the invocation died before it. */
   close: CloseScoringReport | null
   alerts: string[]
   infos: string[]
@@ -179,6 +187,7 @@ export async function runScoreWeekInvocation(deps: ScoreWeekInvokerDeps): Promis
     infos: [],
     stopped: null,
   }
+  let closeTried = false
 
   for (;;) {
     const batch = await drain(
@@ -190,11 +199,21 @@ export async function runScoreWeekInvocation(deps: ScoreWeekInvokerDeps): Promis
     report.alerts.push(...verdict.alerts)
     report.infos.push(...verdict.infos)
 
-    if (report.close === null) {
-      report.close = await closeWeeks({ time: deps.time, db: deps.db })
-      const closeVerdict = classifyClose(report.close)
-      report.alerts.push(...closeVerdict.alerts)
-      report.infos.push(...closeVerdict.infos)
+    if (!closeTried) {
+      closeTried = true
+      // R1790: the close pass never costs the drain. Anything it throws (a
+      // `league_weeks_to_close` error other than "not deployed", a read inside
+      // `scoreLeagueWeek`, any `league_week_close_stamp` error) is ONE alert and
+      // the loop keeps draining; a week it did not reach stays held (finalize's
+      // `scores_owed`) and the next invocation's pass retries it.
+      try {
+        report.close = await closeWeeks({ time: deps.time, db: deps.db })
+        const closeVerdict = classifyClose(report.close)
+        report.alerts.push(...closeVerdict.alerts)
+        report.infos.push(...closeVerdict.infos)
+      } catch (err) {
+        report.alerts.push(closePassErrorAlert(err))
+      }
     }
 
     if (batch.reason === 'queue_empty' && !(await deps.isHot())) {

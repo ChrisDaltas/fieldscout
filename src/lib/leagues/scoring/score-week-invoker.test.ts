@@ -11,6 +11,7 @@ import {
   classifyClose,
   classifyDrain,
   CLOCK_SKEW_SECONDS,
+  closePassErrorAlert,
   DRAIN_INTERVAL_MS,
   runScoreWeekInvocation,
   SCORE_WEEK_BUDGET_MS,
@@ -149,7 +150,7 @@ describe('classifyClose (F863)', () => {
 })
 
 describe('runScoreWeekInvocation — the minute-invocation loop', () => {
-  function harness(drains: BatchReport[], hot: boolean, closeReport: CloseScoringReport = emptyClose) {
+  function harness(drains: BatchReport[], hot: boolean, closeReport: CloseScoringReport | (() => Promise<CloseScoringReport>) = emptyClose) {
     let closes = 0
     const clock = new VirtualClock(new Date('2099-09-13T20:00:00.000Z'))
     const calls: string[] = []
@@ -166,7 +167,7 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
       isHot: async () => hot,
       closeWeeks: async () => {
         closes += 1
-        return closeReport
+        return typeof closeReport === 'function' ? closeReport() : closeReport
       },
       drain: async (_deps, opts) => {
         calls.push(`${opts?.leaseSeconds}/${opts?.batchSize}/${opts?.deferSeconds}`)
@@ -206,6 +207,58 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
     })
     const out = await h.promise
     expect(out.alerts).toEqual(['league_id=L week=9 CLOSE FAILED: snapshot_missing — the week stays held (F863); retried next pass'])
+  })
+
+  // R1790: before the fix a throwing close pass rejected the whole invocation
+  // after its FIRST drain (the route answered 500) — in a game window scoring
+  // fell from every 5 s to once a minute for as long as the cause lasted.
+  it('R1790: a close pass that THROWS is one alert; a hot window keeps draining for the whole budget', async () => {
+    const timeout = new Error('league_weeks_to_close: canceling statement due to statement timeout')
+    const h = harness([report({ reason: 'queue_empty' })], true, async () => {
+      throw timeout
+    })
+    const out = await h.promise
+    expect(out.drains).toHaveLength(8) // the same 8 drains as the no-error hot window below
+    expect(out.stopped).toBe('budget')
+    expect(h.closes()).toBe(1) // tried once per invocation, not once per drain
+    expect(out.close).toBeNull()
+    expect(out.alerts).toEqual([closePassErrorAlert(timeout)])
+    expect(out.alerts[0]).toBe(
+      'CLOSE PASS ERROR: league_weeks_to_close: canceling statement due to statement timeout — the pass stopped there; any week it had not closed stays held (scores_owed) and is retried next invocation; draining continues (F863 / R1790)',
+    )
+  })
+
+  it('R1790: the real pass over a timing-out read (57014) — the invocation resolves, it does not reject', async () => {
+    const clock = new VirtualClock(new Date('2099-09-13T20:00:00.000Z'))
+    let drains = 0
+    const timingOut = { rpc: async () => ({ data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } }) } as never
+    const out = await runScoreWeekInvocation({
+      db: {} as never,
+      time: clock,
+      sleep: async (ms) => {
+        clock.advanceBy(ms)
+      },
+      lastPollCompletedAt: async () => null,
+      isHot: async () => true,
+      closeWeeks: (deps) => runCloseScoring({ ...deps, db: timingOut }),
+      drain: async () => {
+        drains += 1
+        clock.advanceBy(1_000)
+        return report({ reason: 'queue_empty' })
+      },
+    })
+    expect(drains).toBe(8)
+    expect(out.alerts).toEqual(['CLOSE PASS ERROR: league_weeks_to_close: canceling statement due to statement timeout — the pass stopped there; any week it had not closed stays held (scores_owed) and is retried next invocation; draining continues (F863 / R1790)'])
+  })
+
+  it('R1790: idle, a throwing pass still ends the invocation normally after one drain', async () => {
+    const h = harness([report({ reason: 'queue_empty' })], false, async () => {
+      throw new Error('league_week_close_stamp (L week 9): connection reset')
+    })
+    const out = await h.promise
+    expect([out.drains.length, out.stopped, out.close]).toEqual([1, 'queue_empty_idle', null])
+    expect(out.alerts).toHaveLength(1)
+    expect(out.alerts[0]).toMatch(/^CLOSE PASS ERROR: league_week_close_stamp \(L week 9\): connection reset/)
   })
 
   it('an empty queue INSIDE a game window keeps draining every 5 s for the budget (§14: 5–10 s)', async () => {
