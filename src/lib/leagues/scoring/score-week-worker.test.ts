@@ -36,6 +36,7 @@ import {
 } from './score-week-worker'
 import { forkTemplateDoc, resolveRules } from './rules-doc'
 import { SCORING_TEMPLATES } from './templates'
+import { POSITION_SCORABLE_KEYS, validateScoringRulesDoc } from './validate-rules-doc'
 
 const template = (name: string): Record<string, number> => {
   const found = SCORING_TEMPLATES.find((t) => t.name === name)
@@ -223,6 +224,24 @@ describe('E61 — pending, never zero; scoped to what the position can deliver',
     for (const key of ADVANCED_KEYS) {
       expect(applicableKeys('K').has(key)).toBe(true) // advanced keys apply everywhere until the registry says otherwise (F263)
     }
+  })
+
+  it('F871 a kicker delivers his rushing yards at the document\'s base value, and the scope law stands: no K override, no other position gains them', () => {
+    const rusher = row('sw-k2', { rush_yards: 6 })
+    expect(applicableKeys('K').has('rush_yards')).toBe(true)
+    expect(deliveredLine(rusher, 'K').rush_yards).toBe(6)
+    expect(scoreStarter(ESPN, 'sw-k2', 'K', rusher)).toEqual({ player_id: 'sw-k2', position: 'K', points: 0.6, pending: [], reason: 'scored' })
+    const fork = forkTemplateDoc(ESPN)
+    fork.base.rush_yards = 0.25
+    expect(scoreStarter(fork, 'sw-k2', 'K', rusher).points).toBe(1.5)
+    // Delivery only: guardrail 3 and Q12 are untouched.
+    expect(POSITION_SCORABLE_KEYS.K).not.toContain('rush_yards')
+    const refused = validateScoringRulesDoc({ ...forkTemplateDoc(ESPN), positions: { K: { rush_yards: 0.5 } } })
+    expect(refused.valid).toBe(false)
+    // A kicker's other offense plays stay out of scope, and a D/ST gains nothing.
+    expect(applicableKeys('K').has('rush_tds')).toBe(false)
+    expect(applicableKeys('DST').has('rush_yards')).toBe(false)
+    expect(deliveredLine(row('sw-d', { rush_yards: 6 }), 'DST')).not.toHaveProperty('rush_yards')
   })
 
   it('a QB row’s def_points_allowed column (0 — the surface default) can never one-hot a shutout tier: the D/ST sources are delivered to D/ST lines only', () => {

@@ -182,7 +182,8 @@
  *   `def_points_allowed`). A rules key outside the position's scope is
  *   INAPPLICABLE — neither delivered nor pending. Advanced keys (§23.5
  *   storage `advanced`) apply to every position until the registry says
- *   otherwise (F263).
+ *   otherwise (F263). One addition to the scope, delivery only: a kicker's
+ *   rushing yards (F871, `deliverableKeys`). The law itself doesn't move.
  *
  * CORRUPT SNAPSHOT (D292's posture, decided): a snapshot that does not
  * resolve (`resolveRules` throws on a bad envelope) or does not score
@@ -264,15 +265,26 @@ function isScoringPosition(position: string): position is ScoringPosition {
 }
 
 /**
- * The rules keys a player of `position` can DELIVER — the validator's
- * position-scope law (§7.3.3.1 guardrail 3) plus the advanced keys. A rules
- * key outside this set is inapplicable to him: not delivered, not pending.
- * A position outside the six (an IDP slot) has no scorable key in the
- * registry; only advanced keys can apply.
+ * The column keys a player of `position` delivers: the validator's scope law
+ * (§7.3.3.1 guardrail 3), plus a kicker's rushing yards (F871; Chris 2026-11-05:
+ * "go on league kickers and the other plays"). Those pay at the document's base
+ * `rush_yards`, as on ESPN, Yahoo and Sleeper, which have one rushing rule for
+ * every position. `POSITION_SCORABLE_KEYS` and both validators don't change, so a
+ * K override of it is still refused and K stays one page (Q12).
+ */
+function deliverableKeys(position: string): readonly string[] {
+  if (!isScoringPosition(position)) return []
+  return position === 'K' ? [...POSITION_SCORABLE_KEYS.K, 'rush_yards'] : POSITION_SCORABLE_KEYS[position]
+}
+
+/**
+ * The rules keys a player of `position` can DELIVER: `deliverableKeys` plus the
+ * advanced keys. A rules key outside this set is inapplicable to him: not
+ * delivered, not pending. A position outside the six (an IDP slot) has no
+ * scorable key in the registry; only advanced keys can apply.
  */
 export function applicableKeys(position: string): ReadonlySet<string> {
-  const scoped = isScoringPosition(position) ? POSITION_SCORABLE_KEYS[position] : []
-  return new Set([...scoped, ...ADVANCED_KEYS])
+  return new Set([...deliverableKeys(position), ...ADVANCED_KEYS])
 }
 
 // ── Instants (R867) ────────────────────────────────────────────────────────
@@ -329,7 +341,7 @@ export interface StatLineRow {
  */
 export function deliveredLine(row: StatLineRow, position: string): Record<string, number> {
   const raw: Record<string, number> = {}
-  const scoped = isScoringPosition(position) ? POSITION_SCORABLE_KEYS[position] : []
+  const scoped = deliverableKeys(position)
   const columnKeys = position === 'DST' ? [...scoped, ...DST_SOURCE_KEYS] : scoped
   for (const key of columnKeys) {
     const column = COLUMN_BY_KEY.get(key)
