@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { DEFAULT_SCORING_SYSTEM, SCORING_SYSTEM_KEYS, type ScoringSystemKey } from '@/lib/players/core-stats-ops'
 import { computePoolStandings, type PoolCache, readPlayerCoreStats, systemRules } from '@/lib/players/core-stats-service'
+import { presetLines } from '@/lib/players/preset-scoring'
 import { createServerClient } from '@/lib/supabase/server'
 import type { Database } from '@/types/database'
 
@@ -33,7 +34,7 @@ const poolCache: PoolCache = (system: ScoringSystemKey, season: number, week: nu
       const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
       if (!url || !key) throw new Error('supabase env missing')
       const anon = createClient<Database>(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
-      return computePoolStandings(anon, systemRules(system), new Map(), season, week)
+      return computePoolStandings(anon, systemRules(system), new Map(), season, week, presetLines)
     },
     ['player-core-stats-pool', system, String(season), String(week)],
     { revalidate: 300 },

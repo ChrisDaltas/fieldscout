@@ -198,7 +198,7 @@ export const COLUMNS: readonly ColDef[] = [
   { key: 'catch', group: 'arec', chip: 'Catch %', abbr: 'Ctch%', name: 'Catch rate', desc: 'Receptions divided by targets.' },
   { key: 'fgm', group: 'kick', chip: 'FG made', abbr: 'FGM', name: 'Field goals made', desc: 'Field goals made.', only: 'research' },
   { key: 'fga', group: 'kick', chip: 'FG att', abbr: 'FGA', name: 'Field goals attempted', desc: 'Field goal tries.', only: 'research' },
-  { key: 'fg40', group: 'kick', chip: 'FG 40+', abbr: 'FG40', name: 'Field goals 40+ yards', desc: 'Field goals made from 40 yards or more.', only: 'research' },
+  { key: 'fg40', group: 'kick', chip: 'FG 40–49', abbr: 'FG40', name: 'Field goals 40–49 yards', desc: 'Field goals made from 40 to 49 yards.', only: 'research' },
   { key: 'fg50', group: 'kick', chip: 'FG 50+', abbr: 'FG50', name: 'Field goals 50+ yards', desc: 'Field goals made from 50 yards or more.', only: 'research' },
   { key: 'xpm', group: 'kick', chip: 'XP made', abbr: 'XPM', name: 'Extra points made', desc: 'Extra points made.', only: 'research' },
   { key: 'xpa', group: 'kick', chip: 'XP att', abbr: 'XPA', name: 'Extra points attempted', desc: 'Extra point tries.', only: 'research' },

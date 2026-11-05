@@ -46,7 +46,7 @@ The four features are **not peers.** They form a dependency chain:
 | Service-role admin client | `src/lib/supabase/admin.ts` | System-written persona/content tables need service-role writes — client already exists. |
 | Sleeper data client | `src/lib/sports-data/sleeper.ts` | Player pool, injury status, ADP for the data packets. |
 | Stats layer | `src/lib/stats/fetch-weekly-stats.ts`, `aggregate-fantasy.ts` | Recent-form + prior-season inputs for data packets. |
-| Scoring engine | `src/lib/scoring/default.ts`, `vorp.ts` | Fantasy-point context for rankings and Ask AI. |
+| Scoring engine | `src/lib/players/preset-scoring.ts`, `src/lib/scoring/vorp.ts` | Fantasy-point context for rankings and Ask AI. |
 | Snapshot pattern | `010_big_board_snapshots.sql` | Directly reused by `persona_context_versions` and persona list snapshots. |
 | Dev Pro user | `NEXT_PUBLIC_DEV_AUTH_EMAIL=dev-pro@fieldscout.local` | Lets you exercise Pro-gated AI locally before Stripe exists. |
 

@@ -53,6 +53,25 @@ describe('0.25 PPR pool', () => {
     expect(out.find((p) => p.id === 'b')?.current_pts).toBe(30)
   })
 
+  it('a K or D/ST keeps the Standard pool points: a sum can\'t be tiered, and a catch is worth nothing to them', () => {
+    // Bass 2026 wk1 season totals: the old formula on these totals paid 16.
+    const k = player('k', {
+      position: 'K',
+      current_pts: 13,
+      current_games: 1,
+      stats_current: { fg_made: 3, fg_attempted: 3, fg_made_40_plus: 1, fg_made_50_plus: 0, xp_made: 3, xp_attempted: 3 },
+    })
+    const dst = player('d', { position: 'DEF', current_pts: 3, current_games: 2, stats_current: { def_sacks: 4, def_interceptions: 1 } })
+    const out = quarterPool([k, dst], [k, dst])
+    expect(out.find((p) => p.id === 'k')?.current_pts).toBe(13)
+    expect(out.find((p) => p.id === 'd')?.current_pts).toBe(3)
+  })
+
+  it('a stored 2-pt total with no split still pays in 0.25 PPR', () => {
+    const qb = player('q', { position: 'QB', stats_current: { pass_yards: 100, two_point_conversions: 1 } })
+    expect(quarterPool([qb], [qb])[0]?.current_pts).toBe(6)
+  })
+
   it('projects the midpoint of Standard and Half PPR, and re-sorts by it', () => {
     const out = quarterPool(std, half)
     expect(out.map((p) => [p.id, p.projected_pts])).toEqual([

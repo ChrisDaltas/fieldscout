@@ -500,13 +500,18 @@ function EditorBody({
   // re-reads the whole list nor blanks its rows: only the new player's
   // cells wait.
   const latest = useMobileListsLatestWeek(stats.length > 0 || scoring !== 'ppr')
-  const baseIds = React.useMemo(() => draft.base.players.map((entry) => entry.player_id), [draft.base])
-  const addedIds = React.useMemo(() => {
-    const inBase = new Set(baseIds)
-    return ids.filter((id) => !inBase.has(id))
-  }, [ids, baseIds])
-  const framesBase = useMobileListsTimeframeStats(baseIds, latest.data, scoring !== 'ppr')
-  const framesAdded = useMobileListsTimeframeStats(addedIds, latest.data, scoring !== 'ppr', false, { keepPrevious: true })
+  const basePlayers = React.useMemo(
+    () => draft.base.players.map((entry) => ({ id: entry.player_id, position: entry.player.position })),
+    [draft.base],
+  )
+  const addedPlayers = React.useMemo(() => {
+    const inBase = new Set(basePlayers.map((player) => player.id))
+    return draft.entries
+      .filter((entry) => !inBase.has(entry.player_id))
+      .map((entry) => ({ id: entry.player_id, position: entry.player.position }))
+  }, [draft.entries, basePlayers])
+  const framesBase = useMobileListsTimeframeStats(basePlayers, latest.data, scoring !== 'ppr')
+  const framesAdded = useMobileListsTimeframeStats(addedPlayers, latest.data, scoring !== 'ppr', false, { keepPrevious: true })
   const failed = [ranksRead, latest, framesBase, framesAdded].filter((query) => query.isError)
   const lineOf = (entry: ListPlayerWithPlayer) => {
     const id = entry.player_id

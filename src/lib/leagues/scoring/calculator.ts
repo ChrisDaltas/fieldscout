@@ -15,8 +15,9 @@
  * a real `perKey: 0` entry and absent from `pending` (see derive-stats for
  * why cold tier buckets are delivered-zero, F20).
  *
- * NOT the legacy calculator: src/lib/scoring/default.ts serves research
- * surfaces in its own column-name namespace and is untouched by M1 (D33).
+ * The one calculator (D33). K0 deleted the legacy one; src/lib/scoring/default.ts
+ * now holds only the values the settings editor shows, in its own column-name
+ * namespace.
  */
 
 export interface ScoreBreakdown {

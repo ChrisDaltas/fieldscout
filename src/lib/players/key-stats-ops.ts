@@ -147,7 +147,7 @@ const BY_POSITION: Record<string, { primary: Def[]; more: Def[] }> = {
           i.totals.fg_made === undefined || i.totals.fg_attempted === undefined ? null : `${int(i.totals.fg_made)}/${int(i.totals.fg_attempted)}`,
       },
       { key: 'fg_pct', label: 'FG %', value: (i) => fmt(completionPct(i.totals.fg_made, i.totals.fg_attempted), (n) => `${one(n)}%`) },
-      { key: 'fg_40', label: 'FG 40+', value: total('fg_made_40_plus') },
+      { key: 'fg_40', label: 'FG 40–49', value: total('fg_made_40_plus') },
       { key: 'fg_50', label: 'FG 50+', value: total('fg_made_50_plus') },
       {
         key: 'xp',
