@@ -173,7 +173,8 @@ export function useLastSeasonPoints(playerIds: string[], scoring: ScoringKey) {
       const supabase = createBrowserClient()
       const stats = await aggregateFantasyStats(supabase, ids, scoring)
       const out = new Map<string, number>()
-      for (const [id, s] of stats) out.set(id, s.last_pts)
+      // No number (a K or D/ST with no scored game) hides the chip, never a 0.
+      for (const [id, s] of stats) if (s.last_pts !== null) out.set(id, s.last_pts)
       return out
     },
   })

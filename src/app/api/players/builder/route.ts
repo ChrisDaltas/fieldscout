@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { BUILDER_STATS_SELECT, BUILDER_TOTAL_COLUMNS, builderSeasonPoints, PRESET_BY_BUILDER_KEY } from '@/lib/players/preset-scoring'
+import { BUILDER_STATS_SELECT, BUILDER_TOTAL_COLUMNS, PRESET_BY_BUILDER_KEY, presetLines, presetSeasonDisplay } from '@/lib/players/preset-scoring'
 import { currentSeasonHasGames, defaultStatsSeason } from '@/lib/players/stats-season'
 import type { StatLineRow } from '@/lib/leagues/scoring/score-week-worker'
 import { fetchWeeklyStatsForPlayers } from '@/lib/stats/fetch-weekly-stats'
@@ -50,7 +50,7 @@ type SumAccumulator = Record<string, number> & {
 }
 
 /** Raw totals only — points are NOT computed from these (F576: each week
- *  is scored on its own by `builderSeasonPoints`). */
+ *  is scored on its own by `presetSeasonDisplay`). */
 function addRowToAccumulator(acc: SumAccumulator, row: Record<string, unknown>) {
   for (const k of BUILDER_TOTAL_COLUMNS) acc[k] = (acc[k] ?? 0) + Number(row[k] ?? 0)
   acc.__games = (acc.__games ?? 0) + 1
@@ -179,8 +179,12 @@ export async function GET(request: Request) {
     list.push(row as StatLineRow)
     m.set(pid, list)
   }
-  for (const row of stats) {
-    const pid = row.player_id as string
+  const positionOf = new Map(players.map((p) => [p.id as string, String(p.position ?? '')]))
+  for (const stored of stats) {
+    const pid = stored.player_id as string
+    // A refused game is not a game (K0): no points, no count, no totals.
+    const [row] = presetLines(positionOf.get(pid) ?? '', [stored])
+    if (!row) continue
     const isMock = row.source === 'mock'
     if (row.season === CURRENT_SEASON) {
       pushLine(lines.current, pid, row)
@@ -225,12 +229,13 @@ export async function GET(request: Request) {
     const lastGames = lastAcc.__games ?? 0
 
     // F576: the player page's scorer — each week alone, canonical engine,
-    // the shipped ESPN template rules. No lines → 0 here (the games count
-    // beside it says "none"), the route's long-standing number contract.
+    // the shipped ESPN template rules. No scored game → 0 here (the games
+    // count beside it says "none"), the route's long-standing number
+    // contract; a K or D/ST with 0 games prints as a dash on every reader.
     const position = String(player.position ?? '')
-    const currentPts = builderSeasonPoints(preset, id, position, lines.current.get(id) ?? [])
-    const livePts = builderSeasonPoints(preset, id, position, lines.live.get(id) ?? [])
-    const lastPts = builderSeasonPoints(preset, id, position, lines.last.get(id) ?? [])
+    const currentPts = presetSeasonDisplay(preset, position, lines.current.get(id) ?? []) ?? 0
+    const livePts = presetSeasonDisplay(preset, position, lines.live.get(id) ?? []) ?? 0
+    const lastPts = presetSeasonDisplay(preset, position, lines.last.get(id) ?? []) ?? 0
 
     // Projection rule (don't undo this — the comment is load-bearing):
     //   - Real (non-mock) current-season games → extrapolate live pace.

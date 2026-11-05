@@ -18,7 +18,7 @@ import {
   type PersonaForContext,
 } from '@/lib/personas/context'
 import { activeThemes, type PostTheme } from '@/lib/personas/themes'
-import { CURRENT_SEASON } from '@/lib/stats/aggregate-fantasy'
+import { CURRENT_SEASON } from '@/lib/stats/seasons'
 import {
   generatedPostSchema,
   type GeneratedPost,

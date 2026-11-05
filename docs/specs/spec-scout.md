@@ -957,8 +957,8 @@ regardless of your league's rules. A weight needs two inputs:
 > **Relevance** — does it turn into points in *my* format? Computed, format-dependent.
 
 **Relevance must be backtested, not chosen.** FieldScout already has everything needed:
-`src/lib/scoring/default.ts` carries `PPR_SCORING` / `HALF_PPR_SCORING` /
-`STANDARD_SCORING`, and there is a generic dot-product calculator. The sync scores
+`src/lib/players/preset-scoring.ts` scores any stored game under Standard, Half PPR
+and PPR (the canonical engine and the shipped ESPN templates). The sync scores
 historical player-seasons at each PPR step and correlates each metric against
 **next-season** points at that setting. No new machinery, no hand-tuned numbers.
 

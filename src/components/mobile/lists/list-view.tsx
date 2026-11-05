@@ -431,7 +431,7 @@ function PlayersTable({
   // weekly rows too).
   const latest = useMobileListsLatestWeek(hasStats)
   const frames = useMobileListsTimeframeStats(
-    ids,
+    list.players.map((entry) => ({ id: entry.player_id, position: entry.player.position })),
     latest.data,
     needsSource(stats, 'frames', scoring),
     needsLastSeason(stats, scoring),

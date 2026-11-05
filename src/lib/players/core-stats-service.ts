@@ -40,7 +40,7 @@ import {
   type StatLineRow,
   weekScoringRules,
 } from '@/lib/leagues/scoring/score-week-worker'
-import { systemRules } from '@/lib/players/preset-scoring'
+import { PRESET_LINE_COLUMNS, presetLines, systemRules } from '@/lib/players/preset-scoring'
 import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 import { valueWeekOf } from '@/lib/leagues/value-week'
 import { type PageResponse, pageAll } from '@/lib/supabase/page-all'
@@ -73,8 +73,18 @@ const SEASON_WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
 
 type Line = StatLineRow & { week: number; is_live?: boolean | null }
 
+/**
+ * How a basis prepares a player's stored lines before scoring. A preset passes
+ * `presetLines` (K0: kicker lines worked out, refused games dropped, the 2-pt
+ * fill). A league scores the stored lines as they are, so its numbers do not
+ * move: `deliveredLine` reads by key, and `appeared` and `sumBox` read fixed
+ * lists, so the extra `two_point_conversions` column in the reads changes nothing.
+ */
+type PrepareLines = (position: string, rows: readonly Line[]) => readonly Line[]
+export const storedLines: PrepareLines = (_position, rows) => rows
+
 async function readSeasonPool(supabase: Supabase, season: number): Promise<Map<string, Line[]>> {
-  const select = ['id', 'player_id', 'week', 'is_live', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', ')
+  const select = ['id', 'player_id', 'week', 'is_live', 'updated_at', 'advanced', ...PRESET_LINE_COLUMNS].join(', ')
   const rows = await pageAll<Line>(
     (from, to) =>
       supabase
@@ -98,7 +108,7 @@ async function readSeasonPool(supabase: Supabase, season: number): Promise<Map<s
 
 async function readOwnSeason(supabase: Supabase, season: number, playerId: string): Promise<Line[]> {
   // The scoring columns plus the Key stats box columns (D486(14)).
-  const cols = new Set([...STAT_LINE_COLUMNS, ...BOX_KEYS])
+  const cols = new Set([...PRESET_LINE_COLUMNS, ...BOX_KEYS])
   const select = ['id', 'player_id', 'week', 'is_live', 'updated_at', 'advanced', ...cols].join(', ')
   const { data, error } = await supabase
     .from('player_stats')
@@ -183,7 +193,9 @@ export type PoolStandings = Record<string, PoolEntry>
 /**
  * Every player's total, completed-weeks average and both ranks, scored once.
  * `week` is the current (incomplete) week: weeks at or after it, and rows
- * still flagged live, are left out of the average.
+ * still flagged live, are left out of the average. `prepare` has no default on
+ * purpose: a caller that forgot it would read a preset pool as a league pool,
+ * and only type-check would see it.
  */
 export async function computePoolStandings(
   supabase: Supabase,
@@ -191,6 +203,7 @@ export async function computePoolStandings(
   pastWeekRules: ReadonlyMap<number, ScoringRulesDoc>,
   season: number,
   week: number | null,
+  prepare: PrepareLines,
 ): Promise<PoolStandings> {
   const pool = await readSeasonPool(supabase, season)
   const positions = await readPositions(supabase, [...pool.keys()])
@@ -198,10 +211,11 @@ export async function computePoolStandings(
   const overall = new Map<string, number | null>()
   const byPos = new Map<string, Map<string, number | null>>()
   const partial = new Map<string, { total: number | null; games: number; avg: number | null }>()
-  for (const [id, rows] of pool) {
+  for (const [id, stored] of pool) {
     const raw = positions.get(id)
     if (!raw) continue
     const pos = normalizePosition(raw)
+    const rows = prepare(pos, stored)
     const total = seasonToDate(snapshot, id, pos, rows, pastWeekRules).points
     const gw: GameWeek[] = rows.map((r) => ({
       week: r.week,
@@ -296,17 +310,18 @@ export async function readPlayerCoreStats(
     }
   }
 
+  const prepare: PrepareLines = choice.kind === 'system' ? presetLines : storedLines
   let standings: PoolStandings
   let lines: Awaited<ReturnType<typeof readWeeklyLines>>
-  let ownRows: Line[]
+  let ownStored: Line[]
   let ownProjections: Awaited<ReturnType<typeof readWeeklyLines>>
   let usage: CoreStatsPayload['usage']
   let forty: number | null
   try {
-    ;[standings, lines, ownRows, ownProjections, usage, forty] = await Promise.all([
+    ;[standings, lines, ownStored, ownProjections, usage, forty] = await Promise.all([
       choice.kind === 'system' && opts.poolCache
         ? opts.poolCache(choice.system, season, week)
-        : computePoolStandings(supabase, snapshot, pastWeekRules, season, week),
+        : computePoolStandings(supabase, snapshot, pastWeekRules, season, week, prepare),
       week === null ? Promise.resolve(new Map()) : readWeeklyLines(supabase, season, [week], [playerId]),
       readOwnSeason(supabase, season, playerId),
       readWeeklyLines(supabase, season, SEASON_WEEKS, [playerId]),
@@ -336,6 +351,7 @@ export async function readPlayerCoreStats(
   // stored weekly projection scored under that week's rules. This week's
   // projection is the strip's own (freshness-gated) number, so they agree.
   const pos = normalizePosition(player.position)
+  const ownRows = prepare(pos, ownStored)
   const ownGames: GameWeek[] = ownRows.map((r) => ({
     week: r.week,
     appeared: appeared(r),
