@@ -10,17 +10,24 @@
  *     writes it
  *
  * ⚠ TARGET. Like every sync:* script it loads `.env.local`, which names the
- * HOSTED project. The first line printed is always `target: <host>`, and
- * `--apply` exits 2 having read and written nothing until `--confirm-target`
- * names that host.
+ * HOSTED project. Once the arguments parse, the first line printed is
+ * `target: <host>`, and `--apply` exits 2 having read and written nothing
+ * until `--confirm-target` names that host.
+ *
+ * ⚠ 2026 ONLY. Any other `--season` exits 2 while the arguments parse, by
+ * name, before the target line and before any read: 2025 is F872, not ruled.
  *
  * ⚠ A NEW SCRIPT NAME ON PURPOSE. `sync:reingest` ignores flags it doesn't
  * know, so a quiet flag on it would run a whole-line write from a stale
  * checkout. Here a stale checkout has no such script, and this one exits 2 on
  * any flag it doesn't know.
  *
- * Exit 2: bad arguments or target. Exit 1: refused, any problem, or a failed
- * check after writing. Never a quiet success.
+ * An `--apply` that goes on to write prints its whole plan before the first
+ * door call, then the lines written and every check after.
+ *
+ * Exit 2: bad arguments (a season other than 2026 included) or target. Exit
+ * 1: refused, any problem, a failed write, or a failed check after writing.
+ * Never a quiet success.
  */
 import { NflverseProvider, withNflverseCalendar } from '../src/lib/leagues/stats/nflverse/nflverse-provider'
 import { SleeperStatsProvider } from '../src/lib/leagues/stats/sleeper-stats-provider'

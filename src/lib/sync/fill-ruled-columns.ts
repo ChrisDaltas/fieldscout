@@ -37,7 +37,8 @@
  *   4. WRITES ONLY WITH `apply`, and only with no problem anywhere: through
  *      `ingest_write_batch` with `enqueue: false` and `corrections: []` (legal
  *      at 167:291), so no event and no queue row. The door sets exactly the
- *      columns sent (167's step 4).
+ *      columns sent (167's step 4). The plan is handed to `beforeWrite`
+ *      first, so the CLI prints it before the first door call.
  *   5. ASSERTS AFTER, LOUD: the K identities on every stored K line, row counts
  *      equal to the plan, nothing moved outside the ruled columns.
  *
@@ -197,13 +198,27 @@ async function readLeagueHolds(db: SyncClient, season: number, weeks: number[]):
   return holds
 }
 
-/** `players.id` → position; also the known-player set (FK target of a new line). */
-async function readPlayerPositions(db: SyncClient): Promise<Map<string, string>> {
-  const rows = await pageAll<{ id: string; position: string | null }>((from, to) =>
-    db.from('players').select('id, position', { count: 'exact' }).order('id').range(from, to),
+/**
+ * `players.id` → position (also the known-player set, the FK target of a new
+ * line) and → `full_name`, which only the printed output reads.
+ */
+async function readPlayerPositions(db: SyncClient): Promise<{ positions: Map<string, string>; names: Map<string, string> }> {
+  const rows = await pageAll<{ id: string; position: string | null; full_name: string | null }>((from, to) =>
+    db.from('players').select('id, position, full_name', { count: 'exact' }).order('id').range(from, to),
   )
   if (rows.length === 0) throw new Error('players is empty — every line would read as unknown (refusing to call that success)')
-  return new Map(rows.map((row) => [row.id, row.position ?? '']))
+  return {
+    positions: new Map(rows.map((row) => [row.id, row.position ?? ''])),
+    names: new Map(rows.filter((row) => typeof row.full_name === 'string' && row.full_name !== '').map((row) => [row.id, row.full_name as string])),
+  }
+}
+
+const NO_NAMES: ReadonlyMap<string, string> = new Map()
+
+/** `full_name (id)` for a printed line; the bare id for a player `players` doesn't know. */
+export function who(names: ReadonlyMap<string, string>, id: string): string {
+  const name = names.get(id)
+  return name === undefined ? id : `${name} (${id})`
 }
 
 // ── The plan (pure) ────────────────────────────────────────────────────────
@@ -312,10 +327,13 @@ export interface PlanInput {
   ctx: ToStatRowContext
   /** Stored lines whose metadata can't go back unchanged (`metadataWontRoundTrip`). */
   unsendable?: ReadonlyMap<string, string>
+  /** `players.full_name` by id, for the problem text only. */
+  names?: ReadonlyMap<string, string>
 }
 
 export function planFillWeek(input: PlanInput): FillWeekPlan {
   const { week, lines, stored, positions, ctx, unsendable } = input
+  const label = (id: string) => who(input.names ?? NO_NAMES, id)
   const plan: FillWeekPlan = {
     week,
     feedLines: lines.length,
@@ -381,7 +399,7 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
     // Only where the feed carried D/ST lines at all: the line above already names a whole missing position.
     if ((feedByPosition.get('DEF') ?? 0) > 0) {
       for (const id of stored.keys()) {
-        if (positions.get(id) === 'DEF' && !feedIds.has(id)) plan.problems.push(`week ${week}: the feed doesn't carry D/ST ${id}, which has a stored line — a partial read`)
+        if (positions.get(id) === 'DEF' && !feedIds.has(id)) plan.problems.push(`week ${week}: the feed doesn't carry D/ST ${label(id)}, which has a stored line — a partial read`)
       }
     }
   }
@@ -391,7 +409,7 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
   // F831's reading: which of two different lines to believe is not decided here.
   const conflicts = conflictingPlayers(unique.rows)
   if (conflicts.length > 0) {
-    plan.problems.push(`week ${week}: the feed carries two different lines for ${conflicts.join(', ')} — this week is not planned (F831)`)
+    plan.problems.push(`week ${week}: the feed carries two different lines for ${conflicts.map(label).join(', ')} — this week is not planned (F831)`)
     return plan
   }
 
@@ -416,7 +434,7 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
     if (prior === undefined) {
       const carried = ruledValues(row)
       if (others.length > 0) {
-        plan.problems.push(`week ${week}: new line for ${id} also carries ${others.map((o) => `${o.key}=${o.feed}`).join(', ')} — a late provider line, not written`)
+        plan.problems.push(`week ${week}: new line for ${label(id)} also carries ${others.map((o) => `${o.key}=${o.feed}`).join(', ')} — a late provider line, not written`)
       } else if (carried.length === 0) {
         plan.zeroNewLines += 1
       } else {
@@ -448,19 +466,19 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
       if (was === 0) continue
       plan.fromStoredValue.push({ player_id: id, column, stored: was, feed: now })
       // A fill only adds plays the old map dropped. A lower reading is a provider fix or a map that reads less.
-      if (now < was) plan.problems.push(`week ${week}: ${id} ${column} would go down from ${was} to ${now} — lowering a stored value is not a fill (a late provider fix, or a map that reads less)`)
+      if (now < was) plan.problems.push(`week ${week}: ${label(id)} ${column} would go down from ${was} to ${now} — lowering a stored value is not a fill (a late provider fix, or a map that reads less)`)
     }
     const ruled = Object.fromEntries(RULED_COLUMNS.map((column) => [column, row.columns[column] ?? 0]))
     // `team` stays off the line: the door leaves a column it isn't sent alone.
     plan.updates.push({ player_id: id, game_id: prior.game_id, is_live: prior.is_live, source: prior.source, advanced: prior.advanced, columns: ruled })
     wouldBe.set(id, { ...prior.columns, ...ruled })
     const why = unsendable?.get(id)
-    if (why !== undefined) plan.problems.push(`week ${week}: ${id} can't be rewritten — ${why}`)
+    if (why !== undefined) plan.problems.push(`week ${week}: ${label(id)} can't be rewritten — ${why}`)
   }
 
   // Checked here as well as after the write, so a failing identity blocks the run instead of being found once it is written.
   for (const [id, columns] of wouldBe) {
-    if (positions.get(id) === 'K') plan.problems.push(...kIdentityFailures(id, columns).map((failure) => `week ${week}: ${failure}`))
+    if (positions.get(id) === 'K') plan.problems.push(...kIdentityFailures(label(id), columns).map((failure) => `week ${week}: ${failure}`))
   }
   // A fixed order, so the printed line compares with F890's text as it stands.
   plan.summedMoves.sort((a, b) => byCodePoint(a.column, b.column) || byCodePoint(a.player_id, b.player_id))
@@ -509,8 +527,10 @@ export function afterWriteProblems(
   before: ReadonlyMap<string, StatRow>,
   after: ReadonlyMap<string, StatRow>,
   positions: ReadonlyMap<string, string>,
+  names: ReadonlyMap<string, string> = NO_NAMES,
 ): string[] {
   const week = `week ${plan.week}`
+  const label = (id: string) => who(names, id)
   const out: string[] = []
   const expected = before.size + plan.newRows.length
   if (after.size !== expected) out.push(`${week}: ${after.size} stored lines after the fill, the plan says ${expected}`)
@@ -519,37 +539,37 @@ export function afterWriteProblems(
   for (const [id, row] of written) {
     const line = after.get(id)
     if (line === undefined) {
-      out.push(`${week}: ${id} has no stored line after the fill`)
+      out.push(`${week}: ${label(id)} has no stored line after the fill`)
       continue
     }
     for (const column of RULED_COLUMNS) {
       const got = line.columns[column] ?? 0
       const want = row.columns[column] ?? 0
-      if (got !== want) out.push(`${week}: ${id} ${column} reads ${got} after the fill, the plan wrote ${want}`)
+      if (got !== want) out.push(`${week}: ${label(id)} ${column} reads ${got} after the fill, the plan wrote ${want}`)
     }
   }
   for (const row of plan.newRows) {
     const line = after.get(row.player_id)
-    if (line !== undefined && nonRuledFingerprint(line) !== nonRuledFingerprint(row)) out.push(`${week}: new line ${row.player_id} was stored differently outside the ruled columns`)
+    if (line !== undefined && nonRuledFingerprint(line) !== nonRuledFingerprint(row)) out.push(`${week}: new line ${label(row.player_id)} was stored differently outside the ruled columns`)
   }
 
   let moved = 0
   for (const [id, prior] of before) {
     const line = after.get(id)
     if (line === undefined) {
-      out.push(`${week}: ${id} lost its stored line during the fill`)
+      out.push(`${week}: ${label(id)} lost its stored line during the fill`)
       continue
     }
-    if (nonRuledFingerprint(prior) !== nonRuledFingerprint(line)) out.push(`${week}: ${id} moved outside the ruled columns during the fill (a concurrent poll, or the write)`)
+    if (nonRuledFingerprint(prior) !== nonRuledFingerprint(line)) out.push(`${week}: ${label(id)} moved outside the ruled columns during the fill (a concurrent poll, or the write)`)
     if (RULED_COLUMNS.some((column) => (prior.columns[column] ?? 0) !== (line.columns[column] ?? 0))) {
       moved += 1
-      if (!written.has(id)) out.push(`${week}: ${id} moved on a ruled column but is not in the plan`)
+      if (!written.has(id)) out.push(`${week}: ${label(id)} moved on a ruled column but is not in the plan`)
     }
   }
   if (moved !== plan.updates.length) out.push(`${week}: ${moved} stored lines moved on the ruled columns, the plan says ${plan.updates.length}`)
 
   for (const [id, line] of after) {
-    if (positions.get(id) === 'K') out.push(...kIdentityFailures(id, line.columns).map((failure) => `${week}: ${failure}`))
+    if (positions.get(id) === 'K') out.push(...kIdentityFailures(label(id), line.columns).map((failure) => `${week}: ${failure}`))
   }
   return out
 }
@@ -561,6 +581,12 @@ export interface FillOptions {
   /** Ascending, de-duplicated, each 1-18 (`parseWeeks`). */
   weeks: number[]
   apply: boolean
+  /**
+   * Called once with the finished plan, after every check and before the
+   * first door call (only on a run that goes on to write), so the plan is on
+   * screen even if the run dies writing.
+   */
+  beforeWrite?: (report: FillReport) => void
 }
 
 export interface FillReport {
@@ -571,11 +597,13 @@ export interface FillReport {
   /** Set when the run stopped before planning finished. Nothing was written. */
   refused?: string
   weeks: FillWeekPlan[]
+  /** `players.full_name` by id: the printed output only. */
+  names: ReadonlyMap<string, string>
   /** The door was called at least once. */
   wrote: boolean
   /** The door's counts: all must stay zero. */
   door: DoorTally
-  /** Lines the door accepted. */
+  /** Lines in the door calls that returned. A failing call's earlier batches may have landed too, so on a failure it is a floor. */
   linesWritten: number
   /** The door failed partway. The diff makes a re-run safe. */
   writeFailure?: string
@@ -600,6 +628,7 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
     mode: apply ? 'apply' : 'plan',
     ok: false,
     weeks: [],
+    names: NO_NAMES,
     wrote: false,
     door: emptyTally(),
     linesWritten: 0,
@@ -616,7 +645,8 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
     return report
   }
 
-  const positions = await readPlayerPositions(db)
+  const { positions, names } = await readPlayerPositions(db)
+  report.names = names
   const teamColumn = await statTeamColumn(db)
   const games = await readGames(db, season)
   const gameStatus = new Map([...games.values()].map((game) => [game.id, game.status]))
@@ -644,6 +674,7 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
         stored,
         positions,
         unsendable,
+        names,
         ctx: {
           providerName: provider.name,
           gameStatus,
@@ -668,6 +699,7 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
     return report
   }
 
+  opts.beforeWrite?.(report)
   const stamp = time.now().toISOString()
   const noQueue = new Set<string>()
   const noCorrections = new Map<string, MovedKey[]>()
@@ -685,7 +717,8 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
       }
     }
   } catch (err) {
-    report.writeFailure = `${err instanceof Error ? err.message : String(err)} — ${report.linesWritten} lines were written before it; re-running is safe, it diffs against what landed`
+    // A failing call's earlier batches of 500 may have landed, and a batch that fails its count checks did land: a floor, not a count.
+    report.writeFailure = `${err instanceof Error ? err.message : String(err)} — at least ${report.linesWritten} lines were written before it; re-running is safe, it diffs against what landed`
     return report
   }
 
@@ -701,8 +734,11 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
       )
       break
     }
-    report.afterProblems.push(...afterWriteProblems(plan, before.get(plan.week)!, after, positions))
+    report.afterProblems.push(...afterWriteProblems(plan, before.get(plan.week)!, after, positions, names))
   }
+  // writeThroughDoor already throws on a batch whose counts don't sum to 0, so on
+  // integer counts this can't fire. Kept: on counts that aren't whole numbers,
+  // float sums across batches can disagree with the per-batch sums.
   const { stats, corrections } = report.door
   const unexpected = stats.enqueued + stats.restamped + corrections.recorded + corrections.replayed + corrections.unchangedAtWrite
   if (unexpected !== 0) report.afterProblems.push(`the door reports ${unexpected} queue rows or events; this tool sends none`)
@@ -720,9 +756,15 @@ function sumMoves(moves: Readonly<Record<RuledColumn, number>>): number {
   return RULED_COLUMNS.reduce((sum, column) => sum + moves[column], 0)
 }
 
-/** Week by week, key by key, every other-column difference, every problem. */
+/** The whole report: the plan, then what the write did. */
 export function renderFill(report: FillReport): string[] {
+  return [...renderFillPlan(report), ...renderFillWrite(report)]
+}
+
+/** Week by week, key by key, every other-column difference, every problem. */
+export function renderFillPlan(report: FillReport): string[] {
   if (report.refused !== undefined) return [`REFUSED [${report.season}]: ${report.refused}`]
+  const name = (id: string) => who(report.names, id)
   const lines: string[] = []
   const totals = Object.fromEntries(RULED_COLUMNS.map((column) => [column, 0])) as Record<RuledColumn, number>
   let updated = 0
@@ -747,12 +789,14 @@ export function renderFill(report: FillReport): string[] {
     )
     for (const row of plan.newRows) lines.push(`      new line ${row.player_id}: ${ruledValues(row).join(', ')}`)
     for (const move of plan.fromStoredValue) lines.push(`      from a stored value ${move.player_id} ${move.column}: stored ${move.stored} → feed ${move.feed}`)
-    for (const other of plan.otherDifferences) lines.push(`      other (not written) ${other.player_id} ${other.key}: stored ${other.stored} → feed ${other.feed}`)
+    for (const move of plan.summedMoves) lines.push(`      summed ${move.column} ${name(move.player_id)}: stored ${move.stored} → feed ${move.feed}`)
+    for (const other of plan.otherDifferences) lines.push(`      other (not written) ${name(other.player_id)} ${other.key}: stored ${other.stored} → feed ${other.feed}`)
     for (const [key, count] of Object.entries(plan.contextDifferences)) lines.push(`      display-only (not written) ${key}: ${count} lines differ`)
     for (const problem of plan.problems) lines.push(`      PROBLEM: ${problem}`)
   }
   lines.push(`  all weeks: ${updated + inserted} lines (${updated} updated, ${inserted} new), ${sumMoves(totals)} moves: ${movesText(totals)}; ${fromStored} from a non-zero stored value; ${others} other-column differences`)
   // Every move on a summed column, 0 → n included: the line F890's values are compared with, value by value.
+  // Ids only, so it compares with F890's text as written: names never go in a repo file. The week lines above carry the names.
   for (const column of SUMMED_RULED_COLUMNS) {
     const byWeek = report.weeks
       .map((plan) => ({ week: plan.week, moves: plan.summedMoves.filter((move) => move.column === column) }))
@@ -760,8 +804,18 @@ export function renderFill(report: FillReport): string[] {
       .map((entry) => `wk${entry.week} ${entry.moves.map((move) => `${move.player_id} ${move.stored}→${move.feed}`).join(', ')}`)
     lines.push(`  all weeks ${column} by player, stored → feed: ${byWeek.join('; ') || 'none'}`)
   }
+  return lines
+}
+
+/** What the write did: the count, a failure partway, every failed check after it. */
+export function renderFillWrite(report: FillReport): string[] {
+  if (report.refused !== undefined) return []
+  const lines: string[] = []
   if (report.mode === 'apply' && report.wrote) {
-    lines.push(`  written: ${report.linesWritten} lines; queue rows ${report.door.stats.enqueued + report.door.stats.restamped}; events ${report.door.corrections.recorded + report.door.corrections.replayed + report.door.corrections.unchangedAtWrite}`)
+    lines.push(
+      `  written: ${report.writeFailure === undefined ? '' : 'at least '}${report.linesWritten} lines; ` +
+        `queue rows ${report.door.stats.enqueued + report.door.stats.restamped}; events ${report.door.corrections.recorded + report.door.corrections.replayed + report.door.corrections.unchangedAtWrite}`,
+    )
   }
   if (report.writeFailure !== undefined) lines.push(`  WRITE FAILED: ${report.writeFailure}`)
   for (const problem of report.afterProblems) lines.push(`  FAILED AFTER WRITING: ${problem}`)
@@ -777,7 +831,10 @@ export interface FillArgs {
   confirmTarget?: string
 }
 
-const USAGE = 'usage: npm run sync:fill-ruled -- --season <yyyy> --weeks <1-3|1,2,4> [--apply --confirm-target <host>]'
+/** The one season the fill is ruled for (F890). 2025 is F872's call, not ruled. */
+export const FILL_SEASON = 2026
+
+const USAGE = `usage: npm run sync:fill-ruled -- --season ${FILL_SEASON} --weeks <1-3|1,2,4> [--apply --confirm-target <host>]`
 const VALUE_FLAGS: ReadonlySet<string> = new Set(['--season', '--weeks', '--confirm-target'])
 const seasonSchema = z.coerce.number().int().min(2000).max(2100)
 
@@ -804,6 +861,9 @@ export function parseFillArgs(argv: readonly string[]): FillArgs {
   if (seasonRaw === undefined || weeksRaw === undefined) throw new Error(USAGE)
   const season = seasonSchema.safeParse(seasonRaw)
   if (!season.success) throw new Error(`Invalid --season: ${seasonRaw}`)
+  if (season.data !== FILL_SEASON) {
+    throw new Error(`--season ${season.data} refused: this tool fills ${FILL_SEASON} only (2025 is F872, not ruled). Nothing read or written.`)
+  }
   return { season: season.data, weeks: parseWeeks(weeksRaw), apply, confirmTarget: values.get('--confirm-target') }
 }
 
@@ -842,10 +902,17 @@ export async function runFillCli(argv: readonly string[], io: FillCliIo): Promis
     }
   }
 
-  const report = await fillRuledColumns(io.connect(), { season: args.season, weeks: args.weeks, apply: args.apply })
   const weeks = args.weeks.join(',')
-  io.log(`${args.apply ? 'Fill' : 'Plan'} [${args.season}] weeks ${weeks} → ${host}`)
-  for (const line of renderFill(report)) io.log(line)
+  let planPrinted = false
+  const printPlan = (planned: FillReport) => {
+    io.log(`${args.apply ? 'Fill' : 'Plan'} [${args.season}] weeks ${weeks} → ${host}`)
+    for (const line of renderFillPlan(planned)) io.log(line)
+    planPrinted = true
+  }
+  // An --apply that goes on to write prints its plan before the first door call.
+  const report = await fillRuledColumns(io.connect(), { season: args.season, weeks: args.weeks, apply: args.apply, beforeWrite: printPlan })
+  if (!planPrinted) printPlan(report)
+  for (const line of renderFillWrite(report)) io.log(line)
   if (report.refused !== undefined) {
     io.error('REFUSED — nothing written; see the line above')
     return 1
