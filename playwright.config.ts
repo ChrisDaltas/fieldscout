@@ -17,7 +17,7 @@ import {
  * HOSTED PRODUCTION. The webServer below therefore launches `next dev`
  * with the LOCAL stack's coordinates in its process env — Next.js gives
  * explicit env precedence over `.env.local`, the same mechanism the
- * gitignored `dev-local` launch config uses (ACTIVE-BUILD's documented
+ * gitignored `test` launch config uses (ACTIVE-BUILD's documented
  * pattern, network-confirmed in every D39 pass). All four names the app
  * reads are overridden (client, SSR server, middleware AND the service-role
  * admin client), and `auth.setup.ts` asserts the app's real auth traffic
