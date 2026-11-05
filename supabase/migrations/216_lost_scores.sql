@@ -146,6 +146,11 @@
 -- tables and then UPDATEd matchups deadlocked with it (the review's probe).
 -- Both locks are held to the end of the file, so the backfill (§2) runs under
 -- them; ACCESS EXCLUSIVE on both was already held from the ALTERs to COMMIT.
+-- Bounded wait (R1797, 077's precedent): queued behind a long reader, this LOCK
+-- would make every later read of league_weeks / matchups queue behind it, and
+-- league pages would time out until it got through. Failing fast rolls back the
+-- whole file, and the push is simply re-run. SET LOCAL: this transaction only.
+SET LOCAL lock_timeout = '5s';
 LOCK TABLE public.league_weeks, public.matchups IN ACCESS EXCLUSIVE MODE;
 
 ALTER TABLE matchups ALTER COLUMN home_score DROP DEFAULT;

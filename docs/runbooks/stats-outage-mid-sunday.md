@@ -51,6 +51,8 @@ and a new stat update for that player retries it at once. No stat line for any
 player that week means the feed never arrived: nothing is zero-filled, wait for
 the feed. There is no "finalize anyway" (M8 ruled it out): take it to Chris.
 
+**Pushing migration 216:** it waits at most 5 seconds for its table locks (`lock_timeout`). If the push fails with a lock timeout, nothing was applied: run the push again.
+
 **After migration 216 is pushed (F863, once):**
 
 - The first close pass recomputes **every** team of an open correction-window
