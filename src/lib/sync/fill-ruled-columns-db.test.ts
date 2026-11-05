@@ -70,7 +70,7 @@ function feedLine(playerId: string, stats: Record<string, number>, advanced: Rec
   return { playerId, season: SEASON, week: 1, team: 'FRA', opponent: 'FRB', stats, advanced }
 }
 
-/** The feed once the map is in: the kicker's short makes and his miss, the D/ST's block, a receiver's late fix, a line with no row yet. */
+/** The feed once the map is in: the kicker's short makes and a miss, the D/ST's block, a receiver's late fix, a line with no row yet. */
 const FEED: ProviderPlayerWeekStats[] = [
   feedLine(K, { fg_made: 3, fg_attempted: 4, fg_0_39: 2, fg_40_49: 1, fg_missed: 1, pat_made: 2, pat_attempted: 2 }, { fg_long: 46 }),
   feedLine(DST, { def_sack: 2, def_points_allowed: 17, def_yards_allowed: 300, def_block: 1 }),
