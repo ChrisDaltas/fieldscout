@@ -56,19 +56,15 @@
  * cannot move (pinned: the worker's own suites + the fractional-actual cell
  * below).
  *
- * F386(a) — KEYS THE SOURCE CANNOT SUPPLY are NOT mapped here. The canonical
- * Sleeper map (`SLEEPER_STAT_KEY_MAP`, shared with the ACTUALS) carries no
- * spelling for `fg_0_39`, `fg_missed`, `def_block`, `def_return_td`,
- * `return_td`, `fumble_recovery_td` (`def_yards_allowed` left this list in
- * L.E1.26 — `yds_allow` is mapped for BOTH namespaces at once, so a weekly
- * D/ST value now scores its yards tier, floored below) — and the actuals have
- * the same gap (F10: the raw spellings are unevidenced). Extending the map
- * for projections only would make a projected and an actual line stop
- * matching key for key; extending it for actuals changes real scores. So
- * neither: those keys score as PENDING (contributing nothing) and every
- * value NAMES them (`*_unscored` — the applicable, non-zero rules keys this
- * source can never deliver), never a quiet under-count. F386(a) stays open
- * on F10's evidence.
+ * F386(a), discharged by F870 / F871 (both maps extended in one change, D830):
+ * the weekly line now carries `fg_0_39`, `fg_missed`, `def_block`,
+ * `def_return_td` and `return_td`, each from its own feed's spelling
+ * (`SLEEPER_PROJECTIONS_ONLY_MAP`). A KEY THE SOURCE CANNOT SUPPLY still scores
+ * as PENDING (contributing nothing) and every value NAMES it (`*_unscored`, the
+ * applicable, non-zero rules keys this source can never deliver), never a quiet
+ * under-count. Today that is `fumble_recovery_td` on offense: the projections
+ * feed never sends it. Keeping that name is why `WEEKLY_SOURCE_KEYS` leaves out
+ * the actuals-only spellings.
  *
  * F385 — THE PRESEASON LINE IS IN THE LEGACY NAMESPACE (`xp_made`,
  * `def_sacks`, `fg_made_40_plus`, `two_point_conversions`, …, written by
@@ -98,7 +94,7 @@
  *
  * Pure: no IO, no clock (the instant is an argument — D3).
  */
-import { SLEEPER_STAT_KEY_MAP } from '../stats/sleeper-stats-provider'
+import { SLEEPER_PROJECTIONS_ONLY_MAP, SLEEPER_STAT_KEY_MAP } from '../stats/sleeper-stats-provider'
 import { STAT_KEYS } from '../stats/stat-keys'
 import { roundHalfUp, scorePlayerWeek } from './calculator'
 import { DEF_PA_SOURCE_KEY, DEF_YA_SOURCE_KEY, deriveTierIndicators } from './derive-stats'
@@ -125,9 +121,14 @@ const DST_SOURCES: readonly string[] = [DEF_PA_SOURCE_KEY, DEF_YA_SOURCE_KEY]
 
 // ── Source vocabularies (derived, never hand-listed) ───────────────────────
 
-/** Canonical keys the WEEKLY line can ever carry: the image of the one
- *  Sleeper → canonical map (the line is written through it, D373(2)). */
-export const WEEKLY_SOURCE_KEYS: ReadonlySet<string> = new Set(Object.values(SLEEPER_STAT_KEY_MAP))
+/** Canonical keys the WEEKLY line can ever carry: the image of the shared map
+ *  and the projections-only tables (the line is written through them, D373(2)).
+ *  The actuals-only table is left out on purpose, so a key projections never send
+ *  stays named instead of silently scoring 0 (F870). */
+export const WEEKLY_SOURCE_KEYS: ReadonlySet<string> = new Set([
+  ...Object.values(SLEEPER_STAT_KEY_MAP),
+  ...Object.values(SLEEPER_PROJECTIONS_ONLY_MAP).flatMap((table) => Object.values(table)),
+])
 
 /** `player_stats` column → canonical key, the inverse of the registry's
  *  column map. One-to-one (pinned by test), so the inverse is well defined. */

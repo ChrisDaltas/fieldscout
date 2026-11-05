@@ -22,6 +22,8 @@ import {
 } from '@/lib/sports-data/sleeper'
 import { fetchSchedule, type SleeperScheduleGame } from '@/lib/sync/schedule'
 
+import type { WeeklyProjectionPosition } from '@/lib/sync/weekly-projections'
+
 import type { TimeProvider } from '../time/time-provider'
 import type { StatTier } from './stat-keys'
 import type {
@@ -34,42 +36,39 @@ import type {
 } from './stats-provider'
 
 /**
- * Sleeper actual-stat field → canonical STAT_KEYS key. Exported so tests can
- * assert every emitted key is registry-canonical (§7.3.3 one-namespace rule)
- * and so the L.A0.2b seam refactor can reuse it.
+ * Sleeper stat field → canonical STAT_KEYS key: the spellings the actuals and
+ * the weekly projections share, with the same meaning on both. Exported so
+ * tests can assert every emitted key is registry-canonical (§7.3.3 one-namespace
+ * rule). `mapToCanonicalKeys` ADDS, so several fields can fill one key
+ * (`fg_0_39`, `def_fumble_rec`). The feed-only tables sit below this one.
  *
- * Deliberately a strict subset of §23.5's core_box definition (D5): only
- * Sleeper fields already evidenced in this repo (live-stats STAT_MAP,
- * SleeperProjectedStats) are mapped.
+ * Evidence bar: real Sleeper responses, not reasoning. 29 of the first 30
+ * mappings reproduce in the real 2025-wk2 actuals fixture (L.A1.7, R49). The
+ * exception was `safe → def_safety`, absent that week; F870's measure below has
+ * it on 14 D/ST lines, equal to ESPN's stat 98 on 786 of 786.
  *
- * M1 completeness re-check (L.A1.7/D41, 2026-07-20 — the evidence bar is the
- * real 2025-wk2 actuals fixture + repo evidence; NO mapping ships without
- * it). Audit result [corrected per R49, 2026-07-20 — the original "every
- * mapping reproduces" overstated it]: 29 of the 30 mappings below reproduce
- * in the real 2025-wk2 actuals fixture (including xpmiss — see its note).
- * The exception is `safe → def_safety`, absent from all 373 fixture rows
- * (no D/ST recorded a safety that week); its evidence is the pre-seam
- * production STAT_MAP (`de0adfd` — the live /stats endpoint production
- * polled), a stronger evidence class than fixture presence. September
- * re-confirm on real 2026 actuals is F10's — which needs a week actually
- * containing a safety (see the F10 note). Canonical keys that
- * remain UNMAPPED, each because no repo artifact evidences the /stats
- * actuals spelling (the fixture records canonical responses, so it can never
- * evidence an unmapped raw field — raw-endpoint inspection during the first
- * real 2026 recording, F10/September, is the path to evidence):
- *   fg_0_39            — Sleeper buckets short FGs (fgm_0_19/…/fgm_30_39 in
- *                        projections-shaped data) and would need a summed,
- *                        multi-field mapping; no actuals evidence for any of
- *                        the three spellings.
- *   fg_missed          — fgmiss_40_49 appears in a projections fixture only;
- *                        the total-miss actuals spelling is unevidenced.
- *   def_block          — presumed blk_kick; zero repo evidence.
- *   def_return_td      — SleeperProjectedStats carries def_kr_td + pr_td
- *                        (projections evidence only, and a summed mapping).
- *   fumble_recovery_td / return_td — offensive TD variants; zero repo
- *                        evidence for actuals spellings.
- * (`def_yards_allowed` left this list in L.E1.26 — `yds_allow`, measured on
- * the live /stats endpoint; see its entry below.)
+ * F870 / F871 (Chris 2026-11-05, verbatim: "go on league kickers and the other
+ * plays"). MEASURED 2026-11-05 on public Sleeper and ESPN responses, 2025 wk 1-18
+ * and 2026 wk 1-8, 954 K lines and 786 D/ST lines:
+ *   - `fgm` = `fgm_0_19 + fgm_20_29 + fgm_30_39 + fgm_40_49 + fgm_50p`, 954/954.
+ *   - `fgmiss` = `fga - fgm`, 954/954. It already holds a blocked kick.
+ *   - `fgm_50p` = `fgm_50_59 + fgm_60p`, 954/954, so `fg_50_plus` is inclusive.
+ *   - `fum_rec` excludes special teams, so `fum_rec + def_st_fum_rec` is the
+ *     team's recoveries. ESPN's stat 96 agrees on 782 of 786; the other 4 are an
+ *     offensive player's recovery inside `fum_rec`, all 2025 (F893).
+ *   - `blk_kick` = ESPN's stat 97, 786/786.
+ *   - `def_td + def_st_td` = ESPN's five D/ST TD stats, 786/786.
+ *
+ * NEVER add these, each of them double counts or pays the wrong team:
+ *   - `fg_blkd`: on a DEF row it is the team's OWN blocked kick, already inside
+ *     `fgmiss`. The team that blocked it has `blk_kick`.
+ *   - `misc_td`: a blocked-kick return TD, inside `def_st_td`.
+ *   - `fum_rec_ez_tds`, `anytime_tds`: inside the TD counts; on a DEF row
+ *     `fum_rec_ez_tds` can be the team's OFFENSE scoring.
+ *   - `fgmiss_50_59`, `fgmiss_60p`: inside `fgmiss_50p`.
+ *   - `xp_blkd`: the team's own blocked PAT, already charged through `xpmiss`.
+ *
+ * Still unmapped, with no rule key to fill (F871 keeps them): `fgm_60p`, `def_2pt`.
  * Tier-indicator keys (the def_pa / def_ya families) and bonuses are never
  * adapter concerns: derived at scoring time (D44) or deferred to v1.1.
  */
@@ -130,6 +129,69 @@ export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
   // `yds_allow` at all. One map, both namespaces (F10 / F386(a)).
   // Recorded: src/lib/leagues/stats/fixtures/sleeper-def-yards-allowed-2026.json.
   yds_allow: 'def_yards_allowed',
+  // F870 / F871: a short FG is three buckets, and a D/ST's recoveries are two
+  // fields. Both ADD (`mapToCanonicalKeys`). See the measure above.
+  fgm_0_19: 'fg_0_39',
+  fgm_20_29: 'fg_0_39',
+  fgm_30_39: 'fg_0_39',
+  def_st_fum_rec: 'def_fumble_rec',
+  blk_kick: 'def_block',
+}
+
+/**
+ * F870 / F871: the spellings only the ACTUALS endpoint sends. Kept out of the
+ * shared map because `st_td` means a player's return TD here and a team's
+ * projected return TDs on the projections endpoint, and because
+ * `WEEKLY_SOURCE_KEYS` must not claim projections can deliver these: a key they
+ * never send stays NAMED in `projected_unscored` (`fumble_recovery_td`).
+ * `st_td` appears on no K or DEF actual in 19,199 lines.
+ */
+export const SLEEPER_ACTUALS_ONLY_MAP: Readonly<Record<string, string>> = {
+  fgmiss: 'fg_missed',
+  def_st_td: 'def_return_td',
+  st_td: 'return_td',
+  fum_rec_td: 'fumble_recovery_td',
+}
+
+/** On an offense projection these are the player's own return TDs. */
+const PROJECTED_OFFENSE: Readonly<Record<string, string>> = { pr_td: 'return_td', def_kr_td: 'return_td' }
+
+/**
+ * F870 / F871: the spellings only the PROJECTIONS endpoint sends, per position,
+ * because the same field means different things by row (`def_kr_td` on a WR is
+ * his kick-return TD). MEASURED 2026-11-05, 835 K and 844 D/ST rows: no row has
+ * `fgmiss`, `def_st_td`, `def_st_fum_rec` or `fum_rec_td`.
+ *
+ * A projected kicker's short makes and misses come from the buckets, not from
+ * `fgm` and `fga`: in 2026 `fgm` doesn't match its buckets on 281 of 299 rows, and
+ * yards per make say the buckets are the real set. That reading is pending Chris.
+ */
+export const SLEEPER_PROJECTIONS_ONLY_MAP: Readonly<Record<WeeklyProjectionPosition, Readonly<Record<string, string>>>> = {
+  QB: PROJECTED_OFFENSE,
+  RB: PROJECTED_OFFENSE,
+  WR: PROJECTED_OFFENSE,
+  TE: PROJECTED_OFFENSE,
+  K: {
+    fgmiss_0_19: 'fg_missed',
+    fgmiss_20_29: 'fg_missed',
+    fgmiss_30_39: 'fg_missed',
+    fgmiss_40_49: 'fg_missed',
+    fgmiss_50p: 'fg_missed',
+  },
+  DEF: { st_td: 'def_return_td' },
+}
+
+/** Which endpoint a line came from. Required, so every caller chooses. */
+export type SleeperFeed = { feed: 'actuals' } | { feed: 'projections'; position: WeeklyProjectionPosition }
+
+/** The feed's own table. A position with no table throws by name: a silent
+ *  empty table would drop plays with nothing to show for it. */
+function feedOnlyMap(feed: SleeperFeed): Readonly<Record<string, string>> {
+  if (feed.feed === 'actuals') return SLEEPER_ACTUALS_ONLY_MAP
+  if (!Object.hasOwn(SLEEPER_PROJECTIONS_ONLY_MAP, feed.position)) {
+    throw new Error(`mapToCanonicalKeys: no projections map for position "${String(feed.position)}"`)
+  }
+  return SLEEPER_PROJECTIONS_ONLY_MAP[feed.position]
 }
 
 /**
@@ -224,17 +286,23 @@ export function mapUsageKeys(stats: Record<string, number | null> | null): Recor
   return out
 }
 
-/** Sleeper stat object → canonical keys (finite numbers only). Exported for
- *  the weekly projections sync (L.E1.19, D373(2)): a projected line takes the
- *  SAME map as the actuals, so the two are commensurable key for key. */
+/** Sleeper stat object → canonical keys (finite numbers only), adding when
+ *  several fields fill one key. Exported for the weekly projections sync
+ *  (L.E1.19, D373(2)): a projected line lands in the SAME canonical namespace as
+ *  an actual one, so the two are commensurable key for key. The fields differ by
+ *  feed, so the caller names its feed. */
 export function mapToCanonicalKeys(
   stats: Record<string, number | null> | null,
+  feed: SleeperFeed,
 ): Partial<Record<string, number>> {
+  const only = feedOnlyMap(feed)
   const out: Partial<Record<string, number>> = {}
   if (!stats) return out
-  for (const [sleeperKey, canonicalKey] of Object.entries(SLEEPER_STAT_KEY_MAP)) {
-    const value = Number(stats[sleeperKey] ?? NaN)
-    if (Number.isFinite(value)) out[canonicalKey] = value
+  for (const table of [SLEEPER_STAT_KEY_MAP, only]) {
+    for (const [sleeperKey, canonicalKey] of Object.entries(table)) {
+      const value = Number(stats[sleeperKey] ?? NaN)
+      if (Number.isFinite(value)) out[canonicalKey] = (out[canonicalKey] ?? 0) + value
+    }
   }
   return out
 }
@@ -281,10 +349,8 @@ function parseReportedAt(startDate: string | null, time: TimeProvider): Date {
 export class SleeperStatsProvider implements StatsProvider {
   readonly name = 'sleeper'
 
-  /** §23.5 capability tiers — sleeper_free is box-score only. Gating starts
-   *  in M1 (D5), where this adapter's core_box completeness must be
-   *  re-verified: the M0 mapped set is a strict subset of §23.5's core_box
-   *  definition (see SLEEPER_STAT_KEY_MAP). */
+  /** §23.5 capability tiers: sleeper_free is box-score only. Gating starts
+   *  in M1 (D5). What's still outside the map is named above SLEEPER_STAT_KEY_MAP. */
   readonly capabilities: ReadonlySet<StatTier> = new Set<StatTier>(['core_box'])
 
   constructor(private readonly time: TimeProvider) {}
@@ -333,7 +399,7 @@ export class SleeperStatsProvider implements StatsProvider {
         if (typeof row?.player_id !== 'string' || row.player_id.length === 0) {
           continue
         }
-        const mapped = mapToCanonicalKeys(row.stats)
+        const mapped = mapToCanonicalKeys(row.stats, { feed: 'actuals' })
         if (Object.keys(mapped).length === 0) continue // nothing canonical → noise
         out.push({
           playerId: row.player_id, // players.id is Sleeper-keyed (§23.1)

@@ -14,7 +14,7 @@ import { toStatColumns } from '@/lib/sync/live-stats'
 /** What ingest stores for a raw Sleeper line: the adapter's own mapping, then
  *  every surface column filled with its default (`ingest-week.ts`). */
 export function storedLine(raw: Record<string, number>): StatLineRow {
-  const columns = toStatColumns(readZeroOmittedYardsAllowed(raw, mapToCanonicalKeys(raw)))
+  const columns = toStatColumns(readZeroOmittedYardsAllowed(raw, mapToCanonicalKeys(raw, { feed: 'actuals' })))
   const row: StatLineRow = { player_id: 'x', updated_at: 'x', advanced: null }
   for (const column of STAT_COLUMN_SURFACE) row[column] = columns[column] ?? (NULL_IS_PENDING_COLUMNS.has(column) ? null : 0)
   return row

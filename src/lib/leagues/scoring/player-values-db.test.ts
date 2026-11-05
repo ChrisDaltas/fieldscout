@@ -40,6 +40,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { SYNTHETIC_SEASON, seedSyntheticSeason } from '@/lib/leagues/sim/synthetic-season'
 import type { Database, Json } from '@/types/database'
 
+import type { WeeklyProjectionPosition } from '@/lib/sync/weekly-projections'
+
 import { mapToCanonicalKeys } from '../stats/sleeper-stats-provider'
 import type { TimeProvider } from '../time/time-provider'
 import { runLeaguePlayerValues } from './player-values-job'
@@ -73,7 +75,7 @@ const FIXTURE = JSON.parse(
 const recorded = (pos: string, id: string) => {
   const row = FIXTURE.weeks['4'][pos].find((r) => r.player_id === id)
   if (!row) throw new Error(`fixture has no ${pos} ${id}`)
-  return mapToCanonicalKeys(row.stats) as Json
+  return mapToCanonicalKeys(row.stats, { feed: 'projections', position: pos as WeeklyProjectionPosition }) as Json
 }
 
 const SCOUT = { ...SCORING_TEMPLATES.find((t) => t.name === 'Scout Standard')!.rules }

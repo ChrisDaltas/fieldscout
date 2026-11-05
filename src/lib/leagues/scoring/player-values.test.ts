@@ -40,6 +40,8 @@ import { describe, expect, it } from 'vitest'
 
 import { sleeperProjectionToStatRow } from '@/lib/sports-data/sleeper'
 
+import type { WeeklyProjectionPosition } from '@/lib/sync/weekly-projections'
+
 import { mapToCanonicalKeys } from '../stats/sleeper-stats-provider'
 import { STAT_KEYS } from '../stats/stat-keys'
 import { deriveTierIndicators } from './derive-stats'
@@ -86,9 +88,11 @@ const find = (id: string) => {
   if (!hit) throw new Error(`fixture has no projected row ${id}`)
   return hit
 }
+/** A recorded row as the weekly sync stores it: the projections feed, its own position. */
+const projectedLine = (pos: string, row: FixtureRow) => mapToCanonicalKeys(row.stats, { feed: 'projections', position: pos as WeeklyProjectionPosition })
 const weekly = (doc: ScoringRulesDoc, id: string) => {
   const { pos, row } = find(id)
-  return scoreWeeklyProjection(doc, normalizePosition(pos), mapToCanonicalKeys(row.stats))
+  return scoreWeeklyProjection(doc, normalizePosition(pos), projectedLine(pos, row))
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +131,7 @@ describe('V1 GOLDEN vs SLEEPER — the recorded week-4 lines through the canonic
 
   it('V1b OFFENSE reproduces Sleeper\'s own pts_std / pts_ppr within 0.05 (the scorer is right when the template matches the source)', () => {
     for (const { pos, row } of PROJECTED.filter((p) => ['QB', 'RB', 'WR', 'TE'].includes(p.pos))) {
-      const line = mapToCanonicalKeys(row.stats)
+      const line = projectedLine(pos, row)
       const std = scoreWeeklyProjection(SLEEPER_STD, pos, line).points
       const ppr = scoreWeeklyProjection(SLEEPER_PPR, pos, line).points
       expect(Math.abs(std - row.stats.pts_std), `${row.player_id} std ${std} vs ${row.stats.pts_std}`).toBeLessThanOrEqual(0.05)
@@ -235,7 +239,7 @@ describe('V4 THE REVERSAL — a custom league scoring reverses the preset order 
     computePlayerValue(doc, { league_id: 'L', season: 2099, week: 3, now: at }, {
       player_id: id,
       position: 'RB',
-      weekly: { stats: mapToCanonicalKeys(find(id).row.stats), fetched_at: '2099-09-24T11:40:00Z' },
+      weekly: { stats: projectedLine(find(id).pos, find(id).row), fetched_at: '2099-09-24T11:40:00Z' },
       seasonRows: [],
       preseason: null,
     }).projected_points
@@ -355,7 +359,7 @@ describe('V7 computePlayerValue — freshness, absence named, NULL never zero', 
   it('V7b no line ⇒ NULL, "no_line", no fetch instant; a REAL projected 0.00 (Moss) is a value, not a NULL', () => {
     const none = computePlayerValue(SCOUT_STD, ctx, { ...base, weekly: null })
     expect([none.projected_points, none.projected_missing, none.projection_fetched_at]).toEqual([null, 'no_line', null])
-    const zero = computePlayerValue(SCOUT_STD, ctx, { ...base, position: 'RB', weekly: { stats: mapToCanonicalKeys(find('13300').row.stats), fetched_at: '2099-09-24T11:40:00.000Z' } })
+    const zero = computePlayerValue(SCOUT_STD, ctx, { ...base, position: 'RB', weekly: { stats: projectedLine(find('13300').pos, find('13300').row), fetched_at: '2099-09-24T11:40:00.000Z' } })
     expect([zero.projected_points, zero.projected_missing]).toEqual([0, null])
   })
 
