@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { VirtualClock } from '../time/virtual-clock'
 import {
+  classifyClose,
   classifyDrain,
   CLOCK_SKEW_SECONDS,
   DRAIN_INTERVAL_MS,
@@ -16,7 +17,7 @@ import {
   SCORE_WEEK_LEASE_SECONDS,
   SCORE_WEEK_MAX_DURATION_SECONDS,
 } from './score-week-invoker'
-import type { BatchReport, LeagueWeekReport } from './score-week-worker'
+import { type BatchReport, type CloseScoringReport, type LeagueWeekReport, PRE_216_CLOSE_SENTENCE, runCloseScoring } from './score-week-worker'
 
 function report(over: Partial<BatchReport> = {}): BatchReport {
   return {
@@ -28,6 +29,7 @@ function report(over: Partial<BatchReport> = {}): BatchReport {
     unmapped: 0,
     out_of_scope: 0,
     held: 0,
+    failed_deferred: 0,
     deferred: 0,
     drained: 0,
     released: 0,
@@ -115,8 +117,40 @@ describe('classifyDrain — the loud surface', () => {
   })
 })
 
+const emptyClose: CloseScoringReport = { ran_at: '2099-09-13T20:00:00.000Z', available: true, weeks: [], closed: 0, failed: 0, problems: [] }
+
+describe('runCloseScoring on a database without 216 (deploy before push)', () => {
+  it('says so by name and does nothing', async () => {
+    const db = { rpc: async () => ({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.league_weeks_to_close(p_limit, p_now) in the schema cache' } }) } as never
+    const out = await runCloseScoring({ db, time: new VirtualClock(new Date('2099-09-13T20:00:00.000Z')) })
+    expect([out.available, out.weeks, out.problems]).toEqual([false, [], [PRE_216_CLOSE_SENTENCE]])
+    expect(classifyClose(out)).toEqual({ alerts: [], infos: [PRE_216_CLOSE_SENTENCE] })
+  })
+
+  it('any other error is not "not deployed": it throws', async () => {
+    const db = { rpc: async () => ({ data: null, error: { code: '42501', message: 'permission denied' } }) } as never
+    await expect(runCloseScoring({ db, time: new VirtualClock(new Date('2099-09-13T20:00:00.000Z')) })).rejects.toThrow('league_weeks_to_close: permission denied')
+  })
+})
+
+describe('classifyClose (F863)', () => {
+  it('names each outcome: failed alerts, the rest inform', () => {
+    const v = classifyClose({
+      ...emptyClose,
+      weeks: [
+        { league_id: 'A', season: 2099, week: 1, reason: 'no_stat_lines', outcome: 'no_stat_lines' },
+        { league_id: 'B', season: 2099, week: 1, reason: 'never_closed', outcome: 'closed' },
+        { league_id: 'C', season: 2099, week: 1, reason: 'lines_moved', outcome: 'lines_moved' },
+      ],
+    })
+    expect(v.alerts).toEqual([])
+    expect(v.infos.map((l) => l.slice(0, 22))).toEqual(['league_id=A week=1 not', 'league_id=B week=1 sco', 'league_id=C week=1 not'])
+  })
+})
+
 describe('runScoreWeekInvocation — the minute-invocation loop', () => {
-  function harness(drains: BatchReport[], hot: boolean) {
+  function harness(drains: BatchReport[], hot: boolean, closeReport: CloseScoringReport = emptyClose) {
+    let closes = 0
     const clock = new VirtualClock(new Date('2099-09-13T20:00:00.000Z'))
     const calls: string[] = []
     const sleeps: number[] = []
@@ -130,6 +164,10 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
       },
       lastPollCompletedAt: async () => null,
       isHot: async () => hot,
+      closeWeeks: async () => {
+        closes += 1
+        return closeReport
+      },
       drain: async (_deps, opts) => {
         calls.push(`${opts?.leaseSeconds}/${opts?.batchSize}/${opts?.deferSeconds}`)
         const r = drains[Math.min(i, drains.length - 1)]
@@ -138,7 +176,7 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
         return r
       },
     })
-    return { promise, calls, sleeps }
+    return { promise, calls, sleeps, closes: () => closes }
   }
 
   it('an empty queue outside a game window ends the invocation after ONE drain — one claim RPC per idle minute', async () => {
@@ -148,6 +186,26 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
     expect(out.stopped).toBe('queue_empty_idle')
     expect(h.sleeps).toEqual([])
     expect(h.calls).toEqual([`${SCORE_WEEK_LEASE_SECONDS}/500/30`]) // the lease + batch + defer the route passes
+  })
+
+  it('F863: the close pass runs exactly once per invocation, even on an idle stop', async () => {
+    const idle = harness([report({ reason: 'queue_empty' })], false)
+    expect((await idle.promise).close).toBe(emptyClose)
+    expect(idle.closes()).toBe(1)
+    const hot = harness([report({ reason: 'queue_empty' })], true)
+    const out = await hot.promise
+    expect(out.drains.length).toBeGreaterThan(1)
+    expect(hot.closes()).toBe(1)
+  })
+
+  it('F863: a week the pass cannot close is an ALERT by name on the invocation', async () => {
+    const h = harness([report({ reason: 'queue_empty' })], false, {
+      ...emptyClose,
+      failed: 1,
+      weeks: [{ league_id: 'L', season: 2099, week: 9, reason: 'never_closed', outcome: 'failed', error: 'snapshot_missing' }],
+    })
+    const out = await h.promise
+    expect(out.alerts).toEqual(['league_id=L week=9 CLOSE FAILED: snapshot_missing — the week stays held (F863); retried next pass'])
   })
 
   it('an empty queue INSIDE a game window keeps draining every 5 s for the budget (§14: 5–10 s)', async () => {

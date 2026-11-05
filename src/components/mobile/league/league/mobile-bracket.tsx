@@ -9,7 +9,7 @@ import {
   TBD_LABEL,
   bracketShape,
   formatBracketScore,
-  formatTotal,
+  bracketTotalText,
   gamePlayed,
   pointsRaceCopy,
   projectionBasisCopy,
@@ -162,8 +162,8 @@ function Slot({
 function GameCard({ game, name, av, champ, leagueId }: { game: BracketGame; name: Name; av: Av; champ: boolean; leagueId: string }) {
   const played = gamePlayed(game)
   const status = game.weeks[0]?.status ?? 'scheduled'
-  const pts = (total: number, score: number | null | undefined) =>
-    !played ? null : game.weeks.length > 1 ? formatTotal(total) : formatBracketScore(score ?? null, status)
+  const pts = (side: 'home' | 'away', score: number | null | undefined) =>
+    !played ? null : game.weeks.length > 1 ? bracketTotalText(game, side) : formatBracketScore(score ?? null, status)
   const decided = game.final && game.decided_by !== 'bye'
   return (
     <Card champ={champ}>
@@ -171,7 +171,7 @@ function GameCard({ game, name, av, champ, leagueId }: { game: BracketGame; name
         seed={game.home_seed}
         label={name(game.home_team_id)}
         avClass={av(game.home_team_id)}
-        pts={pts(game.home_total, game.weeks[0]?.home_score)}
+        pts={pts('home', game.weeks[0]?.home_score)}
         kind="team"
         first
         dim={decided && game.winner_team_id !== game.home_team_id}
@@ -182,7 +182,7 @@ function GameCard({ game, name, av, champ, leagueId }: { game: BracketGame; name
           seed={game.away_seed}
           label={name(game.away_team_id)}
           avClass={av(game.away_team_id)}
-          pts={pts(game.away_total, game.weeks[0]?.away_score)}
+          pts={pts('away', game.weeks[0]?.away_score)}
           kind="team"
           first={false}
           dim={decided && game.winner_team_id !== game.away_team_id}

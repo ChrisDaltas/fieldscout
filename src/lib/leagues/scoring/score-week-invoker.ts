@@ -26,6 +26,11 @@
  *          drain in flight — R875; a hold — R872), `no_change`, held rows.
  *      Every line carries `league_id` where one applies (plan §2.3's
  *      structured-log duty).
+ *   2b. THE CLOSE OF THE WEEK (F863; migration 216) — once per invocation, after
+ *      the first drain: `runCloseScoring` scores every team of each
+ *      correction-window week that needs it and records what it read, which is
+ *      what lets `finalize_matchups` close the week. A league-week it can't
+ *      close is an ALERT by name; a database without 216 is INFO.
  *   3. REPEAT while the budget allows: immediately when the claim came back
  *      FULL (`more`), else after `DRAIN_INTERVAL_MS`; STOP early when the
  *      queue is empty AND no game window is hot (the same table-derived
@@ -46,7 +51,7 @@
  */
 
 import type { TimeProvider } from '../time/time-provider'
-import { type BatchReport, runScoreWeekBatch, type ScoreWorkerClient } from './score-week-worker'
+import { type BatchReport, type CloseScoringReport, runCloseScoring, runScoreWeekBatch, type ScoreWorkerClient } from './score-week-worker'
 
 // ── Constants (the route pins them beside `maxDuration`) ───────────────────
 
@@ -108,6 +113,25 @@ export function classifyDrain(report: BatchReport): DrainVerdict {
   return { alerts, infos }
 }
 
+/** The close pass's loud surface (F863): a held week is never silent. */
+export function classifyClose(report: CloseScoringReport): DrainVerdict {
+  const alerts: string[] = []
+  const infos: string[] = []
+  if (!report.available) infos.push(report.problems[0] ?? 'close pass unavailable')
+  for (const w of report.weeks) {
+    if (w.outcome === 'failed') {
+      alerts.push(`league_id=${w.league_id} week=${w.week} CLOSE FAILED: ${w.error ?? 'unknown'} — the week stays held (F863); retried next pass`)
+    } else if (w.outcome === 'no_stat_lines') {
+      infos.push(`league_id=${w.league_id} week=${w.week} not closed: no stat line for any player this week — held, nothing zero-filled (reconcile alerts once its window has passed)`)
+    } else if (w.outcome === 'closed') {
+      infos.push(`league_id=${w.league_id} week=${w.week} scores closed (${w.reason})`)
+    } else if (w.outcome === 'lines_moved') {
+      infos.push(`league_id=${w.league_id} week=${w.week} not closed: a stat landed under the pass — next pass re-scores`)
+    }
+  }
+  return { alerts, infos }
+}
+
 // ── The invocation ─────────────────────────────────────────────────────────
 
 export interface ScoreWeekInvokerDeps {
@@ -121,6 +145,8 @@ export interface ScoreWeekInvokerDeps {
   budgetMs?: number
   /** Injectable for the loop's tests; production passes nothing (runScoreWeekBatch). */
   drain?: typeof runScoreWeekBatch
+  /** Injectable for the loop's tests; production passes nothing (runCloseScoring, F863). */
+  closeWeeks?: typeof runCloseScoring
   leaseSeconds?: number
   batchSize?: number
   deferSeconds?: number
@@ -130,6 +156,8 @@ export interface ScoreWeekInvocationReport {
   started_at: string
   finished_at: string
   drains: BatchReport[]
+  /** The close pass's report (F863), null if the invocation died before it. */
+  close: CloseScoringReport | null
   alerts: string[]
   infos: string[]
   /** Why the invocation stopped. */
@@ -139,12 +167,14 @@ export interface ScoreWeekInvocationReport {
 export async function runScoreWeekInvocation(deps: ScoreWeekInvokerDeps): Promise<ScoreWeekInvocationReport> {
   const budgetMs = deps.budgetMs ?? SCORE_WEEK_BUDGET_MS
   const drain = deps.drain ?? runScoreWeekBatch
+  const closeWeeks = deps.closeWeeks ?? runCloseScoring
   const leaseSeconds = deps.leaseSeconds ?? SCORE_WEEK_LEASE_SECONDS
   const startedMs = deps.time.now().getTime()
   const report: ScoreWeekInvocationReport = {
     started_at: new Date(startedMs).toISOString(),
     finished_at: new Date(startedMs).toISOString(),
     drains: [],
+    close: null,
     alerts: [],
     infos: [],
     stopped: null,
@@ -159,6 +189,13 @@ export async function runScoreWeekInvocation(deps: ScoreWeekInvokerDeps): Promis
     const verdict = classifyDrain(batch)
     report.alerts.push(...verdict.alerts)
     report.infos.push(...verdict.infos)
+
+    if (report.close === null) {
+      report.close = await closeWeeks({ time: deps.time, db: deps.db })
+      const closeVerdict = classifyClose(report.close)
+      report.alerts.push(...closeVerdict.alerts)
+      report.infos.push(...closeVerdict.infos)
+    }
 
     if (batch.reason === 'queue_empty' && !(await deps.isHot())) {
       report.stopped = 'queue_empty_idle'

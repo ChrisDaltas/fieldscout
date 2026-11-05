@@ -2283,6 +2283,8 @@ export type Database = {
           league_id: string
           median_score: number | null
           reopened_by_action_id: string | null
+          scored_at: string | null
+          scored_digest: string | null
           scoring_rules_action_id: string | null
           scoring_rules_snapshot: Json | null
           scoring_rules_source: string | null
@@ -2298,6 +2300,8 @@ export type Database = {
           league_id: string
           median_score?: number | null
           reopened_by_action_id?: string | null
+          scored_at?: string | null
+          scored_digest?: string | null
           scoring_rules_action_id?: string | null
           scoring_rules_snapshot?: Json | null
           scoring_rules_source?: string | null
@@ -2313,6 +2317,8 @@ export type Database = {
           league_id?: string
           median_score?: number | null
           reopened_by_action_id?: string | null
+          scored_at?: string | null
+          scored_digest?: string | null
           scoring_rules_action_id?: string | null
           scoring_rules_snapshot?: Json | null
           scoring_rules_source?: string | null
@@ -6501,13 +6507,37 @@ export type Database = {
         Args: { w: Database["public"]["Tables"]["league_weeks"]["Row"] }
         Returns: Json
       }
+      league_week_close_stamp: {
+        Args: {
+          p_digest: string
+          p_league_id: string
+          p_now: string
+          p_scores: Json
+          p_week: number
+        }
+        Returns: Json
+      }
       league_week_list_words_internal: {
         Args: { p_weeks: Json }
+        Returns: string
+      }
+      league_week_scores_digest_internal: {
+        Args: { p_league_id: string; p_season: number; p_week: number }
         Returns: string
       }
       league_weeks_rules_backfill_internal: {
         Args: { p_apply?: boolean }
         Returns: Json
+      }
+      league_weeks_to_close: {
+        Args: { p_league_ids?: string[]; p_limit?: number; p_now: string }
+        Returns: {
+          digest: string
+          league_id: string
+          reason: string
+          season: number
+          week: number
+        }[]
       }
       leave_league: { Args: { p_league_id: string }; Returns: Json }
       lineup_autopilot_internal: {
@@ -7770,6 +7800,10 @@ export type Database = {
           results: number
           teams: number
         }[]
+      }
+      week_scores_owed_internal: {
+        Args: { p_league_id: string; p_season: number; p_week: number }
+        Returns: Json
       }
     }
     Enums: {

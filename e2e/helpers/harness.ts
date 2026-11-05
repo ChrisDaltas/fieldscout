@@ -3,7 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import type { AuctionDraftAudit, AuctionAuditBid, AuctionAuditBudget, AuctionAuditPick } from '@/lib/leagues/sim/invariants'
 import { auctionKnobsOf } from '@/components/draft/auction-budget'
-import { runScoreWeekBatch, type BatchReport } from '@/lib/leagues/scoring/score-week-worker'
+import { runCloseScoring, runScoreWeekBatch, type BatchReport } from '@/lib/leagues/scoring/score-week-worker'
 import { SYNTHETIC_SEASON } from '@/lib/leagues/sim/synthetic-season'
 import { DegradationTracker } from '@/lib/leagues/stats/degradation'
 import type { ProviderPlayerWeekStats, StatsProvider } from '@/lib/leagues/stats/stats-provider'
@@ -1507,6 +1507,8 @@ export async function finalizeWeekAt(
   leagueId: string,
   pNow: string,
 ): Promise<JobReport> {
+  // 216 (F863): production's minute beat runs the close pass; a week can't close without it.
+  await runCloseScoring({ time: new VirtualClock(new Date(pNow)), db: service }, { leagueIds: [leagueId] })
   const { data, error } = await service.rpc('finalize_matchups', {
     p_now: pNow,
     p_league_id: leagueId,

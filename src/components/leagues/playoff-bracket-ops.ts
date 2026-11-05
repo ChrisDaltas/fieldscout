@@ -198,6 +198,15 @@ export function formatTotal(total: number): string {
   return total.toFixed(2)
 }
 
+/** A multi-week round's running total as text. 118's sum reads a blank as 0, so
+ *  a round nobody has been scored in yet would say 0.00; it says what a single
+ *  week's cell says instead (F273, migration 216). */
+export function bracketTotalText(game: Pick<BracketGame, 'weeks' | 'home_total' | 'away_total'>, side: 'home' | 'away'): string {
+  const anyScored = game.weeks.some((w) => (side === 'home' ? w.home_score : w.away_score) !== null)
+  if (!anyScored) return formatBracketScore(null, game.weeks.some((w) => w.status !== 'scheduled') ? 'live' : 'scheduled')
+  return formatTotal(side === 'home' ? game.home_total : game.away_total)
+}
+
 // ---------------------------------------------------------------------------
 // R846 / F257(b′): a round seeded before a late correction
 // ---------------------------------------------------------------------------

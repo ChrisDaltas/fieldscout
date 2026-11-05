@@ -194,7 +194,7 @@ describe('F716 — the scoring fan-out skips an archived league; restore catches
     const report = await drain()
     expect(doorCalls).toEqual([])
     expect(report.leagues.some((l) => l.league_id === leagueId)).toBe(false)
-    expect(await homeScore()).toBe(0) // where it was: the row's default, untouched
+    expect(await homeScore()).toBeNull() // where it was: blank, untouched (216)
     // The scoped drain consumes only what it scores — the row is still there.
     expect(await queued()).toEqual([{ player_id: QB, enqueued_at: STAMP }])
   })
@@ -208,12 +208,12 @@ describe('F716 — the scoring fan-out skips an archived league; restore catches
       p_scores: [{ team_id: t1, points: 99 }],
     })
     expect(error?.message).toBe(`score_write_week_batch: league ${leagueId} not found`)
-    expect(await homeScore()).toBe(0) // where it was: the row's default, untouched
+    expect(await homeScore()).toBeNull() // where it was: blank, untouched (216)
     // …and a direct write is refused by the freeze itself.
     const { error: direct } = await service.from('matchups').update({ home_score: 99 }).eq('league_id', leagueId).select('id')
     expect(direct?.code).toBe('55000')
     expect(direct?.message).toMatch(/^This league is archived/)
-    expect(await homeScore()).toBe(0) // where it was: the row's default, untouched
+    expect(await homeScore()).toBeNull() // where it was: blank, untouched (216)
   })
 
   it('3. RESTORED: the week is re-queued at its line’s own stamp and the next drain scores it (18.00)', async () => {

@@ -112,7 +112,7 @@ describe('L.F2.3 drill 2 — the provider delays and duplicates rows', () => {
     expect(await statRowCount(service)).toBe(4)
     await drain(world, service, at(T.live, 0.01))
     // RB1 6.00 + WR1 2.00 = 8.00; RB2 3.00 + WR2 4.00 = 7.00 — once, not three or two times.
-    expect(await scores()).toEqual([[8, 7], [0, 0]])
+    expect(await scores()).toEqual([[8, 7], [null, null]])
     expect((await cellsOf(service, world.leagues[0])).duplicatePointRows).toEqual([])
   })
 
@@ -136,7 +136,7 @@ describe('L.F2.3 drill 2 — the provider delays and duplicates rows', () => {
     expect(faulty.failed).toBe(3)
     expect((await storedLine(service, 'rb1'))?.rush_yards).toBe(60)
     expect(await queueRows(service)).toEqual([])
-    expect(await scores()).toEqual([[8, 7], [0, 0]])
+    expect(await scores()).toEqual([[8, 7], [null, null]])
   })
 
   it('P4 RECOVERY with a DELAYED row: game 1 final, game 2 live, WR3 held back — the back-fill lands, the flag clears', async () => {

@@ -56,7 +56,7 @@ import { ingestWeek, type IngestReport } from '@/lib/sync/ingest-week'
 import type { SyncClient } from '@/lib/sync/types'
 import type { Database, Json } from '@/types/database'
 
-import { runScoreWeekBatch } from './score-week-worker'
+import { runCloseScoring, runScoreWeekBatch } from './score-week-worker'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_ANON_KEY =
@@ -379,6 +379,7 @@ describe('L.E2.2 — each league’s record of a stat correction, through the RE
 
   it('LC6 the REAL finalize_matchups at week 2’s first kickoff: the stored results are the record’s, and the REAL rebuild finds no result_drift (F245 / TD8)', async () => {
     clock.advanceTo(new Date(WEEK2.kickoff))
+    await runCloseScoring({ time: clock, db: service }, { leagueIds: [leagueId] }) // 216 (F863): production's minute beat
     expect((await service.rpc('finalize_matchups', { p_now: WEEK2.kickoff, p_league_id: leagueId })).error).toBeNull()
     expect(await scores()).toBe('regular 9.50-9.00 final home | regular 9.40-9.80 final away | secondary 9.40-9.50 final away')
     const results = await must(service.from('team_week_results').select('team_id, h2h_result, second_result, median_result').eq('league_id', leagueId).eq('week', 1), 'results')

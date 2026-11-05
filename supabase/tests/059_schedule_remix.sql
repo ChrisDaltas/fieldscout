@@ -644,11 +644,11 @@ reset role;
 delete from nfl_games where id = 'sr-w3-a';
 
 -- F5. R733 — an overridden or scored cell freezes its week (and refuses the
--- edit) even while `scheduled` (savepoint-scoped; scores DEFAULT 0 — the
--- reviewer's IS NOT NULL would freeze every week, measured).
+-- edit) even while `scheduled` (savepoint-scoped; rows start blank since 216 —
+-- the freeze still keys on non-zero, COALESCE(score, 0) <> 0).
 savepoint f_r733;
-select is((select count(*)::int from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 5 and home_score = 0 and away_score = 0), 8,
-  'PREMISE (R733): engine-written rows carry scores 0, not NULL (109''s DEFAULT) — the freeze keys on non-zero');
+select is((select count(*)::int from matchups where league_id = 'b2000000-0000-4000-8000-000000000008' and week = 5 and home_score is null and away_score is null), 8,
+  'PREMISE (R733, 216 / F273): engine-written rows start BLANK — the freeze keys on non-zero');
 -- 126 / M6A L.E1.5 (F325/D343): `matchups.is_overridden` now carries the
 -- §12.12 backstop — an UPDATE that moves the flag with no
 -- `app.commish_action_id` GUC is refused, as the OWNER too. The production

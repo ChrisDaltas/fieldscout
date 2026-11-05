@@ -246,6 +246,11 @@ beforeAll(async () => {
   clock.advanceTo(new Date(WEEK1.lastEnd))
   if ((await service.rpc('league_week_advance', { p_now: WEEK1.lastEnd, p_league_id: leagueId })).error) throw new Error('advance')
   clock.advanceTo(new Date(WEEK2.kickoff))
+  // 216 (F863): the close stamp, by hand: a close pass would write the per-player rows step (2) just removed.
+  const digest = await service.rpc('league_week_scores_digest_internal', { p_league_id: leagueId, p_season: SEASON, p_week: 1 })
+  if (digest.error) throw new Error(`digest: ${digest.error.message}`)
+  const stamped = await service.rpc('league_week_close_stamp', { p_league_id: leagueId, p_week: 1, p_digest: digest.data as string, p_scores: [], p_now: WEEK2.kickoff })
+  if (stamped.error) throw new Error(`stamp: ${stamped.error.message}`)
   if ((await service.rpc('finalize_matchups', { p_now: WEEK2.kickoff, p_league_id: leagueId })).error) throw new Error('finalize')
   // (4) THE RE-INGEST (sync:reingest's effect): the real yards land; the worker consumes the deltas as week_final.
   clock.advanceTo(new Date(REINGEST))

@@ -45,7 +45,7 @@ import type { Database } from '@/types/database'
 
 import { commishSetAutopilot } from '../api/commish-autopilot-service'
 import type { ReconcileReport } from '../scoring/reconcile'
-import { runScoreWeekBatch } from '../scoring/score-week-worker'
+import { runCloseScoring, runScoreWeekBatch } from '../scoring/score-week-worker'
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
 import { systemTime } from '../time/time-provider'
 
@@ -229,6 +229,8 @@ async function sweep(): Promise<SeasonInvariantFailure[]> {
   return sweepSeasonAudit(await audit())
 }
 
+let unscoredCells: Array<number | null> = []
+
 beforeAll(async () => {
   await cleanup()
   await seedSyntheticSeason(service)
@@ -395,6 +397,14 @@ beforeAll(async () => {
     if (error) throw new Error(`lineup_lock_tick(${at}): ${error.message}`)
     tickReport = (data ?? {}) as typeof tickReport
   }
+  // F273 (R890's assertion, 216): before the first batch every generated row
+  // of the open week is blank — asserted below, read here while it is true.
+  const unscored = must(
+    await service.from('matchups').select('home_score, away_score').eq('league_id', leagueId).eq('week', WEEK),
+    'matchups before the first batch',
+  )
+  unscoredCells = unscored!.flatMap((m) => [m.home_score, m.away_score])
+
   // Stat lines, then the PRODUCTION worker over the PRODUCTION queue — no
   // hand-written matchup UPDATE exists in this fixture.
   const stamp = systemTime.now().toISOString()
@@ -442,6 +452,9 @@ beforeAll(async () => {
     'nfl_weeks last_game_ends_at',
   )
   await job('league_week_advance', new Date(Date.parse(LAST_GAME_ENDS) + MINUTE_MS).toISOString())
+  // 216 (F863): production's minute beat runs the close pass; a week can't close without it.
+  const close = await runCloseScoring({ time: systemTime, db: service }, { leagueIds: [leagueId] })
+  if (close.closed !== 1) throw new Error(`the fixture's close pass closed ${close.closed} weeks — refusing to call that a driven week: ${JSON.stringify(close.problems)}`)
   await job('finalize_matchups', new Date(Date.parse(WINDOW_CLOSES) + MINUTE_MS).toISOString())
 
   state = await readLeagueState(service, 'vitest season sweep', leagueId, SEATS, 0)
@@ -453,6 +466,11 @@ afterAll(async () => {
 })
 
 describe('the driven fixture', () => {
+  it('F273: an unscored regular row is NULL until its first batch', () => {
+    expect(unscoredCells.length).toBeGreaterThan(0)
+    expect(unscoredCells.every((cell) => cell === null)).toBe(true)
+  })
+
   it('reached `final` through the real jobs, and the sweep is GREEN on it', async () => {
     const a = await audit()
     expect(a.weeks.find((w) => w.week === WEEK)?.status).toBe('final')

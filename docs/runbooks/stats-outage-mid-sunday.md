@@ -15,6 +15,10 @@ banner **"Live stats delayed — scores show the last update we received."**
   After **three failed pulls in a row**, it sets the "stats degraded" flag
   and the banner appears.
 - `score-week-ping` (every minute) turns new stats into league scores.
+- Once a week's games are over, `score-week-ping` also closes its scores
+  (the close pass): every team is recomputed from the stored stats and a
+  team nothing reached gets its real 0. A week can't finalize until that has
+  happened and the stats haven't moved since (F863).
 - `scoring-stall-check` (every minute) sets the "scoring stalled" flag when
   queued scoring work hasn't moved for 10 minutes, or no stats pull has
   been recorded for 2 hours. Managers see the same banner.
@@ -27,6 +31,21 @@ banner **"Live stats delayed — scores show the last update we received."**
   switch to.
 - Scores never go to zero or to a guess. The last good scores stay on
   screen until new stats arrive.
+
+## A held week
+
+A week past its deadline that isn't final is held, on purpose. `npm run
+reconcile -- <season>` names it (`week_held`, an alert). `finalize_matchups`'s
+report says why, in `skipped`: `games_not_final` · `recently_restored` ·
+`pending_scores` (a blank score) · `scores_owed` (stats moved since the close
+pass; it clears itself within a minute or two once `score-week-ping` runs) ·
+`round_not_built` (a playoff round has no games yet: read `bracket_waiting` /
+`bracket_blocked` on the same report). A week the close pass can't close is an
+alert in the `score-week` log (`CLOSE FAILED`), retried every minute. A team
+stuck on a failed save retries every 5 minutes (`QUARANTINED` in the same log),
+and a new stat update for that player retries it at once. No stat line for any
+player that week means the feed never arrived: nothing is zero-filled, wait for
+the feed. There is no "finalize anyway" (M8 ruled it out): take it to Chris.
 
 ## What you cannot do (not built in 2026)
 

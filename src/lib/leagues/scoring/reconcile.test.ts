@@ -59,6 +59,24 @@ describe('sameScore — two-decimal equality, null only equals null', () => {
   })
 })
 
+describe('classifyCell — a blank (216 / F273: "Games stay blank until they\'ve actually been scored.")', () => {
+  it('an open week: no points behind it is the truth, not a finding', () => {
+    expect(classifyCell(null, team(0), ctx())).toBeNull()
+    expect(classifyCell(null, team(0), ctx({ weekStatus: 'correction_window' }))).toBeNull()
+  })
+  it('an open week: points behind it is an update owed, never drift', () => {
+    const v = classifyCell(null, team(12), ctx({ weekStatus: 'correction_window' }))
+    expect(v?.kind).toBe('blank_owed')
+    expect(v?.severity).toBe('warn')
+  })
+  it('a final week holds no blank: there it is drift', () => {
+    expect(classifyCell(null, team(12), ctx({ weekStatus: 'final' }))?.kind).toBe('drift')
+  })
+  it('a queued delta still reads as in flight first', () => {
+    expect(classifyCell(null, team(12, ['p1']), ctx({ starterQueuedAt: new Map([['p1', '2026-09-13T20:00:00.000Z']]) }))?.kind).toBe('in_flight')
+  })
+})
+
 describe('classifyCell — the order of explanations', () => {
   it('agreement ⇒ null', () => {
     expect(classifyCell(92.08, team(92.08), ctx())).toBeNull()

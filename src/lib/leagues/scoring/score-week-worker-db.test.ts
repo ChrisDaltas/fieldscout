@@ -758,9 +758,13 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(report.claimed).toBe(7)
     expect(report.not_ready).toBe(0)
     expect(report.failed).toBe(1)
-    expect(report.written).toBe(2) // L1 + L4
-    expect(report.drained).toBe(7)
-    expect(await queued()).toEqual([])
+    expect(report.written).toBe(1) // L1 (L4 is E61 pending: blank stays blank, 216 — no_change)
+    // F860 (216): six consumed; the QB's row is L3's too, and L3 failed to save
+    // him, so that row is deferred for a retry instead of thrown away.
+    expect(report.drained).toBe(6)
+    expect(report.failed_deferred).toBe(1)
+    expect((await queued()).map((q) => q.player_id)).toEqual([P.qb1])
+    await must(service.from('score_fanout').delete().eq('player_id', P.qb1), 'clear the retained row')
 
     // L1: T1 written, the IR RB and the bench WR never counted.
     const l1 = league(report, fx.l1, 1)
@@ -787,8 +791,8 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(l1.door).toMatchObject({ written: 1, writable: 1, unchanged: 0, reason: null, skipped: [] })
     // The DB holds the JS literal — no re-rounding anywhere (F22): 92.08 read back as 92.08.
     expect(await matchupScores(fx.l1, 1)).toEqual([
-      { home: fx.t1, away: fx.t2, hs: 92.08, as: 0 },
-      { home: fx.t3, away: fx.t4, hs: 0, as: 0 },
+      { home: fx.t1, away: fx.t2, hs: 92.08, as: null },
+      { home: fx.t3, away: fx.t4, hs: null, as: null },
     ].sort((a, b) => (a.home < b.home ? -1 : 1)))
 
     // L3: quarantined BY NAME — nothing written, its matchup untouched at 109's DEFAULT 0.
@@ -796,14 +800,14 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(l3.outcome).toBe('failed')
     expect(l3.error).toMatch(/^snapshot_corrupt: scoring_rules_snapshot corrupt: .*pass_yards/)
     expect(l3.teams).toEqual([])
-    expect(await matchupScores(fx.l3, 1)).toEqual([{ home: fx.u1, away: fx.u2, hs: 0, as: 0 }])
+    expect(await matchupScores(fx.l3, 1)).toEqual([{ home: fx.u1, away: fx.u2, hs: null, as: null }])
     expect(report.problems.some((p) => p.includes(`QUARANTINED league ${fx.l3}`))).toBe(true)
 
     // L4: the charted key is undelivered → V1 PENDING → NULL on the cell (E61), never 0.
     const l4 = league(report, fx.l4, 1)
-    expect(l4.outcome).toBe('written')
+    expect(l4.outcome).toBe('no_change') // 216: blank stays blank, nothing to write
     expect(l4.teams[0]).toMatchObject({ team_id: fx.v1, points: null, pending: [{ player_id: P.wr1, keys: ['example_charted_yards'] }] })
-    expect(await matchupScores(fx.l4, 1)).toEqual([{ home: fx.v1, away: fx.v2, hs: null, as: 0 }])
+    expect(await matchupScores(fx.l4, 1)).toEqual([{ home: fx.v1, away: fx.v2, hs: null, as: null }])
 
     // The map's negative control: the K is L1's alone — his delta names L1 and no other league.
     expect(l1.mapped_player_ids).toContain(P.k1)
@@ -825,9 +829,13 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(report.failed).toBe(1)
     expect(league(report, fx.l1, 1).door).toMatchObject({ written: 0, writable: 1, unchanged: 1, reason: 'no_change' })
     expect(league(report, fx.l4, 1).door).toMatchObject({ written: 0, reason: 'no_change' })
-    expect(report.drained).toBe(5)
-    expect(await queued()).toEqual([])
-    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 92.08, as: 0 })
+    expect(report.drained).toBe(4)
+    expect((await queued()).map((q) => q.player_id)).toEqual([P.qb1]) // F860: L3's failed save, retained
+    await must(service.from('score_fanout').delete().eq('player_id', P.qb1), 'clear the retained row')
+    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 92.08, as: null }) // 216: T2, never reached, is blank
+    // From here on L3 no longer rosters the QB, so the rows below drain on
+    // their own terms. Its quarantine is F860's, pinned above and in lost-scores-db.
+    await must(service.from('league_rosters').delete().eq('league_id', fx.l3).eq('player_id', P.qb1), 'L3 stops rostering the QB')
   })
 
   it('M8 TD7 / R1547 — a stat line on a game an operator marked CANCELLED does not score (its players score 0, as the FieldScout line says); clearing the mark restores the points', async () => {
@@ -891,7 +899,7 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(scored.not_ready).toBe(0)
     expect(league(scored, fx.l1, 1).teams[0].points).toBe(93.08)
     expect(scored.drained).toBe(1)
-    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 93.08, as: 0 })
+    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 93.08, as: null })
   })
 
   it('F218/R714 — the orphan escape: a held row is released when the injected last-poll seam says a later poll completed after its stamp (the stored line is then the truth); an earlier poll releases nothing', async () => {
@@ -942,7 +950,7 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(league(next, fx.l1, 1).teams[0].points).toBe(94.08)
     expect(next.drained).toBe(1)
     expect(await queued()).toEqual([])
-    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 94.08, as: 0 })
+    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 94.08, as: null })
   })
 
   it('E61 settles — the charted key lands, the delta re-queues, V1 goes NULL → 23.50 (19.50 + 40 × 0.1)', async () => {
@@ -952,7 +960,7 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     const l4 = league(report, fx.l4, 1)
     expect(l4.outcome).toBe('written')
     expect(l4.teams[0]).toMatchObject({ team_id: fx.v1, points: 23.5, pending: [] })
-    expect(await matchupScores(fx.l4, 1)).toEqual([{ home: fx.v1, away: fx.v2, hs: 23.5, as: 0 }])
+    expect(await matchupScores(fx.l4, 1)).toEqual([{ home: fx.v1, away: fx.v2, hs: 23.5, as: null }])
     // L1 (an ESPN doc — no charted key) is unmoved by the same row: 94.08 stays.
     expect(league(report, fx.l1, 1).outcome).toBe('no_change')
   })
@@ -1112,7 +1120,7 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(events).toHaveLength(1)
     expect(await matchupScores(fx.l1, 1)).toEqual(
       [
-        { home: fx.t1, away: fx.t2, hs: 97.08, as: 0 },
+        { home: fx.t1, away: fx.t2, hs: 97.08, as: null },
         { home: fx.t3, away: fx.t4, hs: 7, as: 0 },
       ].sort((a, b) => (a.home < b.home ? -1 : 1)),
     )
@@ -1132,7 +1140,7 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     await enqueue([P.rb1, P.k1], 1, STAMP_3)
     const settled = await drain()
     expect(settled.drained).toBe(2)
-    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 97.08, as: 0 })
+    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 97.08, as: null })
 
     // Drain A claims the K at STAMP_3 and reads the FG-3 line. Right there —
     // after its first player_stats read resolves with the OLD line — the
@@ -1165,7 +1173,7 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(a.ack_missed).toEqual({ restamped: 1, lease_lost: 0, gone: 0 })
     expect(a.released).toBe(1)
     expect(await queued()).toEqual([{ player_id: P.k1, week: 1, enqueued_at: STAMP_4 }])
-    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 97.08, as: 0 })
+    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 97.08, as: null })
 
     // The next drain scores the TRUE line and the queue empties on it —
     // the pre-fix worker left 97.08 stored and the queue EMPTY here.
@@ -1173,7 +1181,7 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(league(next, fx.l1, 1).teams.find((t) => t.team_id === fx.t1)?.points).toBe(100.08)
     expect(next.drained).toBe(1)
     expect(await queued()).toEqual([])
-    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 100.08, as: 0 })
+    expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 100.08, as: null })
   })
 
   it('R867 — a MICROSECOND-stamped queue row (a `DEFAULT now()` / SQL-side enqueue’s precision) drains ONCE — the ack carries the claim’s own rendering back, never a millisecond re-rendering; readiness compares at the same precision', async () => {

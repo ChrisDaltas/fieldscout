@@ -103,7 +103,7 @@ import { setLineup } from '../api/lineup-service'
 import { PROJECTION_MAX_AGE_MS } from '../scoring/player-values'
 import { runLeaguePlayerValues } from '../scoring/player-values-job'
 import { reconcileSeason, type ReconcileReport } from '../scoring/reconcile'
-import { runScoreWeekBatch, type BatchReport } from '../scoring/score-week-worker'
+import { runCloseScoring, runScoreWeekBatch, type BatchReport } from '../scoring/score-week-worker'
 import { DegradationTracker } from '../stats/degradation'
 import { makeScenario } from '../stats/synthetic/scenarios'
 import { SCENARIO_IDS, type ScenarioId } from '../stats/synthetic/scenario'
@@ -1645,6 +1645,10 @@ async function driveSeason(
           `season: week ${entry.week}'s stored correction window ${stored === null ? 'NULL' : new Date(stored).toISOString()} is not the one its finalize beat was dated from (${new Date(windowEndsAt.get(entry.week)!).toISOString()} — the next week's first kickoff, F405 / migration 158)`,
         )
       }
+      // 216 (F863): production's minute beat runs the close pass. The season's
+      // beats are hours apart, so it runs here, at the finalize's own instant,
+      // until nothing more is owed: a week can't close before this.
+      await driveCloseScoring(service, clock, leagueIds, pNow, workerErrors, workerErrorsByLeague)
       for (const league of leagues) {
         const { report: data, skippedOnLock } = await runScopedJob({
           label: `${league.label}: finalize_matchups@${pNow}`,
@@ -2095,6 +2099,30 @@ export function lawfulBracketSkip(
   return null
 }
 
+/** F863: the production close pass, to exhaustion, its failures named as worker errors. */
+async function driveCloseScoring(
+  service: Supabase,
+  clock: VirtualClock,
+  leagueIds: readonly string[],
+  pNow: string,
+  workerErrors: string[],
+  byLeague: Map<string, string[]>,
+): Promise<void> {
+  for (let pass = 0; pass < 50; pass++) {
+    const close = await runCloseScoring({ time: clock, db: service }, { leagueIds })
+    for (const w of close.weeks) {
+      if (w.outcome !== 'failed') continue
+      const line = `close pass ${w.league_id} week ${w.week} @ ${pNow}: ${w.error ?? 'unknown'}`
+      workerErrors.push(line)
+      const bucket = byLeague.get(w.league_id)
+      if (bucket) bucket.push(line)
+      else byLeague.set(w.league_id, [line])
+    }
+    if (close.weeks.every((w) => w.outcome !== 'closed' && w.outcome !== 'lines_moved')) return
+  }
+  throw new Error(`close pass @ ${pNow}: still closing weeks after 50 passes`)
+}
+
 function absorbBatch(
   batch: BatchReport,
   pNow: string,
@@ -2346,8 +2374,8 @@ async function readClubLocks(
 
 /**
  * WHY A WEEK IS NOT FINAL, ASKED OF THE FINALIZE JOB'S OWN ORACLES (F302 /
- * §3 Q47). `finalize_matchups` holds a week on exactly three guards (212 added
- * guard 1b, R1752), and each `CONTINUE`s out of the loop leaving the row
+ * §3 Q47). `finalize_matchups` holds a week on exactly four guards (212 added
+ * guard 1b, R1752; 216 guard 3, F863), and each `CONTINUE`s out of the loop leaving the row
  * untouched at `correction_window`
  * (118:2073 says so verbatim: "The week is SKIPPED BY NAME and stays
  * `correction_window`"):
@@ -2359,7 +2387,10 @@ async function readClubLocks(
  *                       window; league-local, it reads no queue);
  *   guard 2, 118:2074 — `week_results_pending_internal(league, season, week)`
  *                       non-NULL => `pending_scores` / `pending_results`
- *                       (E61 — absence is not a score, never coerced to 0.00).
+ *                       (E61 — absence is not a score, never coerced to 0.00);
+ *   guard 3, 216      — `week_scores_owed_internal(league, season, week)`
+ *                       non-NULL => `scores_owed` (the lines moved since the
+ *                       close pass last closed the week — F859 / F863).
  * The write door tests FINALITY instead (119:566 refuses `final`, 119:570
  * admits `live` or `correction_window`), so a week held on any guard past
  * its own `correction_window_ends_at` is still open at the door. This reads
@@ -2409,6 +2440,16 @@ async function readFinalizeHold(
   const p = (pending ?? null) as { reason?: string } | null
   if (p !== null && typeof p.reason === 'string') {
     return { reason: p.reason, detail: `${p.reason} (guard 2, 118:2074; ${JSON.stringify(p)})` }
+  }
+  const { data: owed, error: owedError } = await service.rpc('week_scores_owed_internal', {
+    p_league_id: leagueId,
+    p_season: SYNTHETIC_SEASON,
+    p_week: week,
+  })
+  throwIfError(owedError, `week_scores_owed_internal(${leagueId}, ${week})`)
+  const o = (owed ?? null) as { reason?: string } | null
+  if (o !== null && typeof o.reason === 'string') {
+    return { reason: o.reason, detail: `${o.reason} (guard 3, 216; ${JSON.stringify(o)})` }
   }
   return {
     reason: null,

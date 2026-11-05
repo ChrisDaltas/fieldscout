@@ -86,7 +86,7 @@ import {
   slotForPosition,
   type ReplayPair,
 } from './correction-replay'
-import { runScoreWeekBatch } from './score-week-worker'
+import { runCloseScoring, runScoreWeekBatch } from './score-week-worker'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_ANON_KEY =
@@ -317,6 +317,7 @@ function story(pair: ReplayPair, arm: Arm, season: number) {
 
   async function finalize(): Promise<string> {
     clock.advanceTo(tLock)
+    await runCloseScoring({ time: clock, db: service }, { leagueIds: [state.leagueId] }) // 216 (F863): production's minute beat
     const { error } = await service.rpc('finalize_matchups', { p_now: tLock.toISOString(), p_league_id: state.leagueId })
     if (error) throw new Error(`finalize_matchups: ${error.message}`)
     return (await must(service.from('league_weeks').select('status').eq('league_id', state.leagueId).eq('week', 1).single(), 'week'))!.status

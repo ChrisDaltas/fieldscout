@@ -105,6 +105,15 @@ select ok(
 
 -- pg_temp.un183 — migration 183's two inserted lines per job body removed
 -- (each marked `183 / L.G1.3 (TD4)`); an identity on every other body.
+-- pg_temp.un216 — migration 216's hunks reversed: its marked inserted lines removed, and the one
+-- replaced predicate of playoff_bracket_sync_internal (F257(a)) put back.
+create function pg_temp.un216(p_src text) returns text language sql as $un216$
+  select regexp_replace(
+    regexp_replace(p_src,
+      E'        AND \\(m\\.home_score IS NOT NULL OR m\\.away_score IS NOT NULL\\);   -- 216 / F863[^\\n]*\\n',
+      E'        AND (   (m.home_score IS NOT NULL AND m.home_score <> 0)\n             OR (m.away_score IS NOT NULL AND m.away_score <> 0));\n'),
+    E'[^\\n]*-- 216 / F863[^\\n]*\\n', '', 'g');
+$un216$;
 -- pg_temp.un212 — migration 212's inserted lines removed (each ends
 -- `-- 212 / F716…`; pgTAP 162 A9 pins them); an identity on every body
 -- without them.
@@ -118,7 +127,7 @@ create function pg_temp.un183(p_src text) returns text language sql as $un183$
            E'        AND NOT public\\.job_paused_internal\\(''[a-z-]+'', l\\.id\\)   -- 183 / L\\.G1\\.3 \\(TD4\\)\n', '', 'g')
 $un183$;
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un183(pg_temp.un212(p.prosrc))), ' ' order by p.proname)   -- 212 (R1755): finalize's restore-window hunk removed first
+  (select string_agg(p.proname || '=' || md5(pg_temp.un183(pg_temp.un212(pg_temp.un216(p.prosrc)))), ' ' order by p.proname)   -- 212 (R1755): finalize's restore-window hunk removed first
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('waiver_tick', 'league_week_advance', 'finalize_matchups')),
   'finalize_matchups=5239ab311af797a401bb91d00d78f9bd league_week_advance=1ea76a893bada31b54ebe1a82f004625 waiver_tick=8477f03af76d5117fa021e3b38cd1667',
