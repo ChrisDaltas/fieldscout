@@ -61,7 +61,12 @@ describe('the door: tradesHref', () => {
   it('the trade center, and the builder toward a team with a player picked', () => {
     expect(tradesHref('l1')).toBe('/app/leagues/l1/trades')
     expect(tradesHref('l1', { teamId: 't2' })).toBe('/app/leagues/l1/trades?with=t2')
-    expect(tradesHref('l1', { teamId: 't2', playerId: 'p9' })).toBe('/app/leagues/l1/trades?with=t2&player=p9')
+    expect(tradesHref('l1', { teamId: 't2', playerId: 'p9' })).toBe('/app/leagues/l1/trades?with=t2&target=p9')
+  })
+
+  it('never sets ?player=, which opens the player view over the builder (F881)', () => {
+    const url = new URL(tradesHref('l1', { teamId: 't2', playerId: 'p9' }), 'http://local.test')
+    expect(url.searchParams.has('player')).toBe(false)
   })
 })
 
@@ -405,7 +410,7 @@ describe('no ledger code in any end-user copy (F277(a))', () => {
   })
 })
 
-describe('F480 / R1268 — the ?with=&player= door (tradeDoorStep, replayed the way TradesContent renders)', () => {
+describe('F480 / R1268 — the ?with=&target= door (tradeDoorStep, replayed the way TradesContent renders)', () => {
   /** Replays the component: one step at mount and one per render with the
    *  team known then (its effect on `myTeamId`); 'close' clears the builder.
    *  Returns every builder the door opened, in order. */

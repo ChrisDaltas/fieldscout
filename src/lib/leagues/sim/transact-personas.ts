@@ -5,8 +5,8 @@
  * lifecycle"; PROGRESS F211 (the Ghost arm), F284(b), F300).
  *
  * OPT-IN (`sim season --transact`). The default season run — the population
- * `gate-m4.sh` measures, whose evidence stage REQUIRES `poolRows = 0` and the
- * F300 withdrawal (gate-m4-evidence.ts:371-396) — is byte-for-byte what it was.
+ * `gate-m4.sh` measures, whose evidence stage REQUIRES `poolRows = rosterRows`
+ * and the F300 declaration (D810; gate-m4-evidence.ts) — is what it was.
  * A transacting run is a different population and says so on every report.
  *
  * WHAT EACH LEAGUE DOES, in this order, every write through a real door

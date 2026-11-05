@@ -161,14 +161,16 @@
 #     datum=nfl_games` for both its clubs, because ingest KEEPS a postponed
 #     game's (season, week) row and 112:413-417 resolves the club's kickoff
 #     with no status filter. F289.
-#   - INVARIANT 4, the pool/roster mirror (§12.19/D294). `league_player_pool`
-#     is written ONLY by `roster_add_drop_internal` (113:713/734, 115:646/667)
-#     and the season harness drives no add/drops, so the table is EMPTY for
-#     every sim league and the mirror loop iterates nothing — it returned clean
-#     with the rule deleted. F300. The CLAIM is withdrawn rather than dressed
-#     up, and the withdrawal is ENFORCED: [5/10] fails the gate if the
-#     declaration goes missing from a report, or if `report.poolRows` is ever
-#     non-zero (at which point the mirror is live and the declaration stale).
+#   - INVARIANT 4, the pool/roster mirror (§12.19/D294), RE-REASONED by D810
+#     (F300). Since D496 / migration 181 the lock tick writes a `rostered` row
+#     for every rostered player, so a default season run's pool IS the roster
+#     mirror and the invariant judges that population on its ROSTERED ARM ONLY.
+#     The harness drives no add/drops, so the free-agent, on-waivers and
+#     locked-in-game arms see no row here; those live in the transacting run
+#     (gate-m5), pgTAP and inseason-lock.spec.ts. The declaration is ENFORCED:
+#     [5/10] fails the gate if it goes missing from a report, or if
+#     `report.poolRows` ever differs from `report.rosterRows` or both are 0 (a
+#     pool gone empty is vacuous again; a partial one left a player unjudged).
 #   - WHICH OF "the window closed" AND "the week is final" GOVERNS a post-
 #     window delta. §3 Q47 / F302, and the CAUSE is now established rather
 #     than open: `finalize_matchups` lawfully holds a week on either of two

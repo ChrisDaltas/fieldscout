@@ -451,8 +451,15 @@ export interface SeasonRunReport {
    * vacuity is measured, not inferred, and so the evidence stage can fail if it
    * ever stops being 0 — at which point the mirror is live and the coverage-gap
    * declaration that stands in for it is stale.
+   *
+   * D810 (that day came — D496 / migration 181, 2026-10-05): the lock tick now
+   * gives every rostered player a `rostered` row, so a default season run's
+   * pool is the full roster mirror. The evidence stage requires `poolRows` to
+   * equal `rosterRows`: invariant 4's rostered arm is live on a real input.
    */
   poolRows: number
+  /** D810 — the rosters invariant 4 judged the pool against, over the run. */
+  rosterRows: number
   /**
    * M6A L.E1.14 — invariant 8's PREMISE, measured (§4 rule 14(c)): how many
    * seats in the whole run have no manager. 0 means the unmanaged-seat
@@ -519,7 +526,7 @@ export interface SeasonRunReport {
   /**
    * M5 L.D3.8 — the transacting personas + the Ghost (`--transact`), or null
    * for a run that drove none (every gate-m4 run: its evidence stage requires
-   * `poolRows = 0`). Each invariant's POPULATION is carried so a report can
+   * `poolRows = rosterRows`, D810). Each invariant's POPULATION is carried so a report can
    * never read a vacuous pass as coverage; a zero population is a run PROBLEM.
    */
   transactions: TransactionRunReport | null
