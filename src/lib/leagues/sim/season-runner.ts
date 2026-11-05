@@ -2301,7 +2301,13 @@ function countCellChanges(
     const now = after.get(teamId)
     if (now === undefined) continue
     compared += 1
-    if (now !== value) changed += 1
+    if (now === value) continue
+    // 216 (F273 / F863): a blank that became a real 0 is the close pass reaching a
+    // team no update reached, not this arm's charted key moving a score. A number
+    // that moved, or a blank that became any other number, still counts.
+    const was = value.split('|')
+    const is = now.split('|')
+    if (!was.every((cell, i) => cell === is[i] || (cell === '(null)' && Number(is[i]) === 0))) changed += 1
   }
   return { compared, changed }
 }

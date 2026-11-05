@@ -13,11 +13,11 @@
 #          M7's own legs (and it clears whatever a shared DB was holding).
 #   [3/7]  M7's pgTAP BY NAME, on the empty post-reset pool: 156 + 157 (L.F2.8
 #          G1–G4), 159 (rate limits, L.F2.6), 160 (L.F2.8's remaining groups),
-#          162 (the archive, F716). The summary line must say Files=5, so a
+#          162 (the archive, F716), 166 (lost scores, F863). The summary line must say Files=6, so a
 #          run that found nothing is not a pass.
 #   [4/7]  F56 settle (the reset just restarted the services) → M7's vitest BY
 #          NAME (F84): the wire suites (rate limits, migration 210's hardening)
-#          and the unit pins behind them. Its summary must say all 12 files
+#          and the unit pins behind them. Its summary must say all 13 files
 #          passed and nothing skipped: vitest ignores a filter that matches
 #          nothing, and `.skip` reads green (R1762).
 #   [5/7]  `npm run test:chaos` (F835), the same check on its 7 files (the four
@@ -37,6 +37,7 @@
 #   Rate limits (§22.5)    pgTAP 159 at [3/7]; on the wire at [4/7].
 #   Security (L.F2.8)      pgTAP 156, 157, 160 at [3/7]; wire + pins at [4/7].
 #   Archive (F716)         pgTAP 162 at [3/7].
+#   Lost scores (F863)     pgTAP 166 at [3/7]; `lost-scores-db` at [4/7].
 #   Chaos drills (L.F2.3)  [5/7] — the four drills' files are checked by name
 #                          first, so a renamed drill can't go quietly missing.
 #   Everything else in     `test:gate:m6` at [6/7].
@@ -46,7 +47,7 @@
 #                          are read by `gate-m7-open-rows.ts`).
 #
 # THE FULL pgTAP SUITE RUNS ONLY INSIDE [6/7]. This gate does not run it again:
-# [3/7] is the five M7 files for their own named stage, which costs seconds.
+# [3/7] is the six M7 files for their own named stage, which costs seconds.
 # Those five also run inside the full suite at [6/7] — and in every older gate.
 #
 # WHY THIS ORDER. M7's legs run first and on their own reset because they take
@@ -231,6 +232,7 @@ M7_PGTAP=(
   supabase/tests/159_rate_limits.sql
   supabase/tests/160_security_hardening_followups.sql
   supabase/tests/162_league_archive.sql
+  supabase/tests/166_lost_scores.sql
 )
 M7_VITEST=(
   src/lib/rate-limit/rate-limits-db.test.ts
@@ -245,6 +247,7 @@ M7_VITEST=(
   src/app/auth/callback/route.test.ts
   src/utils/safe-redirect-path.test.ts
   src/utils/local-supabase-url.test.ts
+  src/lib/leagues/scoring/lost-scores-db.test.ts
 )
 CHAOS_DRILLS=(
   src/lib/leagues/chaos/realtime-kill-db.test.ts

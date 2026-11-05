@@ -38,6 +38,7 @@ const NAMED_FILES = [
   'supabase/tests/159_rate_limits.sql',
   'supabase/tests/160_security_hardening_followups.sql',
   'supabase/tests/162_league_archive.sql',
+  'supabase/tests/166_lost_scores.sql',
   'src/lib/rate-limit/rate-limits-db.test.ts',
   'src/lib/security/hardening-wire-db.test.ts',
   'src/middleware-rate-limit.test.ts',
@@ -50,6 +51,7 @@ const NAMED_FILES = [
   'src/app/auth/callback/route.test.ts',
   'src/utils/safe-redirect-path.test.ts',
   'src/utils/local-supabase-url.test.ts',
+  'src/lib/leagues/scoring/lost-scores-db.test.ts',
   'src/lib/leagues/chaos/realtime-kill-db.test.ts',
   'src/lib/leagues/chaos/provider-faults-db.test.ts',
   'src/lib/leagues/chaos/worker-crash-db.test.ts',
@@ -68,7 +70,7 @@ case "$1 $2" in
     [ "\${STUB_RESET:-ok}" = "hang" ] && { sleep 30 >/dev/null 2>&1 & wait; }
     [ "\${STUB_RESET:-ok}" = "fail" ] && exit 1
     ;;
-  "supabase test") echo "Files=\${STUB_PGTAP_FILES:-5}, Tests=9,  1 wallclock secs" ;;
+  "supabase test") echo "Files=\${STUB_PGTAP_FILES:-6}, Tests=9,  1 wallclock secs" ;;
   "vitest run")
     shift 2
     files=$#
@@ -226,12 +228,12 @@ describe('gate-m7.sh, with its legs stubbed', () => {
     ['the chaos drills, exiting 3', { STUB_CHAOS_CODE: '3' }],
     ['the M6 gate, exiting 4', { STUB_M6_CODE: '4' }],
     ['the M7 vitest', { STUB_VITEST_CODE: '1' }],
-    ['a dropped file at [4/7], vitest exit 0', { STUB_M7_FILES: '11' }],
+    ['a dropped file at [4/7], vitest exit 0', { STUB_M7_FILES: '12' }],
     ['a skipped test at [4/7], vitest exit 0', { STUB_M7_SKIPPED: '1' }],
     ['a dropped file at [5/7], chaos exit 0', { STUB_CHAOS_FILES: '6' }],
     ['a skipped drill at [5/7], chaos exit 0', { STUB_CHAOS_SKIPPED: '1' }],
     ['a failed reset', { STUB_RESET: 'fail' }],
-    ['pgTAP that ran four files', { STUB_PGTAP_FILES: '4' }],
+    ['pgTAP that ran five files', { STUB_PGTAP_FILES: '5' }],
   ])('a failed leg (%s): exit 1, GATE FAILED, the green headline never printed', (_name, env) => {
     const run = gate({ attachments: true, env })
     expect(run.code).toBe(1)
