@@ -305,7 +305,7 @@ with_budget "${GATE_M7_RESET_BUDGET_S:-900}" npx supabase db reset || reset_code
 [ "$reset_code" -eq 0 ] || exit "$reset_code"
 stage_done 2
 
-stage "[3/7] M7's pgTAP by name — 156, 157, 159, 160, 162, on the empty pool"
+stage "[3/7] M7's pgTAP by name — 156, 157, 159, 160, 162, 166, on the empty pool"
 npx supabase test db "${M7_PGTAP[@]}" 2>&1 | tee "$REPORT_DIR/pgtap-m7.txt"
 grep -Eq "^Files=${#M7_PGTAP[@]}," "$REPORT_DIR/pgtap-m7.txt" || {
   echo "    pg_prove's summary does not say Files=${#M7_PGTAP[@]} — the named files did not all run."
