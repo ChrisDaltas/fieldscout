@@ -229,6 +229,8 @@ describe('E61 — pending, never zero; scoped to what the position can deliver',
   it('F871 a kicker delivers his rushing yards at the document\'s base value, and the scope law stands: no K override, no other position gains them', () => {
     const rusher = row('sw-k2', { rush_yards: 6 })
     expect(applicableKeys('K').has('rush_yards')).toBe(true)
+    // Exactly the scope law plus rushing yards: nothing else rides along.
+    expect([...applicableKeys('K')].filter((k) => !ADVANCED_KEYS.has(k)).sort()).toEqual([...POSITION_SCORABLE_KEYS.K, 'rush_yards'].sort())
     expect(deliveredLine(rusher, 'K').rush_yards).toBe(6)
     expect(scoreStarter(ESPN, 'sw-k2', 'K', rusher)).toEqual({ player_id: 'sw-k2', position: 'K', points: 0.6, pending: [], reason: 'scored' })
     const fork = forkTemplateDoc(ESPN)

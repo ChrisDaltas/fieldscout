@@ -5,12 +5,14 @@
  * siblings. The stack half (real tables, the synthetic provider, the
  * outage flag) is ingest-week-db.test.ts.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { DegradationTracker } from '@/lib/leagues/stats/degradation'
+import { SleeperStatsProvider } from '@/lib/leagues/stats/sleeper-stats-provider'
 import type { ProviderGame, ProviderPlayerWeekStats, StatsProvider } from '@/lib/leagues/stats/stats-provider'
 import { weekReleaseFloor } from '@/lib/leagues/time/release-floor'
 import { VirtualClock } from '@/lib/leagues/time/virtual-clock'
+import { recordedActual } from '@/lib/players/preset-scoring.fixtures'
 
 import {
   ADVANCED_KEYS,
@@ -1182,5 +1184,99 @@ describe('L.F2.3 — F830 / F831 / F832 through ingestWeek', () => {
     const c = statRow({ player_id: 'p-a', columns: { ...a.columns, pass_yards: 2 } })
     expect(conflictingPlayers([a, b, c])).toEqual(['p-a'])
     expect(conflictingPlayers(collapseIdenticalRows([a, a]).rows)).toEqual([])
+  })
+})
+
+// ── F870 / F871 — the merge gate, on real lines ──
+//
+// Merging the new map changes what the next poll writes for a week still being
+// polled. Real Sleeper lines (Tyler Bass 2026 wk1, K; James Mitchell 2026 wk8, TE)
+// go through the real SleeperStatsProvider, with `fetch` stubbed, into the World
+// above. The calendar is the script's, as nflverse's is in production
+// (`withNflverseCalendar`); the provider takes season and week from the request,
+// so both lines are week 2's here. The stored rows are the old map's: the same raw
+// lines minus the fields only the new map reads.
+describe('F870 / F871 — merged mid-week: the old map\'s rows, then the new map, through SleeperStatsProvider and ingestWeek', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  type RawRow = { player_id: string; stats: Record<string, number> }
+  const BASS = recordedActual('bass_2026_wk1')
+  const MITCHELL = recordedActual('mitchell_2026_wk8')
+  /** The raw fields F870 maps and the old map didn't read. */
+  const F870_FIELDS = new Set(['fgm_0_19', 'fgm_20_29', 'fgm_30_39', 'def_st_fum_rec', 'blk_kick', 'fgmiss', 'def_st_td', 'st_td', 'fum_rec_td'])
+  const oldView = (row: RawRow): RawRow => ({ ...row, stats: Object.fromEntries(Object.entries(row.stats).filter(([k]) => !F870_FIELDS.has(k))) })
+
+  /** Week 2 stored under the old map: polled at 20:30Z with G1 final and G3 live, and, given `allFinalAt`, polled again when G3 is first seen final. */
+  async function storedUnderOldMap(allFinalAt?: string) {
+    const world = new World([BASS.player_id, MITCHELL.player_id])
+    const clock = new VirtualClock(new Date('2026-09-20T20:30:00Z'))
+    const state = { games: [] as ProviderGame[], answer: {} as Record<string, RawRow[]> }
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const position = /^https:\/\/api\.sleeper\.com\/stats\/nfl\/2026\/2\?season_type=regular&position\[\]=(\w+)$/.exec(url)?.[1]
+      if (position === undefined) throw new Error(`unexpected fetch in test: ${url}`)
+      return { ok: true, status: 200, json: async () => state.answer[position] ?? [] } as unknown as Response
+    })
+    const sleeper = new SleeperStatsProvider(clock)
+    const provider: StatsProvider = {
+      name: 'sleeper+nflverse',
+      capabilities: sleeper.capabilities,
+      getSchedule: async () => state.games,
+      getGameStates: async () => [],
+      getWeekStats: (season, week) => sleeper.getWeekStats(season, week),
+      getInjuries: async () => [],
+      getInactives: async () => [],
+    }
+    const deps = { db: world.client(), degradation: new DegradationTracker(), season: 2026, week: 2 }
+    const poll = async (iso: string) => {
+      clock.advanceTo(new Date(iso))
+      return ingestWeek(provider, clock, deps)
+    }
+    state.answer = { K: [oldView(BASS)], TE: [oldView(MITCHELL)] }
+    state.games = [wk2Game(WK2_G1, 'final'), wk2Game(WK2_G3, 'live')]
+    await poll('2026-09-20T20:30:00Z')
+    if (allFinalAt !== undefined) {
+      state.games = [wk2Game(WK2_G1, 'final'), wk2Game(WK2_G3, 'final')]
+      await poll(allFinalAt)
+    }
+    // The old map's rows: Bass's two short FGs read 0, and Mitchell's line had nothing to store.
+    expect([world.stats.get(BASS.player_id)?.fg_0_39, world.stats.get(BASS.player_id)?.fg_made_40_plus]).toEqual([0, 1])
+    expect(world.stats.has(MITCHELL.player_id)).toBe(false)
+    // The merge: the same raw lines, read by today's map.
+    state.answer = { K: [BASS], TE: [MITCHELL] }
+    return { world, poll }
+  }
+
+  it('no correction while a game of the week is open; settled inside the 6 h grace; recorded as a stat correction past it', async () => {
+    const moved = () => ({ [BASS.player_id]: { enqueue: true, corrections: [] }, [MITCHELL.player_id]: { enqueue: true, corrections: [] } })
+
+    // M1 — G3 still live: both lines move and are re-scored, nothing is recorded.
+    const open = await storedUnderOldMap()
+    const m1 = await open.poll('2026-09-20T21:30:00Z')
+    expect(lastSent(open.world)).toEqual(moved())
+    expect([m1.corrections.detected, m1.corrections.settled, m1.corrections.recorded]).toEqual([0, 0, 0])
+    expect([open.world.stats.get(BASS.player_id)?.fg_0_39, open.world.stats.get(MITCHELL.player_id)?.fumble_recovery_td]).toEqual([2, 1])
+
+    // M2 — the week's last game was first seen final at 03:30Z; an hour later is inside the grace: settled, not recorded.
+    const grace = await storedUnderOldMap('2026-09-21T03:30:00Z')
+    const m2 = await grace.poll('2026-09-21T04:30:00Z')
+    expect(lastSent(grace.world)).toEqual(moved())
+    expect([m2.corrections.detected, m2.corrections.settled, m2.corrections.recorded]).toEqual([0, 2, 0])
+
+    // M3 — the next day's re-poll, past the grace: each moved key is recorded as a stat correction.
+    const late = await storedUnderOldMap('2026-09-21T03:30:00Z')
+    const m3 = await late.poll('2026-09-22T16:00:00Z')
+    expect(lastSent(late.world)).toEqual({
+      [BASS.player_id]: { enqueue: true, corrections: [{ stat_key: 'fg_0_39', column: 'fg_0_39' }] },
+      [MITCHELL.player_id]: { enqueue: true, corrections: [{ stat_key: 'fumble_recovery_td', column: 'fumble_recovery_td' }] },
+    })
+    expect([m3.corrections.detected, m3.corrections.settled, m3.corrections.recorded, m3.corrections.weekState]).toEqual([2, 0, 2, 'final'])
+    expect(m3.corrections.keys).toEqual([
+      { player_id: MITCHELL.player_id, stat_key: 'fumble_recovery_td', old: null, new: 1 },
+      { player_id: BASS.player_id, stat_key: 'fg_0_39', old: 0, new: 2 },
+    ])
+    expect(m3.reasons).toContain('stat_correction_events: 2 recorded for 2 player(s) (week final)')
   })
 })

@@ -164,7 +164,8 @@ const PROJECTED_OFFENSE: Readonly<Record<string, string>> = { pr_td: 'return_td'
  *
  * A projected kicker's short makes and misses come from the buckets, not from
  * `fgm` and `fga`: in 2026 `fgm` doesn't match its buckets on 281 of 299 rows, and
- * yards per make say the buckets are the real set. That reading is pending Chris.
+ * yards per make say the buckets are the real set. That reading was told to Chris
+ * 2026-11-05 and stands unless Chris says otherwise.
  */
 export const SLEEPER_PROJECTIONS_ONLY_MAP: Readonly<Record<WeeklyProjectionPosition, Readonly<Record<string, string>>>> = {
   QB: PROJECTED_OFFENSE,

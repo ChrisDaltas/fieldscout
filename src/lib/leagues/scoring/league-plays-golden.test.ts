@@ -7,7 +7,8 @@
  *
  * The lines are full on purpose (`fixtures/sleeper-league-plays.json`). A wrong map
  * shows only on the field it wrongly reads, so these lines are chosen to carry
- * those fields: `misc_td`, `fg_blkd`, `xp_blkd`, `fum_rec_ez_tds`, `st_fum_rec`.
+ * those fields: `misc_td`, `fg_blkd`, `xp_blkd`, `fum_rec_ez_tds`, `st_fum_rec`,
+ * `fgmiss_30_39`.
  *
  * 2025 lines pin the map, not production: production's 2025 rows don't move without
  * F872, and these only read the map through the fixtures.
@@ -73,6 +74,8 @@ const GOLDENS: readonly Golden[] = [
   G('santos_2026_wk2', 'K', [2, 4, 5, 4], 4, 'K fg_blkd is already inside fgmiss'),
   G('shrader_2026_wk1', 'K', [5, 7, 7, 6], 7, 'xpmiss with no fgmiss: not an FG miss; Sleeper alone charges it'),
   G('fitzgerald_2026_wk1', 'K', [7, 8, 8, 7], 8, 'xp_blkd is already inside xpmiss'),
+  G('loop_2026_wk8', 'K', [3, 3, 4, 3], 3, 'fgmiss_30_39 is already inside fgmiss'),
+  G('borregales_2026_wk3', 'K', [5, 6, 7, 6], 6, 'fgmiss_30_39 is already inside fgmiss'),
   // D/ST
   G('chi_2026_wk6', 'DEF', [13, 13, 11, 11], 13, 'two special-teams recoveries; def_st_ff pays nothing'),
   G('ari_2026_wk1', 'DEF', [12, 12, 10, 10], 12, 'a blocked kick'),
