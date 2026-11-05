@@ -80,7 +80,7 @@ The record ends with exactly one of:
 - *"No operator or commissioner action was needed to fix a system fault during the window; zero S0/S1 F-rows were filed from it."* — with the evidence above; or
 - *"Fixes were needed:"* followed by each FIX and its F-row.
 
-Then: **"Ruling: awaiting Chris."** Chris's ruling is copied in verbatim with its date when he gives it. Criterion 4 is met only by that ruling. L.F2.12 (the M7 gate) attaches this record.
+Then: **"Ruling: awaiting Chris."** Chris's ruling is copied in verbatim with its date when he gives it. Criterion 4 is met only by that ruling. L.F2.12 (the M7 gate) attaches this record. The gate reads one line for it: once Chris's ruling says the weekend counts, add `M7-GATE-ATTACHMENT: C4 PASS` on a line of its own at the end of the record in §6, with `M7-GATE-RULING: C4 <YYYY-MM-DD> <his words>` on the line beside it (F862). A PASS with no dated ruling reads as not attached.
 
 ---
 
