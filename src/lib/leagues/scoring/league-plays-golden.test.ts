@@ -198,4 +198,15 @@ describe('projected lines: what each feed\'s spellings pay', () => {
     expect(scorePreseasonLine(ESPN, 'K', { fg_made_40_plus: 10, fg_made_50_plus: 4, xp_made: 30 }).unscored).not.toContain('rush_yards')
     expect(resolveRules(ESPN, 'K').rush_yards).toBe(0.1)
   })
+
+  it('K\'s rushing yards also PAY on a projected line, as on an actual one: never a silent drop', () => {
+    // One 30-39 make + 6 rushing yards: 3 + 0.6 = 3.6, projected (weekly feed) and actual alike.
+    const raw = { fgm_30_39: 1, fga: 1, fgm: 1, rush_yd: 6 }
+    expect(scoreWeeklyProjection(ESPN, 'K', mapToCanonicalKeys(raw, { feed: 'projections', position: 'K' }))).toEqual({ points: 3.6, unscored: [] })
+    expect(scoreStarter(ESPN, 'k', 'K', storedLine(raw)).points).toBe(3.6)
+    // Preseason: a 40-49 make 4 + 1 PAT + 10 rushing yards 1 = 6.
+    const preseason = scorePreseasonLine(ESPN, 'K', { fg_made_40_plus: 1, xp_made: 1, rush_yards: 10 })
+    expect(preseason.points).toBe(6)
+    expect(preseason.unscored).not.toContain('rush_yards')
+  })
 })

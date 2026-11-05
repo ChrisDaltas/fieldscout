@@ -35,8 +35,9 @@
  *     column as a delivered 0 (ingestion writes the whole surface, D303) —
  *     for a projection that would make a D/ST line with no points-allowed
  *     a SHUTOUT (`def_pa_0` hot). So a projected line is scoped to the
- *     position's scorable keys the same way (`POSITION_SCORABLE_KEYS` + the
- *     D/ST raw sources) WITHOUT the zero fill — an absent key stays on the
+ *     worker's own delivery scope (`deliverableKeys`, which adds a kicker's
+ *     rushing yards to `POSITION_SCORABLE_KEYS` (F871), + the D/ST raw
+ *     sources) WITHOUT the zero fill — an absent key stays on the
  *     calculator's pending path and contributes nothing.
  *
  * F386(b) — FRACTIONAL POINTS ALLOWED, projections only. Sleeper projects
@@ -98,9 +99,8 @@ import { SLEEPER_PROJECTIONS_ONLY_MAP, SLEEPER_STAT_KEY_MAP } from '../stats/sle
 import { STAT_KEYS } from '../stats/stat-keys'
 import { roundHalfUp, scorePlayerWeek } from './calculator'
 import { DEF_PA_SOURCE_KEY, DEF_YA_SOURCE_KEY, deriveTierIndicators } from './derive-stats'
-import { resolveRules, SCORING_POSITIONS, type ScoringPosition, type ScoringRulesDoc } from './rules-doc'
-import { applicableKeys, cutsOf, scoreStarter, type StatLineRow } from './score-week-worker'
-import { POSITION_SCORABLE_KEYS } from './validate-rules-doc'
+import { resolveRules, type ScoringRulesDoc } from './rules-doc'
+import { applicableKeys, cutsOf, deliverableKeys, scoreStarter, type StatLineRow } from './score-week-worker'
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -116,7 +116,6 @@ export const PROJECTION_MAX_AGE_MS = 6 * 60 * 60 * 1000
 export type ProjectedMissing = 'no_line' | 'stale_line'
 export type PreseasonMissing = 'no_line' | 'other_season'
 
-const POSITION_SET: ReadonlySet<string> = new Set(SCORING_POSITIONS)
 const DST_SOURCES: readonly string[] = [DEF_PA_SOURCE_KEY, DEF_YA_SOURCE_KEY]
 
 // ── Source vocabularies (derived, never hand-listed) ───────────────────────
@@ -173,10 +172,6 @@ export const PRESEASON_SOURCE_KEYS: ReadonlySet<string> = new Set(
 
 // ── Lines ──────────────────────────────────────────────────────────────────
 
-function isScoringPosition(position: string): position is ScoringPosition {
-  return POSITION_SET.has(position)
-}
-
 /**
  * F386(b): a FRACTIONAL D/ST tier source on a PROJECTED line is floored to
  * an integer — the tier Sleeper itself assigns (186/186 measured). An
@@ -197,13 +192,14 @@ export function floorProjectedTierSources(line: Record<string, number>): Record<
 
 /**
  * A projected (canonical-keyed) line scoped to what a player of `position`
- * can deliver — the worker's `deliveredLine` scope (the position's scorable
- * keys; for a D/ST also the two raw tier sources) — WITHOUT its zero fill:
+ * can deliver — the worker's `deliveredLine` scope, read from the worker's own
+ * `deliverableKeys` (the position's scorable keys, a kicker's rushing yards
+ * (F871); for a D/ST also the two raw tier sources) — WITHOUT its zero fill:
  * an absent key stays absent (pending, contributes nothing). Only finite
  * numbers survive. A position outside the six keeps nothing.
  */
 export function scopedProjectedLine(stats: Readonly<Record<string, unknown>>, position: string): Record<string, number> {
-  const scoped = isScoringPosition(position) ? POSITION_SCORABLE_KEYS[position] : []
+  const scoped = deliverableKeys(position)
   const keys = position === 'DST' ? [...scoped, ...DST_SOURCES] : scoped
   const out: Record<string, number> = {}
   for (const key of keys) {

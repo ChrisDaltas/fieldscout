@@ -106,6 +106,24 @@ describe('K0 goldens: real stored lines against ESPN table, the same under all f
   })
 })
 
+describe('K0\'s derive on an UNFILLED kicker row: production\'s shape before the fill (2026 wk 1-8) and for all of 2025 (F872 is unruled)', () => {
+  // The row ingest stored before F870's map: no short makes, no misses. On it the
+  // derive is the whole difference between the stats page and a league.
+  const unfilled = (raw: Record<string, number>): StatLineRow => ({ ...storedLine(raw), fg_0_39: 0, fg_missed: 0 })
+  const cases: ReadonlyArray<[string, Record<string, number>, number, number]> = [
+    ['Tyler Bass 2026 wk1: page 3 + 3 + 4 + 3 PAT = 13; league 4 + 3 PAT = 7', BASS_2026_WK1, 13, 7],
+    ['Chris Boswell 2026 wk8: page 6 − 1 + 3 PAT = 8; league 3 PAT = 3', BOSWELL_2026_WK8, 8, 3],
+    ['Jason Myers 2025 wk18: page 3 + 4 − 2 + 1 PAT = 6; league 4 + 1 PAT = 5', MYERS_2025_WK18, 6, 5],
+  ]
+  it.each(cases)('%s', (_name, raw, page, league) => {
+    const row = unfilled(raw)
+    for (const system of SYSTEMS) {
+      expect(presetGamePoints(system, 'K', row), `${system} page`).toBe(page)
+      expect(scoreStarter(systemRules(system), 'k', 'K', row).points, `${system} league`).toBe(league)
+    }
+  })
+})
+
 describe('K0 missing data: refuse rather than show a plausible number', () => {
   const defLine = (over: Record<string, number | null>) => line('d', 1, { def_points_allowed: 10, def_yards_allowed: 300, def_sacks: 2, ...over })
   const kLine = (over: Record<string, number | null>) =>

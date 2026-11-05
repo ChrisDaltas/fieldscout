@@ -270,9 +270,10 @@ function isScoringPosition(position: string): position is ScoringPosition {
  * "go on league kickers and the other plays"). Those pay at the document's base
  * `rush_yards`, as on ESPN, Yahoo and Sleeper, which have one rushing rule for
  * every position. `POSITION_SCORABLE_KEYS` and both validators don't change, so a
- * K override of it is still refused and K stays one page (Q12).
+ * K override of it is still refused and K stays one page (Q12). Exported so a
+ * projected line (`player-values.ts`, `scopedProjectedLine`) is scoped the same way.
  */
-function deliverableKeys(position: string): readonly string[] {
+export function deliverableKeys(position: string): readonly string[] {
   if (!isScoringPosition(position)) return []
   return position === 'K' ? [...POSITION_SCORABLE_KEYS.K, 'rush_yards'] : POSITION_SCORABLE_KEYS[position]
 }
