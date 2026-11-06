@@ -757,6 +757,8 @@ describe('unknown players', () => {
     const report = await run(worldWith(ALL_LINES), lines, { apply: true })
     expect(report.ok).toBe(true)
     expect(report.weeks.map((w) => w.unknownPlayers)).toEqual([1, 0, 0, 1])
+    // Other data on an unknown's line doesn't make it a late line (D833): that path is unchanged.
+    expect(report.weeks.flatMap((w) => w.lateLines)).toEqual([])
   })
 
   it('an unknown carrying a non-zero ruled value is a named problem and blocks --apply', async () => {
@@ -899,19 +901,38 @@ describe('a new line with no ruled value but other data is a late line: listed, 
     }
   })
 
-  it('several in a week are listed in code-point order, whatever the feed’s order', () => {
+  it('several in a week are listed by id in code-point order, whatever the feed’s order, a locale’s or the names’', () => {
+    // Code points put ARI before a-1; a locale and these names put a-1 first.
     const plan = planFillWeek({
       week: 2,
-      lines: [line('rb-b', 2, { rush_yards: 3 }), line('rb-a', 2, { receptions: 1 })],
+      lines: [line('a-1', 2, { receptions: 1 }), line('ARI', 2, { def_sack: 2 })],
       stored: new Map(),
       positions: new Map([
-        ['rb-a', 'RB'],
-        ['rb-b', 'RB'],
+        ['a-1', 'RB'],
+        ['ARI', 'DEF'],
+      ]),
+      names: new Map([
+        ['a-1', 'Abe'],
+        ['ARI', 'Zed'],
       ]),
       ctx: CTX,
     })
     expect(plan.problems).toEqual([])
-    expect(plan.lateLines).toEqual(['rb-a', 'rb-b'])
+    expect(plan.lateLines).toEqual(['ARI', 'a-1'])
+  })
+
+  it('a K line with no ruled value is a late line even when its own field-goal counts disagree: the K identity reads only lines the fill writes', () => {
+    // fg_made 1 with no distance bucket: written, this line would fail the identity; left, it blocks nothing.
+    const plan = planFillWeek({
+      week: 2,
+      lines: [line('k-1', 2, { fg_made: 1, fg_attempted: 1, pat_made: 2, pat_attempted: 2 })],
+      stored: new Map(),
+      positions: new Map([['k-1', 'K']]),
+      ctx: CTX,
+    })
+    expect(plan.problems).toEqual([])
+    expect(plan.lateLines).toEqual(['k-1'])
+    expect(plan.newRows).toEqual([])
   })
 
   it('prints: the count on the week line, the player by name on its own line, the total on the all-weeks line; exit 0 and Done', async () => {

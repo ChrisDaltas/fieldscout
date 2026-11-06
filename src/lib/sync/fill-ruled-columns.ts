@@ -258,7 +258,7 @@ export interface FillWeekPlan {
   duplicates: number
   /** Stored lines whose ruled columns already equal the feed. */
   unchanged: number
-  /** New lines with every column empty: nothing to fill, so not inserted (D833 (a)). */
+  /** New lines with nothing on them, a display-only `advanced` key aside: nothing to fill, so not inserted (D833 (a)). */
   zeroNewLines: number
   /**
    * New lines with no ruled value that carry other data, by player id in
@@ -272,7 +272,7 @@ export interface FillWeekPlan {
   storedOnlyByPosition: Record<string, number>
   /** Stored lines to rewrite: stored metadata plus the ruled columns only. */
   updates: StatRow[]
-  /** New lines carrying ruled values and nothing else (D833 (d)): the full `toStatRow` surface. */
+  /** New lines carrying ruled values and nothing else, a display-only `advanced` key aside (D833 (d)): the full `toStatRow` surface. */
   newRows: StatRow[]
   /** How many values each ruled column moves, new lines included. */
   moves: Record<RuledColumn, number>
