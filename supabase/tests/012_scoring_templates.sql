@@ -121,7 +121,7 @@ select is(
     "def_ya_0_99": 5, "def_ya_100_199": 3, "def_ya_200_299": 2, "def_ya_300_349": 0,
     "def_ya_350_399": -1, "def_ya_400_449": -3, "def_ya_450_499": -5,
     "def_ya_500_549": -6, "def_ya_550_plus": -7}'::jsonb,
-  'ESPN Standard rules — complete golden pin (Q9 evidence 2026-07-21; 218 / F871: fg_60_plus 1 on top of fg_50_plus and def_2pt_return 2 — PAT-safety stays the one NAMED exception, v2.16.115)');
+  'ESPN Standard rules — complete golden pin (Q9 evidence 2026-07-21; 218 / F871: fg_60_plus 1 on top of fg_50_plus and def_2pt_return 2 — PAT-safety stays the one NAMED exception, v2.16.116)');
 
 select is(
   (select rules from scoring_systems where is_template and name = 'ESPN Full PPR'),

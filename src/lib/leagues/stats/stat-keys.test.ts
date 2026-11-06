@@ -37,7 +37,7 @@ const APPENDIX_B4_KEYS = [
   'fg_0_39',
   'fg_40_49',
   'fg_50_plus',
-  'fg_60_plus', // v2.16.115 (F871, migration 218)
+  'fg_60_plus', // v2.16.116 (F871, migration 218)
   'pat_made',
   'fg_missed',
   'pat_missed',
@@ -48,7 +48,7 @@ const APPENDIX_B4_KEYS = [
   'def_safety',
   'def_block',
   'def_return_td',
-  'def_2pt_return', // v2.16.115 (F871, migration 218)
+  'def_2pt_return', // v2.16.116 (F871, migration 218)
   'def_pa_0',
   'def_pa_35_plus',
   'pass_300_bonus',

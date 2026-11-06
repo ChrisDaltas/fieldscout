@@ -51,7 +51,7 @@
  *    rule; PROGRESS ledger F24 — September raw-feed/product verification).
  *
  * ── Named parity exceptions (Q9 ruling, 2026-07-22 — spec v2.8.5; two of the
- *    three closed by migration 218, F871 — spec v2.16.115) ────────────────
+ *    three closed by migration 218, F871 — spec v2.16.116) ────────────────
  * ESPN's verified defaults score three categories the rules documents had no
  * key for until 218:
  *  1. FG made 60+ = 6. CLOSED at 218: `fg_60_plus: 1` is a TOP-UP on

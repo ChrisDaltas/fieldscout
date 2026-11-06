@@ -35,7 +35,7 @@
  *
  * Named parity exceptions (spec v2.8.5): the five weeks above carry no 60+
  * FG make and no D/ST two-point return — until migration 218 (F871, spec
- * v2.16.115) neither was a scorable category. 218 made both scorable
+ * v2.16.116) neither was a scorable category. 218 made both scorable
  * (`fg_60_plus`, a top-up on the inclusive `fg_50_plus`; `def_2pt_return`), so
  * the five pins stand as they were (the stats are absent there: pending,
  * adding 0), and two more weeks below carry the plays, hand-computed under

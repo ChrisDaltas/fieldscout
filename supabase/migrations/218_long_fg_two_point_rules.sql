@@ -1,6 +1,6 @@
 -- ============================================================================
 -- 218 — the 60+ yard field goal and the D/ST two-point return start paying
---       (PROGRESS F871, D835; F870 / F871 design PR 4; spec v2.16.115,
+--       (PROGRESS F871, D835; F870 / F871 design PR 4; spec v2.16.116,
 --       §7.3.3 / §7.3.3.1 / App B.4 / §23.5). The second of the two database
 --       updates; 217 added the columns.
 -- ============================================================================
