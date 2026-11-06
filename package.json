@@ -20,6 +20,7 @@
     "sync:nflverse": "npx tsx scripts/sync-nflverse.ts",
     "sync:combine": "npx tsx scripts/sync-combine.ts",
     "sync:reingest": "npx tsx scripts/reingest-weeks.ts",
+    "sync:fill-ruled": "npx tsx scripts/fill-ruled-columns.ts",
     "backfill:player-points": "npx tsx scripts/backfill-player-points.ts",
     "rescore:final-weeks": "npx tsx scripts/rescore-final-weeks.ts",
     "record:fixtures": "npx tsx scripts/record-fixtures.ts",
