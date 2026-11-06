@@ -3,18 +3,24 @@ import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { WeeklyProjectionPosition } from '@/lib/sync/weekly-projections'
+
 import type { TimeProvider } from '../time/time-provider'
 import {
   mapSleeperGameStatus,
   mapToCanonicalKeys,
   mapUsageKeys,
   readZeroOmittedYardsAllowed,
+  type SleeperFeed,
+  SLEEPER_ACTUALS_ONLY_MAP,
+  SLEEPER_PROJECTIONS_ONLY_MAP,
   SLEEPER_STAT_KEY_MAP,
   SLEEPER_USAGE_KEY_MAP,
   SleeperStatsProvider,
 } from './sleeper-stats-provider'
 import { STAT_KEYS } from './stat-keys'
 
+const ACTUALS = { feed: 'actuals' } as const
 const FROZEN_NOW = new Date('2026-09-13T17:00:00Z')
 const frozenTime: TimeProvider = { now: () => FROZEN_NOW }
 
@@ -159,12 +165,29 @@ describe('SleeperStatsProvider', () => {
       safe: 'def_safety',
       pts_allow: 'def_points_allowed',
       yds_allow: 'def_yards_allowed', // L.E1.26 / F390 — measured on the live /stats endpoint (fixture below)
+      // F870 / F871 — measured on both endpoints, 2026-11-05 (adapter comment)
+      fgm_0_19: 'fg_0_39',
+      fgm_20_29: 'fg_0_39',
+      fgm_30_39: 'fg_0_39',
+      def_st_fum_rec: 'def_fumble_rec',
+      blk_kick: 'def_block',
+    })
+    expect(SLEEPER_ACTUALS_ONLY_MAP).toEqual({ fgmiss: 'fg_missed', def_st_td: 'def_return_td', st_td: 'return_td', fum_rec_td: 'fumble_recovery_td' })
+    const projectedOffense = { pr_td: 'return_td', def_kr_td: 'return_td' }
+    expect(SLEEPER_PROJECTIONS_ONLY_MAP).toEqual({
+      QB: projectedOffense,
+      RB: projectedOffense,
+      WR: projectedOffense,
+      TE: projectedOffense,
+      K: { fgmiss_0_19: 'fg_missed', fgmiss_20_29: 'fg_missed', fgmiss_30_39: 'fg_missed', fgmiss_40_49: 'fg_missed', fgmiss_50p: 'fg_missed' },
+      DEF: { st_td: 'def_return_td' },
     })
   })
 
   it('emits only registry-canonical core_box keys (§7.3.3 one-namespace rule)', () => {
     const byKey = new Map(STAT_KEYS.map((def) => [def.key, def]))
-    for (const canonical of Object.values(SLEEPER_STAT_KEY_MAP)) {
+    const tables = [SLEEPER_STAT_KEY_MAP, SLEEPER_ACTUALS_ONLY_MAP, ...Object.values(SLEEPER_PROJECTIONS_ONLY_MAP)]
+    for (const canonical of tables.flatMap((table) => Object.values(table))) {
       const def = byKey.get(canonical)
       expect(def, `adapter emits unregistered key: ${canonical}`).toBeDefined()
       expect(def?.tier, canonical).toBe('core_box')
@@ -300,13 +323,13 @@ describe('L.E1.26 — Sleeper yds_allow → def_yards_allowed on the RECORDED ac
   })
 
   it('GOLDEN — BUF wk2 / CAR wk1 / SEA wk2 map to canonical lines as stored literals (355 / 552 / 151 yards)', () => {
-    expect(mapToCanonicalKeys(recorded('2', 'BUF').stats)).toEqual({ def_sack: 4, def_points_allowed: 31, def_yards_allowed: 355 })
-    expect(mapToCanonicalKeys(recorded('1', 'CAR').stats)).toEqual({ def_sack: 2, def_fumble_rec: 1, def_points_allowed: 59, def_yards_allowed: 552 })
-    expect(mapToCanonicalKeys(recorded('2', 'SEA').stats)).toEqual({ def_sack: 2, def_int: 1, def_points_allowed: 7, def_yards_allowed: 151 })
+    expect(mapToCanonicalKeys(recorded('2', 'BUF').stats, ACTUALS)).toEqual({ def_sack: 4, def_points_allowed: 31, def_yards_allowed: 355 })
+    expect(mapToCanonicalKeys(recorded('1', 'CAR').stats, ACTUALS)).toEqual({ def_sack: 2, def_fumble_rec: 1, def_points_allowed: 59, def_yards_allowed: 552 })
+    expect(mapToCanonicalKeys(recorded('2', 'SEA').stats, ACTUALS)).toEqual({ def_sack: 2, def_int: 1, def_points_allowed: 7, def_yards_allowed: 151 })
   })
 
   it('the live row without yds_allow maps to NO def_yards_allowed key — the adapter never invents a 0 (it maps nothing canonical at all)', () => {
-    const line = mapToCanonicalKeys(DEF_FIXTURE.week3_live[0].stats)
+    const line = mapToCanonicalKeys(DEF_FIXTURE.week3_live[0].stats, ACTUALS)
     expect(line).toEqual({})
     expect('def_yards_allowed' in line).toBe(false)
   })
@@ -340,7 +363,7 @@ describe('R1150 — Sleeper omits zero-valued stats; `yds_allow_0_100: 1` with n
       expect(r.stats.pts_allow_0, r.player_id).toBe(1)
     }
     // …so the ingest's NULL-reads-0 for points allowed pays the true shutout tier (no change owed — F401).
-    expect(mapToCanonicalKeys(rows[1].stats)).toEqual({ def_sack: 4, def_int: 1, def_yards_allowed: 75 })
+    expect(mapToCanonicalKeys(rows[1].stats, ACTUALS)).toEqual({ def_sack: 4, def_int: 1, def_yards_allowed: 75 })
     // Every recorded played row carries exactly one yds_allow_<tier> indicator.
     const all = [...DEF_FIXTURE.weeks['1'], ...DEF_FIXTURE.weeks['2'], ...DEF_FIXTURE.week3_live, ...rows]
     for (const r of all) expect(Object.keys(r.stats).filter((k) => k.startsWith('yds_allow_')), r.player_id).toHaveLength(1)
@@ -350,12 +373,12 @@ describe('R1150 — Sleeper omits zero-valued stats; `yds_allow_0_100: 1` with n
     // CONSTRUCTED from the recorded live ARI row + one sack (no real finished
     // line without yds_allow has been observed — 2025 minimum 75 yards).
     const raw = { ...DEF_FIXTURE.week3_live[0].stats, sack: 1 }
-    expect(readZeroOmittedYardsAllowed(raw, mapToCanonicalKeys(raw))).toEqual({ def_sack: 1, def_yards_allowed: 0 })
+    expect(readZeroOmittedYardsAllowed(raw, mapToCanonicalKeys(raw, ACTUALS))).toEqual({ def_sack: 1, def_yards_allowed: 0 })
   })
 
   it('Z2 a present yds_allow is never touched; no indicator, or another tier’s indicator, stays ABSENT (pending — D380(4))', () => {
     const buf = recorded('2', 'BUF').stats
-    expect(readZeroOmittedYardsAllowed(buf, mapToCanonicalKeys(buf))).toEqual({ def_sack: 4, def_points_allowed: 31, def_yards_allowed: 355 })
+    expect(readZeroOmittedYardsAllowed(buf, mapToCanonicalKeys(buf, ACTUALS))).toEqual({ def_sack: 4, def_points_allowed: 31, def_yards_allowed: 355 })
     expect(readZeroOmittedYardsAllowed({ sack: 1 }, { def_sack: 1 })).toEqual({ def_sack: 1 })
     expect(readZeroOmittedYardsAllowed({ sack: 1, yds_allow_100_199: 1 }, { def_sack: 1 })).toEqual({ def_sack: 1 })
     expect(readZeroOmittedYardsAllowed({ sack: 1, yds_allow: null, yds_allow_0_100: 1 }, { def_sack: 1 })).toEqual({ def_sack: 1 })
@@ -376,7 +399,7 @@ describe('R1150 — Sleeper omits zero-valued stats; `yds_allow_0_100: 1` with n
   })
 
   it('Z4 the PROJECTIONS map is untouched: mapToCanonicalKeys never reads the indicator (the season feed carries a constant yds_allow_0_100: 1)', () => {
-    expect(mapToCanonicalKeys({ yds_allow_0_100: 1, sack: 2.4 })).toEqual({ def_sack: 2.4 })
+    expect(mapToCanonicalKeys({ yds_allow_0_100: 1, sack: 2.4 }, { feed: 'projections', position: 'DEF' })).toEqual({ def_sack: 2.4 })
   })
 })
 
@@ -395,6 +418,67 @@ describe('mapSleeperGameStatus', () => {
     expect(mapSleeperGameStatus('anything_else')).toBe('scheduled')
     expect(mapSleeperGameStatus(null)).toBe('scheduled')
     expect(mapSleeperGameStatus(undefined)).toBe('scheduled')
+  })
+})
+
+// F870 / F871: what each feed's spellings fill. Goldens on full real lines:
+// `leagues/scoring/league-plays-golden.test.ts`.
+describe('the map, by feed (F870 / F871)', () => {
+  const PLAYS = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/sleeper-league-plays.json', import.meta.url)), 'utf8')) as {
+    actuals: Record<string, { player_id: string; team: string; opponent: string; stats: Record<string, number> }>
+  }
+
+  it('adds: three short buckets fill fg_0_39, two recovery fields fill def_fumble_rec, and a null or NaN adds nothing', () => {
+    expect(mapToCanonicalKeys({ fgm_0_19: 1, fgm_20_29: 2, fgm_30_39: 4 }, ACTUALS)).toEqual({ fg_0_39: 7 })
+    expect(mapToCanonicalKeys({ fum_rec: 1, def_st_fum_rec: 2 }, ACTUALS)).toEqual({ def_fumble_rec: 3 })
+    expect(mapToCanonicalKeys({ fgm_20_29: 2, fgm_30_39: null, fgm_0_19: Number.NaN }, ACTUALS)).toEqual({ fg_0_39: 2 })
+  })
+
+  it('actuals read their own spellings and ignore what only the projections send', () => {
+    expect(mapToCanonicalKeys({ fgmiss: 2, fgmiss_40_49: 2, st_td: 1, pr_td: 1, def_kr_td: 1, fum_rec_td: 1, def_st_td: 1 }, ACTUALS)).toEqual({
+      fg_missed: 2,
+      return_td: 1,
+      fumble_recovery_td: 1,
+      def_return_td: 1,
+    })
+  })
+
+  it('projections read the position\'s spellings: st_td is a team\'s on a DEF row and nobody\'s on a WR row', () => {
+    const projected = (position: WeeklyProjectionPosition, stats: Record<string, number>) => mapToCanonicalKeys(stats, { feed: 'projections', position })
+    expect(projected('WR', { st_td: 1, pr_td: 0.5, def_kr_td: 0.25, fum_rec_td: 1 })).toEqual({ return_td: 0.75 })
+    expect(projected('DEF', { st_td: 0.5, pr_td: 1, def_st_td: 1, fgmiss: 1 })).toEqual({ def_return_td: 0.5 })
+    expect(projected('K', { fgmiss: 9, fgmiss_0_19: 0.25, fgmiss_20_29: 0.25, fgmiss_30_39: 0.25, fgmiss_40_49: 0.25, fgmiss_50p: 0.5 })).toEqual({ fg_missed: 1.5 })
+    expect(projected('QB', { pr_td: 0.5 })).toEqual({ return_td: 0.5 })
+    expect(projected('RB', { def_kr_td: 0.5 })).toEqual({ return_td: 0.5 })
+    expect(projected('TE', { pr_td: 0.5 })).toEqual({ return_td: 0.5 })
+  })
+
+  it('a position with no table throws by name, with stats or without: never a silent drop', () => {
+    const wrong = (position: string) => ({ feed: 'projections', position }) as unknown as SleeperFeed
+    expect(() => mapToCanonicalKeys({ st_td: 0.1, blk_kick: 0.1 }, wrong('DST'))).toThrow('no projections map for position "DST"')
+    expect(() => mapToCanonicalKeys(null, wrong('DST'))).toThrow(/DST/)
+    expect(() => mapToCanonicalKeys({ st_td: 0.1 }, wrong('constructor'))).toThrow(/constructor/)
+  })
+
+  it('the fields that double count or pay the wrong team are on no table', () => {
+    const tables = [SLEEPER_STAT_KEY_MAP, SLEEPER_ACTUALS_ONLY_MAP, ...Object.values(SLEEPER_PROJECTIONS_ONLY_MAP)]
+    for (const field of ['fg_blkd', 'misc_td', 'fum_rec_ez_tds', 'anytime_tds', 'xp_blkd', 'fgmiss_50_59', 'fgmiss_60p', 'fgm_50_59', 'def_st_ff', 'st_fum_rec']) {
+      for (const table of tables) expect(table[field], field).toBeUndefined()
+    }
+  })
+
+  it('a line holding only a newly paid key is a line now: the real Mitchell and Laube rows reach ingest, with their usage keys', async () => {
+    const mitchell = PLAYS.actuals.mitchell_2026_wk8
+    const laube = PLAYS.actuals.laube_2026_wk8
+    stubFetch((url) => {
+      const position = /position\[\]=(\w+)/.exec(url)?.[1]
+      return ok(position === 'TE' ? [mitchell] : position === 'RB' ? [laube] : [])
+    })
+    const rows = await new SleeperStatsProvider(frozenTime).getWeekStats(2026, 8)
+    expect(rows.map((r) => [r.playerId, r.stats])).toEqual([
+      [laube.player_id, { return_td: 1 }],
+      [mitchell.player_id, { fumble_recovery_td: 1 }],
+    ])
   })
 })
 
@@ -423,7 +507,7 @@ describe('usage keys → advanced (F578)', () => {
 
   it('the box map is untouched: no usage key leaks into `stats` (the projections path never sees them)', () => {
     for (const r of USAGE.rows) {
-      const mapped = mapToCanonicalKeys(r.stats)
+      const mapped = mapToCanonicalKeys(r.stats, ACTUALS)
       for (const key of Object.values(SLEEPER_USAGE_KEY_MAP)) expect(mapped[key], key).toBeUndefined()
     }
   })

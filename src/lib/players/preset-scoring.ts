@@ -10,13 +10,14 @@
  *
  * `presetLine` is the one stats-only step in front of the engine. It lives here
  * and not in `deliveredLine` or ingest because those feed league scores, which
- * K0's ruling doesn't cover. League scoring is untouched, so league kicker
- * points still read the stored short-FG and missed-FG columns, which nothing
- * writes (F402). Chris rules on that separately (F870).
+ * read the stored columns as they are.
  *
- * - K: `fg_0_39` and `fg_missed` are worked out from the columns ingest does
- *   store (`fg_made`, `fg_attempted`, and the 40–49 and 50+ buckets). If the
- *   feed is fixed later these equal the stored values, so nothing double-counts.
+ * - K: `fg_0_39` and `fg_missed` are worked out from `fg_made`, `fg_attempted`,
+ *   and the 40–49 and 50+ buckets. Rows ingest hasn't filled yet (F870), and all
+ *   of 2025 (F872), still need this. On a filled row the worked-out and stored
+ *   numbers agree (954 of 954 feed lines), so a stats page and a league pay the
+ *   same on the same play: Tyler Bass 2026 wk1 reads 13 in both. The sum depends
+ *   on `fg_made_50_plus` staying inclusive of a 60+ make.
  * - D/ST: a line missing points allowed or yards allowed is REFUSED, never
  *   scored. NULL points allowed would otherwise read as a +5 shutout. A stored
  *   0 with real yards is a real shutout (Sleeper omits it; F401, migration 143).
@@ -27,16 +28,17 @@
  * column missing from the SELECT (`undefined`) throws, so a wrong read fails
  * loudly and can never pay a quiet +5.
  *
- * Still short of ESPN's table, on purpose (they need storage or a league
- * ruling). Filed for Chris as F871, with the totals against ESPN's own numbers:
- * - D/ST: a fumble recovered on special teams (+2; the feed sends it as
- *   `def_st_fum_rec`, and only `fum_rec` is stored: Chicago 2026 wk6 reads 9,
- *   ESPN 13), a blocked kick (+2), a return TD (+6), a two-point return (+2).
- * - Offense: a return TD or a fumble-recovery TD (`fum_rec_td`, +6: Woody Marks
- *   2025 wk15 reads 3.8, ESPN 9.8).
- * - K: a 60+ yard FG pays 5 rather than 6, and an engine kicker scope scores
- *   kicking stats only, so a kicker's rushing yards score nothing (Brandon Aubrey
- *   2025 wk15: 14 vs ESPN's 14.6).
+ * D/ST and offense have no worked-out step: since F870 the map fills their columns
+ * and these read them. A summed line carries `return_td` and `fumble_recovery_td`
+ * too (`BUILDER_TOTAL_COLUMNS`, `sumStatRows`), so a summed offense line pays what
+ * its games pay.
+ *
+ * Still short of ESPN's table:
+ * - K: a 60+ yard FG pays 5 rather than 6 (F871). Boswell 2025 wk1 reads 14, ESPN 15.
+ * - D/ST: a two-point return (+2; F871). Tampa Bay 2026 wk7 reads 26, ESPN 28.
+ * - What no rule can reproduce from one feed (F893): the sack ESPN doesn't count
+ *   (Arizona 2026 wk6 reads 8, ESPN 7) and a two-point catch ESPN doesn't pay
+ *   (Chris Blair ATL 2026 wk3 reads 2, ESPN 0).
  */
 import { roundHalfUp } from '@/lib/leagues/scoring/calculator'
 import type { ScoringRulesDoc } from '@/lib/leagues/scoring/rules-doc'
@@ -115,8 +117,8 @@ function presetLine(position: string, line: RawLine): RawLine | null {
     requireColumns(position, line, KICKER_REQUIRED)
     const made = count(line, 'fg_made')
     const attempted = count(line, 'fg_attempted')
-    // Nothing kicked at all: an empty row (the historical loader leaves these), not a 0-point game.
-    if (made === 0 && attempted === 0 && count(line, 'xp_made') === 0 && count(line, 'xp_attempted') === 0) return null
+    // Nothing kicked and no rushing yards: an empty row (the historical loader leaves these), not a 0-point game.
+    if (made === 0 && attempted === 0 && count(line, 'xp_made') === 0 && count(line, 'xp_attempted') === 0 && count(line, 'rush_yards') === 0) return null
     const short = made - count(line, 'fg_made_40_plus') - count(line, 'fg_made_50_plus')
     const missed = attempted - made
     if (short < 0 || missed < 0) return null
@@ -210,7 +212,7 @@ export const BUILDER_TOTAL_COLUMNS = [
   'targets', 'receptions', 'receiving_yards', 'receiving_tds',
   'fg_made', 'fg_attempted', 'fg_made_40_plus', 'fg_made_50_plus', 'xp_made', 'xp_attempted',
   'def_sacks', 'def_interceptions', 'def_fumble_recoveries', 'def_tds', 'def_safeties',
-  'two_point_conversions',
+  'two_point_conversions', 'return_td', 'fumble_recovery_td',
 ]
 export const BUILDER_STATS_SELECT = [
   'player_id',

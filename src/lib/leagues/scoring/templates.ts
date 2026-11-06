@@ -45,19 +45,17 @@
  *    rule; PROGRESS ledger F24 — September raw-feed/product verification).
  *
  * ── Named parity exceptions (Q9 ruling, 2026-07-22 — spec v2.8.5) ─────────
- * ESPN's verified defaults score three categories the current data tier
- * cannot observe (no provider signal exists, so keys would be permanently
- * pending — a standing E61 state worse than a documented exception):
- *  1. FG made 60+ = 6 (we score it as `fg_50_plus` = 5; Sleeper's feed
- *     aggregates everything ≥50 into one bucket) — −1 pt vs ESPN per make.
+ * ESPN's verified defaults score three categories no rules document here has
+ * a key for:
+ *  1. FG made 60+ = 6 (we score it as `fg_50_plus` = 5, because Sleeper's
+ *     `fgm_50p` includes it) — −1 pt vs ESPN per make.
  *  2. D/ST safety on a PAT try = +1 (unscored).
  *  3. D/ST return score on a PAT try = +2 (unscored).
  * Order ~5–15 plays league-wide per NFL season, combined. These are NAMED
  * EXCEPTIONS, not pending categories, and MUST stay user-visible in the ESPN
- * templates' `description` (enforced by test). Lift path: if the September
- * F10 raw-endpoint inspection finds a Sleeper 60+ FG spelling (e.g.
- * `fgm_60p`) or PAT-play detail, expressing the tier becomes a one-PR §23.5
- * data task and the exception shrinks or closes.
+ * templates' `description` (enforced by test). Q9's reason, no provider signal,
+ * is out of date for 1 and 3: the feed sends `fgm_60p` and `def_2pt`, measured
+ * 2026-11-05, and F871 keeps them open. 2 still has no signal.
  */
 
 /** One v1 template: the row seeded by migration 058. */

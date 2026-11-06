@@ -329,7 +329,7 @@ export function parseWeeklyProjections(input: {
         season,
         week,
         player_id: id,
-        stats: mapToCanonicalKeys(raw.stats as Record<string, number | null>) as Record<string, number>,
+        stats: mapToCanonicalKeys(raw.stats as Record<string, number | null>, { feed: 'projections', position }) as Record<string, number>,
         raw_stats: raw.stats,
         source: WEEKLY_PROJECTIONS_SOURCE,
         source_updated_at: sourceUpdatedAt(raw.updated_at),

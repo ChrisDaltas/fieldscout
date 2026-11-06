@@ -76,9 +76,9 @@ type Line = StatLineRow & { week: number; is_live?: boolean | null }
 /**
  * How a basis prepares a player's stored lines before scoring. A preset passes
  * `presetLines` (K0: kicker lines worked out, refused games dropped, the 2-pt
- * fill). A league scores the stored lines as they are, so its numbers do not
- * move: `deliveredLine` reads by key, and `appeared` and `sumBox` read fixed
- * lists, so the extra `two_point_conversions` column in the reads changes nothing.
+ * fill). A league scores the stored lines as they are: `deliveredLine` reads by
+ * key, and `appeared` and `sumBox` read fixed lists, so the extra
+ * `two_point_conversions` column in the reads changes nothing.
  */
 type PrepareLines = (position: string, rows: readonly Line[]) => readonly Line[]
 export const storedLines: PrepareLines = (_position, rows) => rows

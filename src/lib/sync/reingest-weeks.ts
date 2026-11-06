@@ -131,17 +131,19 @@ export function confirmTarget(supabaseUrl: string, confirm: string | undefined):
   return host
 }
 
-interface WeekRow {
+export interface WeekRow {
   week: number
   first_kickoff_at: string | null
   last_game_ends_at: string | null
+  /** Read here for the quiet fill's window test (`fill-ruled-columns.ts`). */
+  correction_window_ends_at?: string | null
 }
 
-async function readWeeks(db: SyncClient, season: number, weeks: number[]): Promise<Map<number, WeekRow>> {
+export async function readWeeks(db: SyncClient, season: number, weeks: number[]): Promise<Map<number, WeekRow>> {
   const rows = await pageAll<WeekRow>((from, to) =>
     db
       .from('nfl_weeks')
-      .select('week, first_kickoff_at, last_game_ends_at', { count: 'exact' })
+      .select('week, first_kickoff_at, last_game_ends_at, correction_window_ends_at', { count: 'exact' })
       .eq('season', season)
       .in('week', weeks)
       .order('week')
@@ -176,8 +178,8 @@ async function readDefenseYards(
   )
 }
 
-/** Pre-flight: every requested week must have started (refusal names each one). */
-export function refusalFor(weeks: number[], rows: ReadonlyMap<number, WeekRow>, now: Date): string | null {
+/** Why each requested week has not started (empty when every one has). */
+export function weekNotStartedCauses(weeks: number[], rows: ReadonlyMap<number, WeekRow>, now: Date): string[] {
   const bad: string[] = []
   for (const week of weeks) {
     const row = rows.get(week)
@@ -185,6 +187,12 @@ export function refusalFor(weeks: number[], rows: ReadonlyMap<number, WeekRow>, 
     else if (row.first_kickoff_at === null) bad.push(`week ${week}: no game has a recorded kickoff (first_kickoff_at NULL) — not started`)
     else if (new Date(row.first_kickoff_at).getTime() > now.getTime()) bad.push(`week ${week}: first kickoff ${row.first_kickoff_at} is after now — not started`)
   }
+  return bad
+}
+
+/** Pre-flight: every requested week must have started (refusal names each one). */
+export function refusalFor(weeks: number[], rows: ReadonlyMap<number, WeekRow>, now: Date): string | null {
+  const bad = weekNotStartedCauses(weeks, rows, now)
   return bad.length === 0 ? null : `refused — ${bad.join('; ')}. Nothing was polled or written.`
 }
 
