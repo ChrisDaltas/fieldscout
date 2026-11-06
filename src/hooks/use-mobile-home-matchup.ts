@@ -3,8 +3,8 @@
 import { useMemo, useState } from 'react'
 
 import { currentWeekOf } from '@/components/leagues/lineup-editor-ops'
-import { scoreCell, splitRows, teamName } from '@/components/leagues/matchup-view-ops'
-import { projectedTotal } from '@/components/leagues/my-team-ops'
+import { splitRows, teamName, teamScoreCell } from '@/components/leagues/matchup-view-ops'
+import { projectedTotal, wholeProjectedTotal } from '@/components/leagues/my-team-ops'
 import { draftLabel, leaguePhase, leagueSub, projText, recordText, teamWithRecord, type LeaguePhase } from '@/components/mobile/home/home-ops'
 import { useBoxScore } from '@/hooks/use-box-score'
 import { useLeagueScoringFamily } from '@/hooks/use-draft-pool'
@@ -32,6 +32,8 @@ import type { TeamBoxScore } from '@/lib/leagues/api/box-score-service'
 export interface HomeMatchupSide {
   label: string
   points: string
+  /** Q108: `points` is the live week's projected total — no score yet. */
+  pointsProjected: boolean
   proj: string | null
 }
 
@@ -55,6 +57,22 @@ function sideProj(box: TeamBoxScore | undefined, projOf: (id: string) => number 
   if (!box || !box.lineup) return null
   const ids = box.starters.map((s) => s.player?.id ?? null)
   return projText(projectedTotal(ids, projOf), ids.filter(Boolean).length)
+}
+
+/** The side's whole projected total as a number (`wholeProjectedTotal`), for
+ *  Q108's "a team with no score shows its projected total". */
+function sideProjTotal(box: TeamBoxScore | undefined, projOf: (id: string) => number | null): number | null {
+  if (!box || !box.lineup) return null
+  const ids = box.starters.map((s) => s.player?.id ?? null)
+  return wholeProjectedTotal(projectedTotal(ids, projOf), ids.filter(Boolean).length)
+}
+
+/** One side of the card: its score, or — Q108, a live week with no score —
+ *  its projected total in the score's place (and then not again below). */
+function homeSide(label: string, score: number | null, row: { status: string }, weekStatus: string, box: TeamBoxScore | undefined, projOf: (id: string) => number | null): HomeMatchupSide {
+  const cell = teamScoreCell(score, row.status, weekStatus, sideProjTotal(box, projOf))
+  const projected = cell.projected === true
+  return { label, points: cell.text, pointsProjected: projected, proj: projected ? null : sideProj(box, projOf) }
 }
 
 export function useMobileHomeMatchup(league: MyLeagueRow): HomeMatchupCard {
@@ -99,17 +117,10 @@ export function useMobileHomeMatchup(league: MyLeagueRow): HomeMatchupCard {
   if (!doc || !row || !myTeamId) return { phase, draft, sub, week, live: null, loading: loading && !error, error }
 
   const myHome = row.home_team_id === myTeamId
-  const me: HomeMatchupSide = {
-    label: teamWithRecord(teamName(doc, myTeamId), recordText(standings.data, myTeamId)),
-    points: scoreCell(myHome ? row.home_score : row.away_score, row.status).text,
-    proj: sideProj(myBox.data, projOf),
-  }
+  const weekStatus = doc.league_week.status
+  const me = homeSide(teamWithRecord(teamName(doc, myTeamId), recordText(standings.data, myTeamId)), myHome ? row.home_score : row.away_score, row, weekStatus, myBox.data, projOf)
   const opp: HomeMatchupSide | null = oppId
-    ? {
-        label: teamWithRecord(teamName(doc, oppId), recordText(standings.data, oppId)),
-        points: scoreCell(myHome ? row.away_score : row.home_score, row.status).text,
-        proj: sideProj(oppBox.data, projOf),
-      }
+    ? homeSide(teamWithRecord(teamName(doc, oppId), recordText(standings.data, oppId)), myHome ? row.away_score : row.home_score, row, weekStatus, oppBox.data, projOf)
     : null
   return { phase, draft, sub, week, live: { me, opp }, loading: false, error: false }
 }

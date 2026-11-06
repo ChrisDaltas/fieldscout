@@ -49,8 +49,77 @@ import {
   weekBadge,
   weekFromParam,
   weekNav,
+  LEADERBOARD_PENDING_TITLE,
+  NO_PROJECTION_TITLE,
+  PROJECTED_SCORE_TITLE,
+  leaderboardPendingCell,
+  projectedScoreText,
+  teamScoreCell,
 } from './matchup-view-ops'
-import { weekStatusBadge } from './schedule-view-ops'
+import { lineupProjectedTotal } from './my-team-ops'
+import { liveWeekOf, weekStatusBadge } from './schedule-view-ops'
+
+// ---------------------------------------------------------------------------
+// Q108 (Chris 2026-11-06): "a Team with no score should show the projected
+// total for the week, and that projection should keep updating as
+// projections change"
+// ---------------------------------------------------------------------------
+
+describe('teamScoreCell — Q108: a team with no score in a live week shows its projected total', () => {
+  it('a stored score always wins, in every week state', () => {
+    for (const week of ['upcoming', 'live', 'correction_window', 'final']) {
+      expect(teamScoreCell(71.5, 'live', week, 120)).toEqual({ text: '71.50', title: null, pending: false })
+    }
+    // A stored 0 is a score, never replaced by the projection.
+    expect(teamScoreCell(0, 'live', 'live', 98.4).text).toBe('0.00')
+  })
+
+  it('live + NULL + a projection → "Proj <total>", flagged, the explaining title, never pending', () => {
+    expect(teamScoreCell(null, 'live', 'live', 98.44)).toEqual({ text: 'Proj 98.4', title: PROJECTED_SCORE_TITLE, pending: false, projected: true })
+    expect(PROJECTED_SCORE_TITLE).toBe('Projected — this team hasn’t scored yet this week.')
+    expect(projectedScoreText(0.05)).toBe('Proj 0.1')
+  })
+
+  it('live + NULL + no projection (no starters, a starter without one, still loading) → the dash, never "Proj 0.0"', () => {
+    expect(teamScoreCell(null, 'live', 'live', null)).toEqual({ text: '—', title: NO_PROJECTION_TITLE, pending: false })
+    expect(teamScoreCell(null, 'live', 'live', undefined).text).toBe('—')
+  })
+
+  it('a finished week (the correction window — incl. a held week) keeps `pending`; an upcoming week keeps its dash', () => {
+    expect(teamScoreCell(null, 'live', 'correction_window', 98.4)).toEqual(scoreCell(null, 'live'))
+    expect(teamScoreCell(null, 'live', 'correction_window', 98.4).text).toBe('pending')
+    expect(teamScoreCell(null, 'scheduled', 'upcoming', 98.4)).toEqual({ text: '—', title: WEEK_NOT_STARTED_TITLE, pending: false })
+    expect(teamScoreCell(null, 'final', 'final', 98.4).text).toBe('pending')
+    expect(teamScoreCell(null, 'live', null, 98.4).text).toBe('pending')
+  })
+
+  it('leaderboardPendingCell: the projection as text in a live week, else pending — the row stays unranked either way', () => {
+    expect(leaderboardPendingCell('live', 77.77)).toMatchObject({ text: 'Proj 77.8', projected: true })
+    expect(leaderboardPendingCell('live', null)).toMatchObject({ text: '—', pending: false })
+    expect(leaderboardPendingCell('correction_window', 77.77)).toEqual({ text: 'pending', title: LEADERBOARD_PENDING_TITLE, pending: true })
+  })
+
+  it('lineupProjectedTotal: the starters (IR seats excluded) by the whole-total rule; no row / no starter / a missing projection → null', () => {
+    const proj = new Map([
+      ['qb', 20.25],
+      ['wr', 12.5],
+      ['ir', 99],
+    ])
+    const projOf = (id: string) => proj.get(id) ?? null
+    const ir = [{ key: 'ir1' }]
+    expect(lineupProjectedTotal({ 'qb:0': 'qb', 'wr:0': 'wr', 'ir1:0': 'ir' }, ir, projOf)).toBe(32.75)
+    expect(lineupProjectedTotal(null, ir, projOf)).toBeNull()
+    expect(lineupProjectedTotal({}, ir, projOf)).toBeNull()
+    expect(lineupProjectedTotal({ 'qb:0': 'qb', 'rb:0': 'nobody' }, ir, projOf)).toBeNull()
+  })
+
+  it('liveWeekOf: the ladder’s live week, or null — the only week a projection is read for', () => {
+    const w = (week: number, status: string) => ({ season: 2099, week, status })
+    expect(liveWeekOf([w(1, 'final'), w(2, 'live'), w(3, 'upcoming')])).toEqual(w(2, 'live'))
+    expect(liveWeekOf([w(1, 'final'), w(2, 'correction_window')])).toBeNull()
+    expect(liveWeekOf(undefined)).toBeNull()
+  })
+})
 
 // ---------------------------------------------------------------------------
 // Fixtures — stored literals (D62)

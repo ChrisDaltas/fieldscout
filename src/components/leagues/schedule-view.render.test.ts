@@ -41,7 +41,7 @@ vi.mock('@/hooks/use-league', () => ({
         { id: 't3', name: 'Charlie', status: 'active' },
         { id: 't4', name: 'Delta', status: 'active' },
       ],
-      settings: { regular_season_weeks: 3, schedule_mode: 'h2h' },
+      settings: { regular_season_weeks: 3, schedule_mode: 'h2h', roster_settings: { ir_slots: [] } },
     } as unknown as LeagueDetail,
   }),
 }))

@@ -31,18 +31,19 @@ import {
   boxSumCell,
   emptyWeekCopy,
   formatPoints,
+  leaderboardPendingCell,
   leaderboardRows,
   medianRow,
   pairBench,
   pairSlots,
   resolveWeek,
   resultChip,
-  scoreCell,
   secondChip,
   sideResult,
   splitRows,
   starterCell,
   teamName,
+  teamScoreCell,
   type StarterCell,
 } from '@/components/leagues/matchup-view-ops'
 import { formatRecord } from '@/components/leagues/standings-table-ops'
@@ -52,6 +53,7 @@ import { MobileLeagueHeader } from '@/components/mobile/league/league/league-hea
 import { streakArrowText, streakToneClass, teamStreak, type Streak } from '@/components/mobile/league/streak-ops'
 import { MPosChip, posLabel, posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
+import { M_PROJ_TEXT } from '@/components/players/projected-points'
 import { WithOnlineDot } from '@/components/mobile/ui/online-dot'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
@@ -65,6 +67,7 @@ import { useRosters } from '@/hooks/use-rosters'
 import { useSchedule, type ScheduleWeek } from '@/hooks/use-schedule'
 import { useStandings } from '@/hooks/use-standings'
 import { liveScoringDelay, useStatsDegraded } from '@/hooks/use-stats-degraded'
+import { useTeamWeekProjections } from '@/hooks/use-team-week-projections'
 import type { BoxGame, BoxStarter, StarterPhase, TeamBoxScore } from '@/lib/leagues/api/box-score-service'
 import { sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
@@ -340,6 +343,15 @@ function HeadToHead({
 
   const status = doc.league_week.status
   const teamIds = useMemo(() => detail.teams.map((t) => t.id), [detail.teams])
+  // Q108: a team with no score in a live week shows its projected total.
+  const projectedOf = useTeamWeekProjections({
+    leagueId,
+    season: doc.season,
+    week: doc.week,
+    weekStatus: doc.league_week.status,
+    teamIds,
+    irSlots: detail.settings.roster_settings.ir_slots,
+  })
   const sides = row ? sidesOf(row, myTeamId) : null
   const boxA = useBoxScore(leagueId, doc.week, sides?.a ?? null)
   const boxB = useBoxScore(leagueId, doc.week, sides?.b ?? null)
@@ -407,6 +419,7 @@ function HeadToHead({
               teamIds={teamIds}
               projA={boxProjection(boxA.data, projOf)}
               projB={boxProjection(boxB.data, projOf)}
+              projectedOf={projectedOf}
               recordOf={recordOf}
               recordsPending={standings.isPending}
               streakOf={streakOf}
@@ -463,6 +476,16 @@ function usePrefetchNeighbours(leagueId: string, week: number, ordered: readonly
       })
     }
   }, [queryClient, leagueId, week, key])
+}
+
+/** A leaderboard row with no results row: its projection in a live week
+ *  (Q108, the projected-points blue), else `pending` / the dash. */
+function LeaderboardPending({ cell }: { cell: ReturnType<typeof leaderboardPendingCell> }) {
+  return (
+    <span className={cn('flex-none text-[11px] font-semibold', cell.projected ? M_PROJ_TEXT : 'text-m-t3')} title={cell.title ?? undefined} data-projected={cell.projected || undefined}>
+      {cell.text}
+    </span>
+  )
 }
 
 function boxProjection(data: TeamBoxScore | undefined, projOf: (id: string) => number | null): string | null {
@@ -564,6 +587,7 @@ function MatchCard({
   teamIds,
   projA,
   projB,
+  projectedOf,
   recordOf,
   recordsPending,
   streakOf,
@@ -579,6 +603,8 @@ function MatchCard({
   teamIds: readonly string[]
   projA: string | null
   projB: string | null
+  /** Q108: a team's projected total for the week (`useTeamWeekProjections`). */
+  projectedOf: (teamId: string) => number | null
   recordOf: (teamId: string) => string | null
   /** The standings read has not answered yet — the record slot holds a
    *  placeholder instead of silently missing. */
@@ -600,7 +626,7 @@ function MatchCard({
       leagueId={leagueId}
       name={teamName(doc, teamId)}
       teamId={teamId}
-      score={scoreCell(sideScore(row, teamId), row.status)}
+      score={teamScoreCell(sideScore(row, teamId), row.status, doc.league_week.status, projectedOf(teamId))}
       proj={proj}
       result={resultWord(sideResult(row, teamId, doc.results))}
       manager={managers.get(teamId) ?? null}
@@ -675,7 +701,7 @@ function CardSide({
   leagueId: string
   name: string
   teamId: string
-  score: ReturnType<typeof scoreCell>
+  score: ReturnType<typeof teamScoreCell>
   proj: string | null
   result: ReturnType<typeof resultWord>
   manager: string | null
@@ -701,13 +727,15 @@ function CardSide({
   const scoreCol = (
     <span className={cn('flex flex-col', mirror ? 'items-start' : 'items-end')}>
       <span
-        className={cn('text-[22px] font-semibold tracking-[-0.02em]', score.pending && 'text-m-t3')}
+        className={cn('text-[22px] font-semibold tracking-[-0.02em]', score.projected ? M_PROJ_TEXT : score.pending && 'text-m-t3')}
         title={score.title ?? undefined}
         data-score={score.pending ? 'pending' : score.text}
+        data-projected={score.projected || undefined}
       >
         {score.text}
       </span>
-      {proj && (
+      {/* Q108: the projection already stands in for the score — not twice. */}
+      {proj && !score.projected && (
         <span className="text-[11px] font-medium text-m-t3" title="Projected" data-proj-total>
           {proj}
         </span>
@@ -1272,6 +1300,15 @@ function LeaderboardWeek({
   const values = useLeaguePlayerValues(leagueId, doc.season, doc.week)
   const projOf = (id: string) => values.byPlayer.get(id)?.projected_points ?? null
   const status = doc.league_week.status
+  // Q108: a team with no results row in a live week shows its projected total.
+  const projectedOf = useTeamWeekProjections({
+    leagueId,
+    season: doc.season,
+    week: doc.week,
+    weekStatus: status,
+    teamIds,
+    irSlots: detail.settings.roster_settings.ir_slots,
+  })
 
   const remember = useMatchStore((s) => s.remember)
   useEffect(() => {
@@ -1324,9 +1361,7 @@ function LeaderboardWeek({
                 {r.points !== null ? (
                   <span className="flex-none text-[15px] font-semibold text-m-t1">{formatPoints(r.points)}</span>
                 ) : (
-                  <span className="flex-none text-[11px] font-semibold text-m-t3" title="No scoring batch has reached this team yet — an absent row is not a score.">
-                    pending
-                  </span>
+                  <LeaderboardPending cell={leaderboardPendingCell(status, projectedOf(r.team_id))} />
                 )}
                 {r.is_final ? (
                   <span className="w-9 flex-none text-right text-[11px] font-semibold text-m-t3">Final</span>

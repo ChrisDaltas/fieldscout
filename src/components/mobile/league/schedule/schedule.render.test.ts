@@ -161,9 +161,10 @@ describe('the Schedule screen', () => {
     ])
     expect(w1).toMatch(/text-m-t1" data-score="true">120\.50/)
     expect(w1).toMatch(/text-m-t3"[^>]*data-score="true">99\.00/)
-    // Live: an open score is "pending"; upcoming: a dash.
+    // Live: an open score is its projection (Q108) — none on record here, so
+    // the dash; upcoming: a dash.
     expect(rowSides(html, 'm3')).toEqual([
-      ['Charlie', 'pending'],
+      ['Charlie', '—'],
       ['Alpha', '40.25'],
     ])
     expect(rowSides(html, 'm5')).toEqual([

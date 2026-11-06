@@ -10,19 +10,22 @@ import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { useAuth } from '@/hooks/use-auth'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useEditMatchup, useScheduleLive, type EditMatchupResult } from '@/hooks/use-schedule'
+import { useTeamWeekProjections } from '@/hooks/use-team-week-projections'
 import { cn } from '@/lib/utils'
 
 import { commishMatchupHref } from './activity-page-ops'
 import { Crest, TeamNameLink, LeaguePageTitle } from './league-cells'
 import { currentWeekOf } from './lineup-editor-ops'
+import { teamScoreCell } from './matchup-view-ops'
 import {
   NO_SCHEDULE_COPY,
   SCHEDULE_COMMISH_HINT_COPY,
   editFormProblem,
-  formatScore,
+  liveWeekOf,
   reasonHint,
   scheduleConsoleHref,
   scheduleGrid,
@@ -117,6 +120,17 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
     [schedule.data, teamNames, detail.settings.regular_season_weeks, detail.settings.schedule_mode],
   )
   const currentWeek = useMemo(() => currentWeekOf(schedule.data?.weeks ?? []), [schedule.data])
+  // Q108: in the live week, a team with no score shows its projected total.
+  const liveWeek = liveWeekOf(schedule.data?.weeks)
+  const teamIds = useMemo(() => detail.teams.map((t) => t.id), [detail.teams])
+  const projectedOf = useTeamWeekProjections({
+    leagueId,
+    season: liveWeek?.season,
+    week: liveWeek?.week,
+    weekStatus: liveWeek?.status,
+    teamIds,
+    irSlots: detail.settings.roster_settings.ir_slots,
+  })
   const hint = isCommish ? reasonHint(schedule.data?.weeks ?? []) : null
   const problem = schedule.isError ? (schedule.error instanceof Error ? schedule.error : new Error(String(schedule.error))) : null
 
@@ -180,6 +194,7 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
               week={week}
               isCurrent={week.week === currentWeek}
               myTeamId={myTeamId}
+              projectedOf={projectedOf}
             />
           ))}
         </div>
@@ -193,11 +208,14 @@ function WeekCard({
   week,
   isCurrent,
   myTeamId,
+  projectedOf,
 }: {
   leagueId: string
   week: WeekCell
   isCurrent: boolean
   myTeamId: string | null
+  /** Q108: a team's projected total in the live week. */
+  projectedOf: (teamId: string) => number | null
 }) {
   const badge = weekStatusBadge(week.status)
   return (
@@ -223,7 +241,7 @@ function WeekCard({
             {week.note}
           </p>
         ) : (
-          week.rows.map((row) => <MatchupRowView key={row.id} leagueId={leagueId} week={week.week} row={row} myTeamId={myTeamId} />)
+          week.rows.map((row) => <MatchupRowView key={row.id} leagueId={leagueId} week={week.week} weekStatus={week.status} row={row} myTeamId={myTeamId} projectedOf={projectedOf} />)
         )}
       </CardContent>
     </Card>
@@ -233,15 +251,21 @@ function WeekCard({
 function MatchupRowView({
   leagueId,
   week,
+  weekStatus,
   row,
   myTeamId,
+  projectedOf,
 }: {
   leagueId: string
   week: number
+  weekStatus: string
   row: MatchupCell
   myTeamId: string | null
+  projectedOf: (teamId: string) => number | null
 }) {
   const mine = row.home.id === myTeamId || row.away?.id === myTeamId
+  const home = teamScoreCell(row.home_score, row.status, weekStatus, projectedOf(row.home.id))
+  const away = row.away ? teamScoreCell(row.away_score, row.status, weekStatus, projectedOf(row.away.id)) : null
   return (
     <div
       className={cn('flex min-h-[34px] flex-col justify-center gap-1 px-[15px] py-1.5 transition-colors', mine ? 'bg-accent-soft' : 'hover:bg-surface-sunken')}
@@ -250,12 +274,12 @@ function MatchupRowView({
     >
       <div className="flex flex-wrap items-center gap-2 text-[12px]">
         <TeamLabel leagueId={leagueId} team={row.home} winner={row.result === 'home'} />
-        <span className={cn('fs-num text-[13px] font-bold tracking-[-0.01em]', row.result === 'away' ? 'text-n-3' : 'text-ink')}>{formatScore(row.home_score, row.status)}</span>
+        <ScoreText cell={home} lost={row.result === 'away'} />
         <span className="text-[9px] font-bold text-n-6">vs</span>
         {row.away ? (
           <>
             <TeamLabel leagueId={leagueId} team={row.away} winner={row.result === 'away'} />
-            <span className={cn('fs-num text-[13px] font-bold tracking-[-0.01em]', row.result === 'home' ? 'text-n-3' : 'text-ink')}>{formatScore(row.away_score, row.status)}</span>
+            {away && <ScoreText cell={away} lost={row.result === 'home'} />}
           </>
         ) : (
           <Badge variant="stroke">bye</Badge>
@@ -278,6 +302,21 @@ function MatchupRowView({
         </span>
       </div>
     </div>
+  )
+}
+
+/** A side's score as written (`teamScoreCell`): the stored number, the dash,
+ *  `pending`, or — Q108 — the live week's projected total in the projected
+ *  blue. */
+function ScoreText({ cell, lost }: { cell: ReturnType<typeof teamScoreCell>; lost: boolean }) {
+  return (
+    <span
+      className={cn('fs-num text-[13px] font-bold tracking-[-0.01em]', cell.projected ? PROJ_TEXT : lost ? 'text-n-3' : 'text-ink')}
+      title={cell.title ?? undefined}
+      data-projected={cell.projected || undefined}
+    >
+      {cell.text}
+    </span>
   )
 }
 

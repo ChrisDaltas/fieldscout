@@ -31,10 +31,21 @@ export const leaguePlayerValueKeys = {
   week: (leagueId: string, season: number, week: number) => ['league-player-values', leagueId, season, week] as const,
 }
 
+/**
+ * Q108 (Chris 2026-11-06: a team's projected total "should keep updating as
+ * projections change"). The table is rewritten by the hourly job, and no
+ * realtime event carries it, so every reader re-reads it on this interval
+ * and when the window regains focus (the app default turns focus refetch
+ * off) — no page reload needed for the projected totals to move.
+ */
+export const LEAGUE_PLAYER_VALUES_REFETCH_MS = 5 * 60_000
+
 export function useLeaguePlayerValues(leagueId: string | undefined, season: number | undefined, week: number | undefined) {
   const query = useQuery({
     queryKey: leaguePlayerValueKeys.week(leagueId ?? 'none', season ?? 0, week ?? 0),
     enabled: Boolean(leagueId) && season !== undefined && week !== undefined,
+    refetchInterval: LEAGUE_PLAYER_VALUES_REFETCH_MS,
+    refetchOnWindowFocus: true,
     queryFn: async (): Promise<LeaguePlayerValue[]> => {
       const supabase = createBrowserClient()
       const { data, error } = await supabase

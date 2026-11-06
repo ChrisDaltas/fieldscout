@@ -96,6 +96,10 @@ export interface ScoreCell {
   text: string
   title: string | null
   pending: boolean
+  /** Q108 (Chris 2026-11-06): the text is the team's PROJECTED total, not a
+   *  score — render it in the projected-points blue (`PROJ_TEXT` /
+   *  `M_PROJ_TEXT`). Absent = a real score, a dash or `pending`. */
+  projected?: boolean
 }
 
 /** A team score as the door wrote it: a number, or NULL — the write door's
@@ -108,6 +112,46 @@ export function scoreCell(score: number | null, matchupStatus: string): ScoreCel
   if (score !== null) return { text, title: null, pending: false }
   if (matchupStatus === 'scheduled') return { text, title: WEEK_NOT_STARTED_TITLE, pending: false }
   return { text, title: PENDING_SCORE_TITLE, pending: true }
+}
+
+export const PROJECTED_SCORE_TITLE = 'Projected — this team hasn’t scored yet this week.'
+export const NO_PROJECTION_TITLE =
+  'No score yet this week, and no projection to show: the lineup has no starters, or one of them has no projection on record.'
+
+/** "Proj 98.4" — a team's projected total where its score would be. One
+ *  decimal, the matchup page's `projectedTotalText` spelling, so it never
+ *  reads like a two-decimal score. */
+export function projectedScoreText(projected: number): string {
+  return `Proj ${projected.toFixed(1)}`
+}
+
+/**
+ * A team's score cell, Q108's rule (Chris 2026-11-06: "a Team with no score
+ * should show the projected total for the week, and that projection should
+ * keep updating as projections change"). A stored score always wins. In a
+ * LIVE week (`league_weeks.status = 'live'`) a team with no score shows its
+ * projected total for the week (`wholeProjectedTotal`'s number — the caller
+ * passes null when it can't be stated truthfully, and the cell is then the
+ * dash, never "Proj 0.0"). Every other week is `scoreCell` unchanged: an
+ * upcoming week's dash, and a week whose games are over (the correction
+ * window, or a held week) keeps `pending` — a projection after the games is
+ * meaningless. Display only: the projection never feeds a result, the
+ * median, the standings or a sort.
+ */
+export function teamScoreCell(score: number | null, matchupStatus: string, weekStatus: string | null | undefined, projected: number | null | undefined): ScoreCell {
+  if (score !== null || weekStatus !== 'live') return scoreCell(score, matchupStatus)
+  if (projected === null || projected === undefined) return { text: '—', title: NO_PROJECTION_TITLE, pending: false }
+  return { text: projectedScoreText(projected), title: PROJECTED_SCORE_TITLE, pending: false, projected: true }
+}
+
+export const LEADERBOARD_PENDING_TITLE = 'No scoring batch has reached this team yet — an absent row is not a score.'
+
+/** A `total_points` leaderboard row with no results row yet: its projected
+ *  total in a live week (Q108 — shown as text; the row stays unranked at the
+ *  bottom), else `pending`. */
+export function leaderboardPendingCell(weekStatus: string | null | undefined, projected: number | null | undefined): ScoreCell {
+  if (weekStatus === 'live') return teamScoreCell(null, 'live', weekStatus, projected)
+  return { text: PENDING_SCORE_COPY, title: LEADERBOARD_PENDING_TITLE, pending: true }
 }
 
 export type ResultVariant = 'green' | 'pink' | 'stroke'

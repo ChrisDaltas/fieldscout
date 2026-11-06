@@ -16,6 +16,7 @@ import { commishMatchupLockKeys } from '@/hooks/use-commish-matchup-lock'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { leaguePlayerValueKeys } from '@/hooks/use-league-player-values'
 import { leaguesKeys } from '@/hooks/use-leagues'
+import { teamLineupKeys } from '@/hooks/use-lineup'
 import { leagueMatchupKeys } from '@/hooks/use-matchups'
 import { leagueRosterKeys } from '@/hooks/use-rosters'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
@@ -216,6 +217,8 @@ function render(
     lockEditable?: boolean
     schedule?: LeagueSchedule | 'error' | 'pending'
     weekParam?: number
+    /** Q108: stored lineups for the shown week, by team. */
+    lineups?: Record<string, Record<string, string>>
   } = {},
 ): string {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
@@ -232,6 +235,9 @@ function render(
   for (const [team, b] of Object.entries(seed.boxes ?? { [ME]: MY_BOX, [OPP]: OPP_BOX })) qc.setQueryData(leagueBoxKeys.team(LEAGUE, week.week, team), b)
   qc.setQueryData(statsDegradedKeys.flag(), FLAG_OK)
   if (seed.rosters) qc.setQueryData(leagueRosterKeys.all(LEAGUE), seed.rosters)
+  for (const [team, slot_map] of Object.entries(seed.lineups ?? {})) {
+    qc.setQueryData(teamLineupKeys.week(team, week.week), { id: `l-${team}`, team_id: team, season: 2099, week: week.week, slot_map, starters: [], bench: [], locked_at: null, edited_by_commish: false, set_at: null })
+  }
   if (seed.values === 'error') errored(qc, leaguePlayerValueKeys.week(LEAGUE, 2099, week.week), 'values down')
   else
     qc.setQueryData(leaguePlayerValueKeys.week(LEAGUE, 2099, week.week), [
@@ -491,11 +497,26 @@ describe('mobile Match — bench', () => {
 })
 
 describe('mobile Match — other states', () => {
-  it('a named matchup opens on it, pending home score as the word', () => {
+  it('a named matchup opens on it; the unscored home side of the LIVE week has no lineup on record, so the dash (Q108 — never pending, never 0)', () => {
     const html = render({ matchupId: 'mA', boxes: {} })
     expect(html).toContain('data-matchup="mA"')
-    expect(html).toContain('data-score="pending"')
+    expect(html).toContain('data-score="—"')
+    expect(html).not.toContain('data-score="pending"')
     expect(html).toContain('data-score="12.25"')
+  })
+
+  it('Q108: with a lineup on record the unscored side reads its projected total in the phone’s projected blue — and not twice', () => {
+    const html = render({ matchupId: 'mA', boxes: {}, lineups: { [T3]: { 'qb:0': 'p-qb', 'wr:0': 'p-wr' } } })
+    expect(html).toMatch(/text-m-proj" title="Projected — this team hasn’t scored yet this week\." data-score="Proj 31\.1" data-projected="true">Proj 31\.1</)
+    expect(html.match(/Proj 31\.1/g)?.length).toBe(2) // the attribute + the text, no second line
+    expect(html).toContain('data-score="12.25"')
+  })
+
+  it('Q108: a finished week (correction window) keeps `pending` — no projection after the games', () => {
+    const doc = weekDoc()
+    const html = render({ matchupId: 'mA', boxes: {}, lineups: { [T3]: { 'qb:0': 'p-qb' } }, week: { ...doc, league_week: { ...doc.league_week, status: 'correction_window' } } })
+    expect(html).toContain('data-score="pending"')
+    expect(html).not.toContain('Proj 19.7')
   })
 
   it('a bye side says so', () => {
