@@ -921,7 +921,7 @@ describe('a new line with no ruled value but other data is a late line: listed, 
     expect(plan.lateLines).toEqual(['ARI', 'a-1'])
   })
 
-  it('a K line with no ruled value is a late line even when its own field-goal counts disagree: the K identity reads only lines the fill writes', () => {
+  it('a K line with no ruled value is a late line even when its own field-goal counts disagree: the K identity at plan time reads only lines stored after the fill', () => {
     // fg_made 1 with no distance bucket: written, this line would fail the identity; left, it blocks nothing.
     const plan = planFillWeek({
       week: 2,
