@@ -244,6 +244,19 @@ CREATE POLICY "Stats are viewable by authenticated users"
   ON player_stats FOR SELECT USING (auth.role() = 'authenticated');
 ```
 
+The block above is the table as first written. Later migrations changed it: 002 added `source` (and its index), 005 replaced the authenticated-only SELECT policy with one open to everyone, 057 added the box-score counts, 109 added `advanced` (and its object CHECK), 143 dropped `def_yards_allowed`'s default, 194 added `team`, and 217 (below) added two counts. `src/types/database.ts` has the full column set, and pgTAP `011_player_stats_box_columns.sql` pins it.
+
+**Migration 217 (F871): two kicking and D/ST counts.**
+
+```sql
+ALTER TABLE player_stats
+  ADD COLUMN fg_60_plus INTEGER DEFAULT 0,      -- FG made, 60+ yards. ALSO counted in fg_made_50_plus (which stays
+                                                -- inclusive), so a rules document pays it on top of its 50+ value.
+  ADD COLUMN def_2pt_return INTEGER DEFAULT 0;  -- D/ST two-point return
+```
+
+They are columns, not keys in `advanced`: a named exception to spec §23.5. A missing `advanced` key reads as pending, and the feed leaves out zeros, so almost every kicker and D/ST line would read pending; a missing column value reads 0. No code reads them until migration 218 (PR 4), which adds them to the stat registry and the rules documents. pgTAP `170_long_fg_two_point_columns.sql` pins them.
+
 ---
 
 ### scoring_systems

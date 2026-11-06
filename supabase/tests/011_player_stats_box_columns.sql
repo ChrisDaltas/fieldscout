@@ -19,7 +19,8 @@
 -- at task time") — L.A1.9's file becomes 012.
 --
 -- Falsifiability notes (§4.3):
---   * The columns_are golden pin asserts the EXACT 49-column set — a dropped,
+--   * The columns_are golden pin asserts the EXACT column set (54 columns
+--     since 217) — a dropped,
 --     renamed, or typo'd 057 column fails it loudly (as does any future
 --     undocumented column, the 005 invite_slug maintenance pattern).
 --   * Per-column type + default pins catch a retype (e.g. INTEGER → NUMERIC)
@@ -58,8 +59,11 @@ select columns_are('public', 'player_stats',
         -- 109's 1 (C59 — §23.5's advanced-stat map; pinned in 057):
         'advanced',
         -- 194's 1 (F589 — the team the line was played for; pinned in 142 A1):
-        'team'],
-  'exact player_stats column set (pre-057 surface + 057''s 11 + 109''s advanced + 194''s team)');
+        'team',
+        -- 217's 2 (F871 — the 60+ FG top-up and the D/ST two-point return;
+        -- type, default and grants pinned in 170):
+        'fg_60_plus', 'def_2pt_return'],
+  'exact player_stats column set (pre-057 surface + 057''s 11 + 109''s advanced + 194''s team + 217''s fg_60_plus and def_2pt_return)');
 
 -- ---------------------------------------------------------------------------
 -- B. Per-column pins for 057's 11: INTEGER DEFAULT 0 (001's convention,
