@@ -1,7 +1,7 @@
 /**
  * fill-ruled-columns — the quiet fill behind `npm run sync:fill-ruled`
- * (PROGRESS F870, F871, F890, D832). Chris 2026-11-05, on the questions asked
- * 2026-11-04: "go on league kickers and the other plays".
+ * (PROGRESS F870, F871, F890, D832, D833). Chris 2026-11-05, on the questions
+ * asked 2026-11-04: "go on league kickers and the other plays".
  *
  * WHY IT EXISTS. The stat-feed mapping left seven columns empty on past weeks,
  * and every stored rules document already pays them. Filling those columns is
@@ -24,16 +24,22 @@
  *      these plays must fail loudly, never report "nothing to do".
  *   3. PLANS. Diffs only `RULED_COLUMNS`. Any other difference is reported by
  *      player and key and never written. A stored line's metadata goes back
- *      as stored. A new line goes in only if everything it carries outside the
- *      ruled columns is empty, so a late provider line can't slip in. A fill
- *      only raises: a ruled value the feed reads below a non-zero stored one
- *      is a problem, named by player, and every move from a non-zero stored
- *      value is listed by player, as is every move on a column the feed sums
- *      with a part already stored (`SUMMED_RULED_COLUMNS`, 0 → n included:
- *      F890 holds the values). A partial read is a problem too: a position
- *      with stored lines that the feed carried none of this week, or a stored
- *      D/ST line the feed doesn't carry. A missing offense line is counted by
- *      position, not blocked.
+ *      as stored. A line with no stored row is one of four (D833), a
+ *      display-only `advanced` key aside: (a) one with nothing on it is
+ *      counted (`zeroNewLines`); (b) one with no ruled value but other data is
+ *      a late line (`lateLines`, F895): the provider's, never stored, so it is
+ *      listed by player, its keys print as other differences, and it is not
+ *      written and blocks nothing; (c) one with a ruled value and other data
+ *      beside it is a problem, so a late provider line can't slip in with the
+ *      fill; (d) one with ruled values only goes in. A fill only raises: a
+ *      ruled value the feed reads below a non-zero stored one is a problem,
+ *      named by player, and every move from a non-zero stored value is listed
+ *      by player, as is every move on a column the feed sums with a part
+ *      already stored (`SUMMED_RULED_COLUMNS`, 0 → n included: F890 holds the
+ *      values). A partial read is a problem too: a position with stored lines
+ *      that the feed carried none of this week, or a stored D/ST line the feed
+ *      doesn't carry. A missing offense line is counted by position, not
+ *      blocked.
  *   4. WRITES ONLY WITH `apply`, and only with no problem anywhere: through
  *      `ingest_write_batch` with `enqueue: false` and `corrections: []` (legal
  *      at 167:291), so no event and no queue row. The door sets exactly the
@@ -252,15 +258,21 @@ export interface FillWeekPlan {
   duplicates: number
   /** Stored lines whose ruled columns already equal the feed. */
   unchanged: number
-  /** New lines with every column empty: nothing to fill, so not inserted. */
+  /** New lines with nothing on them, a display-only `advanced` key aside: nothing to fill, so not inserted (D833 (a)). */
   zeroNewLines: number
+  /**
+   * New lines with no ruled value that carry other data, by player id in
+   * code-point order (D833 (b), F895). Not written, not a problem, not a move,
+   * not counted in any row count; their keys are in `otherDifferences`.
+   */
+  lateLines: string[]
   /** Stored lines the feed doesn't carry (untouched). */
   storedOnly: number
   /** The same, by `players.position` ('' when the player has none). */
   storedOnlyByPosition: Record<string, number>
   /** Stored lines to rewrite: stored metadata plus the ruled columns only. */
   updates: StatRow[]
-  /** New lines: the full `toStatRow` surface. */
+  /** New lines carrying ruled values and nothing else, a display-only `advanced` key aside (D833 (d)): the full `toStatRow` surface. */
   newRows: StatRow[]
   /** How many values each ruled column moves, new lines included. */
   moves: Record<RuledColumn, number>
@@ -342,6 +354,7 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
     duplicates: 0,
     unchanged: 0,
     zeroNewLines: 0,
+    lateLines: [],
     storedOnly: 0,
     storedOnlyByPosition: {},
     updates: [],
@@ -433,10 +446,12 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
 
     if (prior === undefined) {
       const carried = ruledValues(row)
-      if (others.length > 0) {
+      if (carried.length === 0) {
+        // Nothing to fill. Other data on it is a provider line never stored (F895): listed, not this fill's to write or block (D833).
+        if (others.length > 0) plan.lateLines.push(id)
+        else plan.zeroNewLines += 1
+      } else if (others.length > 0) {
         plan.problems.push(`week ${week}: new line for ${label(id)} also carries ${others.map((o) => `${o.key}=${o.feed}`).join(', ')} — a late provider line, not written`)
-      } else if (carried.length === 0) {
-        plan.zeroNewLines += 1
       } else {
         plan.newRows.push(row)
         wouldBe.set(id, row.columns)
@@ -482,6 +497,7 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
   }
   // A fixed order, so the printed line compares with F890's text as it stands.
   plan.summedMoves.sort((a, b) => byCodePoint(a.column, b.column) || byCodePoint(a.player_id, b.player_id))
+  plan.lateLines.sort(byCodePoint)
   return plan
 }
 
@@ -761,7 +777,7 @@ export function renderFill(report: FillReport): string[] {
   return [...renderFillPlan(report), ...renderFillWrite(report)]
 }
 
-/** Week by week, key by key, every other-column difference, every problem. */
+/** Week by week, key by key, every late line, every other-column difference, every problem. */
 export function renderFillPlan(report: FillReport): string[] {
   if (report.refused !== undefined) return [`REFUSED [${report.season}]: ${report.refused}`]
   const name = (id: string) => who(report.names, id)
@@ -771,11 +787,13 @@ export function renderFillPlan(report: FillReport): string[] {
   let inserted = 0
   let others = 0
   let fromStored = 0
+  let late = 0
   for (const plan of report.weeks) {
     updated += plan.updates.length
     inserted += plan.newRows.length
     others += plan.otherDifferences.length
     fromStored += plan.fromStoredValue.length
+    late += plan.lateLines.length
     for (const column of RULED_COLUMNS) totals[column] += plan.moves[column]
     const byPosition = Object.entries(plan.storedOnlyByPosition)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -784,17 +802,21 @@ export function renderFillPlan(report: FillReport): string[] {
     lines.push(
       `  week ${plan.week}: ${plan.updates.length + plan.newRows.length} lines to write (${plan.updates.length} updated, ${plan.newRows.length} new), ` +
         `${sumMoves(plan.moves)} moves: ${movesText(plan.moves)} | feed lines=${plan.feedLines} unchanged=${plan.unchanged} ` +
-        `unknownPlayers=${plan.unknownPlayers} empty=${plan.empty} repeats=${plan.duplicates} zeroNewLines=${plan.zeroNewLines} storedOnly=${plan.storedOnly}` +
+        `unknownPlayers=${plan.unknownPlayers} empty=${plan.empty} repeats=${plan.duplicates} zeroNewLines=${plan.zeroNewLines} lateLines=${plan.lateLines.length} storedOnly=${plan.storedOnly}` +
         (byPosition === '' ? '' : ` (${byPosition})`),
     )
     for (const row of plan.newRows) lines.push(`      new line ${row.player_id}: ${ruledValues(row).join(', ')}`)
+    for (const id of plan.lateLines) lines.push(`      late line (not written, F895) ${name(id)}: no ruled value`)
     for (const move of plan.fromStoredValue) lines.push(`      from a stored value ${move.player_id} ${move.column}: stored ${move.stored} → feed ${move.feed}`)
     for (const move of plan.summedMoves) lines.push(`      summed ${move.column} ${name(move.player_id)}: stored ${move.stored} → feed ${move.feed}`)
     for (const other of plan.otherDifferences) lines.push(`      other (not written) ${name(other.player_id)} ${other.key}: stored ${other.stored} → feed ${other.feed}`)
     for (const [key, count] of Object.entries(plan.contextDifferences)) lines.push(`      display-only (not written) ${key}: ${count} lines differ`)
     for (const problem of plan.problems) lines.push(`      PROBLEM: ${problem}`)
   }
-  lines.push(`  all weeks: ${updated + inserted} lines (${updated} updated, ${inserted} new), ${sumMoves(totals)} moves: ${movesText(totals)}; ${fromStored} from a non-zero stored value; ${others} other-column differences`)
+  lines.push(
+    `  all weeks: ${updated + inserted} lines (${updated} updated, ${inserted} new), ${sumMoves(totals)} moves: ${movesText(totals)}; ` +
+      `${fromStored} from a non-zero stored value; ${others} other-column differences; ${late} late lines (not written)`,
+  )
   // Every move on a summed column, 0 → n included: the line F890's values are compared with, value by value.
   // Ids only, so it compares with F890's text as written: names never go in a repo file. The week lines above carry the names.
   for (const column of SUMMED_RULED_COLUMNS) {
