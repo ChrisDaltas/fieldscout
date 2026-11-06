@@ -53,7 +53,7 @@ import { defaultsForTeamCount, splitSettings } from '../settings/league-settings
 import { VirtualClock } from '../time/virtual-clock'
 import { PRE_158_SENTENCE, readStoredPlayerPointsForSeason } from './player-points-store'
 import { type ReconcileReport, reconcileSeason } from './reconcile'
-import { runScoreWeekBatch } from './score-week-worker'
+import { runCloseScoring, runScoreWeekBatch } from './score-week-worker'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_ANON_KEY =
@@ -338,6 +338,7 @@ describe('F405 as ruled: stored per-player points + the next-week-kickoff window
     expect((await service.rpc('finalize_matchups', { p_now: before, p_league_id: leagueId })).error).toBeNull()
     expect(await weekStatus()).toBe('correction_window')
     clock.advanceTo(new Date(WEEK2.kickoff))
+    await runCloseScoring({ time: clock, db: service }, { leagueIds: [leagueId] }) // 216 (F863): production's minute beat
     expect((await service.rpc('finalize_matchups', { p_now: WEEK2.kickoff, p_league_id: leagueId })).error).toBeNull()
     expect(await weekStatus()).toBe('final')
     expect(await scores()).toBe('15.00/4.00 final home')

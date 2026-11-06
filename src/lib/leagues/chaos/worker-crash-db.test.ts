@@ -57,8 +57,8 @@ import {
 const service = serviceClient()
 /** A matchup row before its first score write (the column defaults). */
 const UNSCORED = [
-  [0, 0],
-  [0, 0],
+  [null, null],
+  [null, null],
 ]
 let world: ScoringWorld
 

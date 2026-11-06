@@ -225,7 +225,7 @@ describe('THE GOLDEN — stored per-player points: the worker, the backfill, no 
   it('G1 THE WORKER scores both weeks of all eight templates and, for EVERY team-week, the stored rows add up to the stored score (pending ⇔ NULL)', async () => {
     for (let guard = 0; guard < 10; guard++) {
       const batch = await runScoreWeekBatch({ time: clock, db }, { batchSize: 1000, leagueIds })
-      expect(batch.failed).toBe(0)
+      expect(batch.failed, JSON.stringify(batch.problems)).toBe(0)
       if (batch.claimed === 0 || !batch.more) break
     }
     // Every delta of a DEALT player drained; the few corpus lines dealt to no team (the remainder of

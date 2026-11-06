@@ -204,10 +204,20 @@ async function window(): Promise<void> {
   console.log(JSON.stringify({ step: 'window', last_game_ends_at: lastEnd, p_now: pNow, report, after: await state(leagueId) }, null, 2))
 }
 
+/** 216 (F863): this tool's scores are planted, so a close pass would overwrite
+ *  them with what the lines say. The weeks it drives are closed as they stand. */
+async function closeDueWeeks(leagueId: string, pNow: string): Promise<void> {
+  const due = must(await service.rpc('league_weeks_to_close', { p_now: pNow, p_limit: 100, p_league_ids: [leagueId] }), 'league_weeks_to_close') ?? []
+  for (const w of due) {
+    must(await service.rpc('league_week_close_stamp', { p_league_id: leagueId, p_week: w.week, p_digest: w.digest, p_scores: [], p_now: pNow }), 'league_week_close_stamp')
+  }
+}
+
 async function finalize(): Promise<void> {
   const { leagueId, week } = await fixture()
   if (!week.correction_window_ends_at) throw new Error('nfl_weeks 2099 week 1 has no correction_window_ends_at — re-run the seeder')
   const pNow = new Date(Date.parse(week.correction_window_ends_at) + MINUTE_MS).toISOString()
+  await closeDueWeeks(leagueId, pNow)
   const report = must(await service.rpc('finalize_matchups', { p_now: pNow, p_league_id: leagueId }), 'finalize_matchups')
   console.log(JSON.stringify({ step: 'finalize', p_now: pNow, report, after: await state(leagueId) }, null, 2))
 }
@@ -308,6 +318,7 @@ async function finalizeAll(): Promise<void> {
   const w = await nflWeek(Math.max(...due))
   if (!w.correction_window_ends_at) throw new Error(`nfl_weeks 2099 week ${w.week} has no correction_window_ends_at — re-run the seeder`)
   const pNow = new Date(Date.parse(w.correction_window_ends_at) + MINUTE_MS).toISOString()
+  await closeDueWeeks(leagueId, pNow)
   const report = must(await service.rpc('finalize_matchups', { p_now: pNow, p_league_id: leagueId }), 'finalize_matchups')
   const after = await leagueShape(leagueId)
   console.log(JSON.stringify({ step: 'finalize-all', due, p_now: pNow, report, league: after.league.status, weeks: after.weeks }, null, 2))

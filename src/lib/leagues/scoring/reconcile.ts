@@ -187,6 +187,8 @@ export const GAME_LATE_MS = 8 * 60 * 60_000
 export const STALE_QUEUE_MS = 60 * 60_000
 /** F263(g) is emitted this long past the week's correction window and no longer (R877): the Thursday run sees it once. */
 export const FINAL_NO_LINE_GRACE_MS = 24 * 60 * 60_000
+/** 216 (F863): finalize runs hourly, so a week an hour past its window is normal; two is a held week. */
+export const WEEK_HELD_GRACE_MS = 2 * 60 * 60_000
 
 // ── The report ─────────────────────────────────────────────────────────────
 
@@ -207,6 +209,8 @@ export type FindingKind =
   | 'pool_mirror_broken'
   | 'backfill_unrecoverable'
   | 'player_points_store_missing'
+  | 'blank_owed'
+  | 'week_held'
 
 export type Severity = 'alert' | 'warn' | 'info'
 
@@ -260,6 +264,8 @@ const SEVERITY: Record<FindingKind, Severity> = {
   lineup_unreadable: 'alert',
   snapshot_unscorable: 'alert',
   starter_final_game_no_line: 'alert',
+  blank_owed: 'warn', // 216 (F863): a blank with points behind it; the close pass or the next update writes it
+  week_held: 'alert', // 216 (F863): past its window and not final
   pool_mirror_broken: 'alert',
   backfill_unrecoverable: 'info', // 158: a known, recorded state — named, never re-alerted
   player_points_store_missing: 'info', // 158 not pushed yet: today's checks run
@@ -397,6 +403,19 @@ export function classifyCell(stored: number | null, computed: TeamWeekScore, ctx
       return { kind: 'in_flight', severity: SEVERITY.in_flight, explanation: `deltas for ${queued.join(', ')} still queued — the worker has not drained them (a row older than ${STALE_QUEUE_MS / 60_000} min is alerted once as stuck_queue)` }
     }
     return null
+  }
+
+  // 216 (F273 / F863): a blank on an open week is "not scored yet", never drift.
+  // With no points behind it (nobody has played, or a starter with no line) it
+  // is simply the truth until the close pass writes the real 0; with points
+  // behind it an update was lost, and the close pass or the next update owes it.
+  if (stored === null && ctx.weekStatus !== 'final') {
+    if (recomputed === null || recomputed === 0) return null
+    return {
+      kind: 'blank_owed',
+      severity: SEVERITY.blank_owed,
+      explanation: `the score is blank but its starters' lines come to ${recomputed}, with nothing queued for them — the close pass, or the team's next update, writes it; the week can't close until then`,
+    }
   }
 
   if (sameScore(stored, recomputed)) return null
@@ -611,6 +630,29 @@ interface ResultRow {
   week: number
   points: number | string
   is_final: boolean
+}
+
+/**
+ * `week_held`'s words for what holds the week (216 / F863). R1796: each mode
+ * names its OWN hold — an h2h week holds on a blank matchup cell (or a round
+ * with no games); a total-points week reads no matchup and holds on a seated
+ * team with no result row, finalize's `pending_results`.
+ */
+export function weekHeldHolds(
+  mode: 'h2h' | 'total_points',
+  week: number,
+  matchups: ReadonlyArray<Pick<MatchupRow, 'week' | 'away_team_id' | 'home_score' | 'away_score'>>,
+  results: ReadonlyArray<Pick<ResultRow, 'week' | 'team_id'>>,
+  teamIds: readonly string[],
+): string {
+  if (mode === 'h2h') {
+    if (!matchups.some((m) => m.week === week)) return 'its round has no games yet'
+    const blanks = matchups.filter((m) => m.week === week && (m.home_score === null || (m.away_team_id !== null && m.away_score === null))).length
+    return `${blanks} matchup(s) hold a blank score`
+  }
+  const resulted = new Set(results.filter((r) => r.week === week).map((r) => r.team_id))
+  const missing = teamIds.filter((t) => !resulted.has(t)).length
+  return `${missing} team(s) have no result row yet (pending_results)`
 }
 
 interface LineupRow {
@@ -878,6 +920,21 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
 
     for (const lw of started) {
       const week = lw.week
+      // 216 (F863 — "never let nothing happened mean it worked"): a week past
+      // its window and not final is held, whatever holds it. Finalize names the
+      // reason on its own report; this is the page a held week can't hide from.
+      const heldWindowEnds = weekByNumber.get(week)?.correction_window_ends_at ?? null
+      if (lw.status === 'correction_window' && heldWindowEnds !== null && now.getTime() - Date.parse(heldWindowEnds) > WEEK_HELD_GRACE_MS) {
+        const holds = weekHeldHolds(mode, week, matchups, results, teams)
+        findings.push({
+          kind: 'week_held',
+          severity: SEVERITY.week_held,
+          season,
+          week,
+          league_id: league.id,
+          message: `league_id=${league.id} (${league.name}) week ${week} is past its correction window (${new Date(heldWindowEnds).toISOString()}) and not final — ${holds}; finalize_matchups' report names the reason (F863)`,
+        })
+      }
       // THE WEEK's rules (144 / F397 — Chris: "F397 yes build it"): a finished
       // week kept under the rules it was played with after a mid-season
       // scoring change is recomputed under THOSE, so it reads clean, not

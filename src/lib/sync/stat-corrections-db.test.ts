@@ -40,7 +40,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { defaultsForTeamCount, splitSettings } from '@/lib/leagues/settings/league-settings'
 import { DegradationTracker } from '@/lib/leagues/stats/degradation'
 import type { ProviderGame, ProviderPlayerWeekStats, StatsProvider } from '@/lib/leagues/stats/stats-provider'
-import { runScoreWeekBatch } from '@/lib/leagues/scoring/score-week-worker'
+import { runCloseScoring, runScoreWeekBatch } from '@/lib/leagues/scoring/score-week-worker'
 import { VirtualClock } from '@/lib/leagues/time/virtual-clock'
 import type { Database, Json } from '@/types/database'
 
@@ -283,6 +283,7 @@ describe('L.E2.1 — stat-correction events through the REAL ingestWeek → door
 
   it('SC5 the REAL finalize_matchups at week 2’s first kickoff: week 1 is FINAL', async () => {
     clock.advanceTo(new Date(WEEK2.kickoff))
+    await runCloseScoring({ time: clock, db: service }, { leagueIds: [leagueId] }) // 216 (F863): production's minute beat
     expect((await service.rpc('finalize_matchups', { p_now: WEEK2.kickoff, p_league_id: leagueId })).error).toBeNull()
     expect(await weekStatus()).toBe('final')
     expect(await scores()).toBe('15.00/4.00 final home')

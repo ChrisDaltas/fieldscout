@@ -104,6 +104,28 @@
  *      error costs no lease wait; if that release fails too, the lease
  *      expiry is the backstop.
  *
+ * A FAILED SAVE IS RETRIED, NOT THROWN AWAY (F860; migration 216; Chris
+ * 2026-11-05, "A failed save gets retried instead of thrown away"). Step (8a)
+ * used to delete every mapped row that was not held, so one door error lost
+ * that team's update for good if it was the week's last. Rows mapping to a
+ * `failed` league-week now go back DEFERRED, for `failedDeferSeconds` (5 min) —
+ * longer than the not-ready hold, so a row that can never succeed (a corrupt
+ * snapshot) retries a few times an hour instead of spinning, while the
+ * QUARANTINED alert fires on every try; a newer stat delta's re-stamp clears
+ * the hold at once. Its correction events stay unapplied, and the door's
+ * `already_recorded` keeps a sibling league's retry from recording twice. The
+ * row goes when the week does: a `final` week is `week_final`, consumed.
+ *
+ * THE CLOSE OF THE WEEK (F273 / F256(b) / F859; `runCloseScoring`; migration
+ * 216). A drain only reaches a team through a queued starter, so it can't write
+ * the real 0 of a team no update ever reached, can't bring back an update that
+ * was consumed before its pairing existed (`no_matchup_row`), and can't help
+ * while the queue is behind. Once a week's games are over the close pass
+ * recomputes EVERY team on a pairing from `player_stats`, through this same
+ * pipeline and door, and records the digest of the lines it read
+ * (`league_week_close_stamp`). `finalize_matchups` holds the week until the
+ * lines still hash to it. See 216's banner.
+ *
  * STAT CORRECTIONS (M6 L.E2.2 — migration 172; spec §23.4 v2.16.83; tasks-M6
  * TD6 / TD7 / TD8 as ruled by Q81 — PROGRESS D438 / D439 / D440 / D453).
  * (2b) the drain reads the UNAPPLIED `stat_correction_events` of its ready
@@ -598,6 +620,10 @@ export interface ScoreWorkerOptions {
    * Default 30.
    */
   deferSeconds?: number
+  /** F860 (216): how long a row of a `failed` league-week waits before its
+   *  retry. Default 300 — see the banner. A pre-216 ack ignores it and uses
+   *  `deferSeconds`. */
+  failedDeferSeconds?: number
   /**
    * The stack-lane scope seam (D313(2)'s shape): when set, only these
    * leagues are scored and a queue row is consumed only if it maps to one
@@ -756,6 +782,9 @@ export interface LeagueWeekReport {
   /** 172 (F476): the immediate bracket sync's answer when the door said it
    *  was due (a failure is a named problem; the hourly beat retries). */
   bracket_resync?: Json
+  /** 216 (F863), the close pass only: teams on a pairing whose lineup row can't
+   *  be read. They are not scored as 0, so the week is not closed. */
+  close_unreadable_team_ids?: string[]
   problems: string[]
 }
 
@@ -778,7 +807,11 @@ export interface BatchReport {
   out_of_scope: number
   /** Rows held for a `week_not_open` league — left queued. */
   held: number
-  /** Held rows (not_ready + held) the ack DEFERRED — stamped with
+  /** F860 (216): rows of a `failed` league-week, deferred for their retry
+   *  (`failedDeferSeconds`) instead of deleted. Their row is the only copy of
+   *  that update, so it stays until the league-week takes it. */
+  failed_deferred: number
+  /** Held rows (not_ready + held + failed_deferred) the ack DEFERRED — stamped with
    *  `deferred_until` so the next claims skip them for a beat (122, R872);
    *  a row whose stamp moved mid-drain is released instead (it is ready). */
   deferred: number
@@ -828,6 +861,8 @@ export interface BatchReport {
 const DEFAULT_BATCH = 500
 const DEFAULT_LEASE_SECONDS = 120
 const DEFAULT_DEFER_SECONDS = 30
+const DEFAULT_FAILED_DEFER_SECONDS = 300
+const DEFAULT_CLOSE_LIMIT = 25
 const POSTGREST_ROW_CAP = 1000
 const IN_CHUNK = 150
 
@@ -839,6 +874,8 @@ interface QueueRow {
   enqueued_at: string
   /** The same instant at microsecond precision — the readiness comparand. */
   enqueued_micros: number
+  /** F860 (216): this row's own hold, overriding the ack's `p_defer_until`. */
+  defer_until?: string
 }
 
 interface LeagueRow {
@@ -919,6 +956,7 @@ function ackRows(rows: readonly QueueRow[]): Json {
     week: r.week,
     player_id: r.player_id,
     enqueued_at: r.enqueued_at,
+    ...(r.defer_until === undefined ? {} : { defer_until: r.defer_until }),
   })) as unknown as Json
 }
 
@@ -1135,6 +1173,10 @@ interface LeagueWeekInput {
   /** 172 (L.E2.2): the unapplied `stat_correction_events` ids of the ready
    *  players (empty when none, or on a database without the table). */
   eventsByPlayer: ReadonlyMap<string, readonly string[]>
+  /** 216 (F863): the close pass — compute EVERY team on a pairing of the week
+   *  (`total_points`: every seated team with a lineup), not only the teams a
+   *  queued starter reaches. See `runCloseScoring`. */
+  closing?: boolean
 }
 
 /**
@@ -1266,6 +1308,35 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, time: TimeProvider, input:
   for (const teamId of commishEdited) toCompute.add(teamId)
   report.commish_edited_team_ids = [...commishEdited].sort()
 
+  // (5c) 216 (F863) — THE CLOSE PASS: every team that sits on a pairing of the
+  //      week, reached by an update or not. A team whose lineup row is absent
+  //      or empty scores its real 0 (a starter with no line is a named 0, so
+  //      neither one holds a week); one whose row can't be READ is not scored,
+  //      and the caller leaves the week unclosed: an unreadable row is not 0.
+  if (input.closing === true) {
+    const eligible = new Set<string>()
+    if (report.mode === 'h2h') {
+      const rows = must(
+        await db.from('matchups').select('home_team_id, away_team_id').eq('league_id', league.id).eq('season', season).eq('week', week).neq('status', 'final'),
+        'matchups read (close pass)',
+      )
+      for (const m of rows) {
+        eligible.add(m.home_team_id)
+        if (m.away_team_id !== null) eligible.add(m.away_team_id)
+      }
+    } else {
+      for (const t of teams.keys()) if (startersByTeam.has(t)) eligible.add(t)
+    }
+    const unreadable = new Set(lineupRows.filter((row) => !slotsByTeam.has(row.team_id)).map((row) => row.team_id))
+    report.close_unreadable_team_ids = [...unreadable].filter((t) => eligible.has(t)).sort()
+    for (const t of eligible) {
+      if (unreadable.has(t)) continue
+      if (!startersByTeam.has(t)) report.problems.push(`team ${t}: no team_lineups row for week ${week} — it has no starters, so it scores 0 (D293's auto-carry did not materialize)`)
+      toCompute.add(t)
+    }
+    report.affected_team_ids = [...toCompute].sort()
+  }
+
   if (report.mode === 'total_points') {
     const existing = must(
       await db.from('team_week_results').select('team_id').eq('league_id', league.id).eq('season', season).eq('week', week),
@@ -1292,6 +1363,7 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, time: TimeProvider, input:
 
   if (toCompute.size === 0) {
     report.outcome = 'skipped'
+    if (input.closing === true) return report // a week with no pairing yet: nothing to compute, said by the caller
     report.problems.push(
       `no team starts a mapped player this week (${report.mapped_player_ids.length} mapped, all bench/unstarted) and no lineup of the week is commissioner-edited — nothing to recompute`,
     )
@@ -1304,6 +1376,16 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, time: TimeProvider, input:
   const missingStats = [...starterIds].filter((pid) => !input.statsByPlayer.has(pid))
   const extraStats = missingStats.length > 0 ? await readStatLines(db, season, week, missingStats) : new Map<string, StatLineRow>()
   const allLines = new Map<string, StatLineRow>([...input.statsByPlayer, ...extraStats])
+  // 216 (F863): the close pass stands in for a drain of every starter, so it
+  // carries their unapplied corrections: scoring a corrected line without its
+  // events would leave the door nothing to record once the queue row drains
+  // ("no points moved"). They stay unapplied until that row is consumed; the
+  // door's `already_recorded` makes the second sending a no-op.
+  let eventsByPlayer: ReadonlyMap<string, readonly string[]> = input.eventsByPlayer
+  if (input.closing === true) {
+    for (const pid of starterIds) mapped.add(pid)
+    eventsByPlayer = (await readUnappliedEvents(db, season, week, [...starterIds])).byPlayer
+  }
   const positions = await readPositions(db, [...starterIds])
   // M8 TD7 / R1547: a line on a game marked out of the week / cancelled does
   // not score — "its players score 0" (the FieldScout line's promise).
@@ -1354,7 +1436,7 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, time: TimeProvider, input:
   const sent: Record<string, string[]> = {}
   const batch = scores.map((s) => {
     const slots = slotsByTeam.get(s.team_id) ?? []
-    const eventIds = [...new Set(slots.flatMap((slot) => (mapped.has(slot.player_id) ? [...(input.eventsByPlayer.get(slot.player_id) ?? [])] : [])))].sort()
+    const eventIds = [...new Set(slots.flatMap((slot) => (mapped.has(slot.player_id) ? [...(eventsByPlayer.get(slot.player_id) ?? [])] : [])))].sort()
     if (eventIds.length > 0) sent[s.team_id] = eventIds
     return {
       team_id: s.team_id,
@@ -1433,6 +1515,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
   const batchSize = Math.min(opts.batchSize ?? DEFAULT_BATCH, POSTGREST_ROW_CAP)
   const leaseSeconds = opts.leaseSeconds ?? DEFAULT_LEASE_SECONDS
   const deferSeconds = opts.deferSeconds ?? DEFAULT_DEFER_SECONDS
+  const failedDeferSeconds = opts.failedDeferSeconds ?? DEFAULT_FAILED_DEFER_SECONDS
   const scope = opts.leagueIds ? new Set(opts.leagueIds) : null
   const report: BatchReport = {
     ran_at: deps.time.now().toISOString(),
@@ -1443,6 +1526,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     unmapped: 0,
     out_of_scope: 0,
     held: 0,
+    failed_deferred: 0,
     deferred: 0,
     drained: 0,
     released: 0,
@@ -1549,6 +1633,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
       const leagues = await readLeagues(db, [...candidateIds])
       const playersByLeague = new Map<string, string[]>()
       const heldPlayers = new Set<string>()
+      const failedPlayers = new Set<string>()
       for (const row of ready) {
         const inSeason: string[] = []
         let inScopeHit = false
@@ -1625,12 +1710,15 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
             break
           case 'failed':
             report.failed += 1
+            for (const pid of players) failedPlayers.add(pid)
             break
         }
         for (const problem of entry.problems) report.problems.push(`[${leagueId} wk ${week}] ${problem}`)
       }
 
-      // (8a) The consumed set — every ready row that mapped, unless a league holds it.
+      // (8a) The consumed set — every ready row that mapped, unless a league
+      //      holds it (`week_not_open`) or failed to save it (F860, 216: it is
+      //      deferred for a retry, never deleted — see the banner).
       for (const row of ready) {
         if (!playersByLeague.size) break
         const mappedHere = [...playersByLeague.values()].some((ids) => ids.includes(row.player_id))
@@ -1638,6 +1726,11 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
         if (heldPlayers.has(row.player_id)) {
           report.held += 1
           toDefer.push(row)
+          continue
+        }
+        if (failedPlayers.has(row.player_id)) {
+          report.failed_deferred += 1
+          toDefer.push({ ...row, defer_until: new Date(deps.time.now().getTime() + failedDeferSeconds * 1000).toISOString() })
           continue
         }
         toDelete.push(row)
@@ -1682,7 +1775,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     report.released = ack.released
     if (toDefer.length > 0) {
       report.problems.push(
-        `queue hold: ${ack.deferred} of ${toDefer.length} held rows deferred until ${deferUntil} (R872 — not_ready ${report.not_ready}, week_not_open ${report.held}; a row re-stamped mid-drain is released, not deferred)`,
+        `queue hold: ${ack.deferred} of ${toDefer.length} held rows deferred until ${deferUntil} (R872 — not_ready ${report.not_ready}, week_not_open ${report.held}, failed save ${report.failed_deferred}, retried after ${failedDeferSeconds}s; a row re-stamped mid-drain is released, not deferred)`,
       )
     }
     for (const miss of ack.missed) report.ack_missed[miss.reason] += 1
@@ -1717,4 +1810,128 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
       }
     }
   }
+}
+
+// ── The close of the week (F863; migration 216) ─────────────────────────────
+
+export type CloseWeekOutcome = 'closed' | 'lines_moved' | 'failed' | 'no_stat_lines' | 'not_open'
+
+export interface CloseWeekEntry {
+  league_id: string
+  season: number
+  week: number
+  /** Why `league_weeks_to_close` named it. */
+  reason: string
+  outcome: CloseWeekOutcome
+  error?: string
+  /** What the pipeline did, when it ran. */
+  entry?: LeagueWeekReport
+  /** Blank cells on overridden rows the stamp filled. */
+  filled?: number
+}
+
+export interface CloseScoringReport {
+  ran_at: string
+  /** False: the database predates 216 — named, nothing was done (deploy before push). */
+  available: boolean
+  weeks: CloseWeekEntry[]
+  closed: number
+  failed: number
+  problems: string[]
+}
+
+export const PRE_216_CLOSE_SENTENCE =
+  'close pass off: league_weeks_to_close is absent — the database predates migration 216; finalize holds nothing new until it is pushed'
+
+/**
+ * The close pass: for each correction-window week `league_weeks_to_close`
+ * names, recompute every team on a pairing from `player_stats` (the one
+ * pipeline, the one door, `scoreLeagueWeek`), then record the digest that call
+ * read — `league_week_close_stamp` refuses it if the lines moved in between, so
+ * the next pass re-scores. A failure stays unstamped, so the week stays held,
+ * and is reported loudly. Idempotent: an identical re-send is the door's
+ * `no_change`. Throws only on a transport error (the caller's next minute
+ * retries; nothing here holds a lease).
+ */
+export async function runCloseScoring(
+  deps: Pick<ScoreWorkerDeps, 'db' | 'time'>,
+  opts: { limit?: number; leagueIds?: readonly string[] } = {},
+): Promise<CloseScoringReport> {
+  const { db, time } = deps
+  const report: CloseScoringReport = { ran_at: time.now().toISOString(), available: true, weeks: [], closed: 0, failed: 0, problems: [] }
+
+  const asked = await db.rpc('league_weeks_to_close', {
+    p_now: time.now().toISOString(),
+    p_limit: opts.limit ?? DEFAULT_CLOSE_LIMIT,
+    ...(opts.leagueIds ? { p_league_ids: [...opts.leagueIds] } : {}),
+  })
+  if (asked.error) {
+    if (isMissingSchemaObject(asked.error, ['league_weeks_to_close'])) {
+      report.available = false
+      report.problems.push(PRE_216_CLOSE_SENTENCE)
+      return report
+    }
+    throw new Error(`league_weeks_to_close: ${asked.error.message}`)
+  }
+  const rows = asked.data ?? []
+  const leagues = await readLeagues(db, [...new Set(rows.map((r) => r.league_id))])
+
+  for (const row of rows) {
+    const base = { league_id: row.league_id, season: row.season, week: row.week, reason: row.reason }
+    if (row.reason === 'no_stat_lines') {
+      report.weeks.push({ ...base, outcome: 'no_stat_lines' })
+      report.problems.push(`league_id=${row.league_id} week ${row.week}: NOT closed — no stat line exists for ANY player this week, so nothing is zero-filled; the week stays held until the feed delivers`)
+      continue
+    }
+    const league = leagues.get(row.league_id)
+    if (!league) continue // archived or gone between the two reads; the door would refuse it
+    let entry: LeagueWeekReport
+    try {
+      entry = await scoreLeagueWeek(db, time, {
+        league,
+        season: row.season,
+        week: row.week,
+        players: [],
+        statsByPlayer: new Map(),
+        eventsByPlayer: new Map(),
+        closing: true,
+      })
+    } catch (err) {
+      if (!(err instanceof LeagueWeekFailure)) throw err
+      report.failed += 1
+      report.weeks.push({ ...base, outcome: 'failed', error: err.message })
+      report.problems.push(`league_id=${row.league_id} week ${row.week}: close pass QUARANTINED — ${err.message}; nothing written, the week stays held and is retried next pass`)
+      continue
+    }
+    for (const problem of entry.problems) report.problems.push(`[${row.league_id} wk ${row.week}] ${problem}`)
+    if (entry.skip_reason !== undefined) {
+      report.weeks.push({ ...base, outcome: 'not_open', entry })
+      continue
+    }
+    if ((entry.close_unreadable_team_ids ?? []).length > 0) {
+      const error = `team_lineups.slot_map unreadable for ${entry.close_unreadable_team_ids!.join(', ')}`
+      report.failed += 1
+      report.weeks.push({ ...base, outcome: 'failed', error, entry })
+      report.problems.push(`league_id=${row.league_id} week ${row.week}: NOT closed — ${error}; an unreadable lineup is not a 0, the week stays held`)
+      continue
+    }
+    const stamp = await db.rpc('league_week_close_stamp', {
+      p_league_id: row.league_id,
+      p_week: row.week,
+      // NULL for a week no starter has a line in; the generated type says TEXT.
+      p_digest: row.digest as string,
+      p_scores: entry.teams.map((t) => ({ team_id: t.team_id, points: t.points })) as unknown as Json,
+      p_now: time.now().toISOString(),
+    })
+    if (stamp.error) throw new Error(`league_week_close_stamp (${row.league_id} week ${row.week}): ${stamp.error.message}`)
+    const answer = stamp.data as unknown as { stamped: boolean; why: string | null; filled: number }
+    if (answer.stamped) {
+      report.closed += 1
+      report.weeks.push({ ...base, outcome: 'closed', entry, filled: answer.filled })
+    } else {
+      // lines_moved: a stat landed under the pass; the next pass re-scores it.
+      report.weeks.push({ ...base, outcome: answer.why === 'lines_moved' ? 'lines_moved' : 'not_open', entry })
+    }
+  }
+  return report
 }

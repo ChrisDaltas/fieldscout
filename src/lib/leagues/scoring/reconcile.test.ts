@@ -22,6 +22,7 @@ import {
   renderFindings,
   sameScore,
   STALE_QUEUE_MS,
+  weekHeldHolds,
 } from './reconcile'
 import type { TeamWeekScore } from './score-week-worker'
 
@@ -56,6 +57,46 @@ describe('sameScore — two-decimal equality, null only equals null', () => {
     expect(sameScore(null, null)).toBe(true)
     expect(sameScore(null, 0)).toBe(false)
     expect(sameScore(0, null)).toBe(false)
+  })
+})
+
+describe('classifyCell — a blank (216 / F273: "Games stay blank until they\'ve actually been scored.")', () => {
+  it('an open week: no points behind it is the truth, not a finding', () => {
+    expect(classifyCell(null, team(0), ctx())).toBeNull()
+    expect(classifyCell(null, team(0), ctx({ weekStatus: 'correction_window' }))).toBeNull()
+  })
+  it('an open week: points behind it is an update owed, never drift', () => {
+    const v = classifyCell(null, team(12), ctx({ weekStatus: 'correction_window' }))
+    expect(v?.kind).toBe('blank_owed')
+    expect(v?.severity).toBe('warn')
+  })
+  it('a final week holds no blank: there it is drift', () => {
+    expect(classifyCell(null, team(12), ctx({ weekStatus: 'final' }))?.kind).toBe('drift')
+  })
+  it('a queued delta still reads as in flight first', () => {
+    expect(classifyCell(null, team(12, ['p1']), ctx({ starterQueuedAt: new Map([['p1', '2026-09-13T20:00:00.000Z']]) }))?.kind).toBe('in_flight')
+  })
+})
+
+describe('weekHeldHolds — week_held names the mode\'s own hold (216 / F863; R1796)', () => {
+  const teams = ['t1', 't2', 't3', 't4']
+  it('total_points: the hold is pending_results — seated teams with no result row; it never counts matchups', () => {
+    const results = [
+      { week: 9, team_id: 't1' },
+      { week: 9, team_id: 't2' },
+      { week: 8, team_id: 't3' }, // another week's row is not this week's result
+    ]
+    expect(weekHeldHolds('total_points', 9, [], results, teams)).toBe('2 team(s) have no result row yet (pending_results)')
+    expect(weekHeldHolds('total_points', 9, [], [], teams)).toBe('4 team(s) have no result row yet (pending_results)')
+  })
+  it('h2h: blank cells, or a round with no games', () => {
+    const m = [
+      { week: 9, away_team_id: 't2', home_score: null, away_score: 4 },
+      { week: 9, away_team_id: null, home_score: 0, away_score: null }, // a bye's NULL away is not a blank
+      { week: 9, away_team_id: 't4', home_score: 10, away_score: 12 },
+    ]
+    expect(weekHeldHolds('h2h', 9, m, [], teams)).toBe('1 matchup(s) hold a blank score')
+    expect(weekHeldHolds('h2h', 10, m, [], teams)).toBe('its round has no games yet')
   })
 })
 

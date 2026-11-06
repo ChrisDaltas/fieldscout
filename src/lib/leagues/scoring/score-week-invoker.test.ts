@@ -8,15 +8,17 @@ import { describe, expect, it } from 'vitest'
 
 import { VirtualClock } from '../time/virtual-clock'
 import {
+  classifyClose,
   classifyDrain,
   CLOCK_SKEW_SECONDS,
+  closePassErrorAlert,
   DRAIN_INTERVAL_MS,
   runScoreWeekInvocation,
   SCORE_WEEK_BUDGET_MS,
   SCORE_WEEK_LEASE_SECONDS,
   SCORE_WEEK_MAX_DURATION_SECONDS,
 } from './score-week-invoker'
-import type { BatchReport, LeagueWeekReport } from './score-week-worker'
+import { type BatchReport, type CloseScoringReport, type LeagueWeekReport, PRE_216_CLOSE_SENTENCE, runCloseScoring } from './score-week-worker'
 
 function report(over: Partial<BatchReport> = {}): BatchReport {
   return {
@@ -28,6 +30,7 @@ function report(over: Partial<BatchReport> = {}): BatchReport {
     unmapped: 0,
     out_of_scope: 0,
     held: 0,
+    failed_deferred: 0,
     deferred: 0,
     drained: 0,
     released: 0,
@@ -115,8 +118,40 @@ describe('classifyDrain — the loud surface', () => {
   })
 })
 
+const emptyClose: CloseScoringReport = { ran_at: '2099-09-13T20:00:00.000Z', available: true, weeks: [], closed: 0, failed: 0, problems: [] }
+
+describe('runCloseScoring on a database without 216 (deploy before push)', () => {
+  it('says so by name and does nothing', async () => {
+    const db = { rpc: async () => ({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.league_weeks_to_close(p_limit, p_now) in the schema cache' } }) } as never
+    const out = await runCloseScoring({ db, time: new VirtualClock(new Date('2099-09-13T20:00:00.000Z')) })
+    expect([out.available, out.weeks, out.problems]).toEqual([false, [], [PRE_216_CLOSE_SENTENCE]])
+    expect(classifyClose(out)).toEqual({ alerts: [], infos: [PRE_216_CLOSE_SENTENCE] })
+  })
+
+  it('any other error is not "not deployed": it throws', async () => {
+    const db = { rpc: async () => ({ data: null, error: { code: '42501', message: 'permission denied' } }) } as never
+    await expect(runCloseScoring({ db, time: new VirtualClock(new Date('2099-09-13T20:00:00.000Z')) })).rejects.toThrow('league_weeks_to_close: permission denied')
+  })
+})
+
+describe('classifyClose (F863)', () => {
+  it('names each outcome: failed alerts, the rest inform', () => {
+    const v = classifyClose({
+      ...emptyClose,
+      weeks: [
+        { league_id: 'A', season: 2099, week: 1, reason: 'no_stat_lines', outcome: 'no_stat_lines' },
+        { league_id: 'B', season: 2099, week: 1, reason: 'never_closed', outcome: 'closed' },
+        { league_id: 'C', season: 2099, week: 1, reason: 'lines_moved', outcome: 'lines_moved' },
+      ],
+    })
+    expect(v.alerts).toEqual([])
+    expect(v.infos.map((l) => l.slice(0, 22))).toEqual(['league_id=A week=1 not', 'league_id=B week=1 sco', 'league_id=C week=1 not'])
+  })
+})
+
 describe('runScoreWeekInvocation — the minute-invocation loop', () => {
-  function harness(drains: BatchReport[], hot: boolean) {
+  function harness(drains: BatchReport[], hot: boolean, closeReport: CloseScoringReport | (() => Promise<CloseScoringReport>) = emptyClose) {
+    let closes = 0
     const clock = new VirtualClock(new Date('2099-09-13T20:00:00.000Z'))
     const calls: string[] = []
     const sleeps: number[] = []
@@ -130,6 +165,10 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
       },
       lastPollCompletedAt: async () => null,
       isHot: async () => hot,
+      closeWeeks: async () => {
+        closes += 1
+        return typeof closeReport === 'function' ? closeReport() : closeReport
+      },
       drain: async (_deps, opts) => {
         calls.push(`${opts?.leaseSeconds}/${opts?.batchSize}/${opts?.deferSeconds}`)
         const r = drains[Math.min(i, drains.length - 1)]
@@ -138,7 +177,7 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
         return r
       },
     })
-    return { promise, calls, sleeps }
+    return { promise, calls, sleeps, closes: () => closes }
   }
 
   it('an empty queue outside a game window ends the invocation after ONE drain — one claim RPC per idle minute', async () => {
@@ -148,6 +187,78 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
     expect(out.stopped).toBe('queue_empty_idle')
     expect(h.sleeps).toEqual([])
     expect(h.calls).toEqual([`${SCORE_WEEK_LEASE_SECONDS}/500/30`]) // the lease + batch + defer the route passes
+  })
+
+  it('F863: the close pass runs exactly once per invocation, even on an idle stop', async () => {
+    const idle = harness([report({ reason: 'queue_empty' })], false)
+    expect((await idle.promise).close).toBe(emptyClose)
+    expect(idle.closes()).toBe(1)
+    const hot = harness([report({ reason: 'queue_empty' })], true)
+    const out = await hot.promise
+    expect(out.drains.length).toBeGreaterThan(1)
+    expect(hot.closes()).toBe(1)
+  })
+
+  it('F863: a week the pass cannot close is an ALERT by name on the invocation', async () => {
+    const h = harness([report({ reason: 'queue_empty' })], false, {
+      ...emptyClose,
+      failed: 1,
+      weeks: [{ league_id: 'L', season: 2099, week: 9, reason: 'never_closed', outcome: 'failed', error: 'snapshot_missing' }],
+    })
+    const out = await h.promise
+    expect(out.alerts).toEqual(['league_id=L week=9 CLOSE FAILED: snapshot_missing — the week stays held (F863); retried next pass'])
+  })
+
+  // R1790: before the fix a throwing close pass rejected the whole invocation
+  // after its FIRST drain (the route answered 500) — in a game window scoring
+  // fell from every 5 s to once a minute for as long as the cause lasted.
+  it('R1790: a close pass that THROWS is one alert; a hot window keeps draining for the whole budget', async () => {
+    const timeout = new Error('league_weeks_to_close: canceling statement due to statement timeout')
+    const h = harness([report({ reason: 'queue_empty' })], true, async () => {
+      throw timeout
+    })
+    const out = await h.promise
+    expect(out.drains).toHaveLength(8) // the same 8 drains as the no-error hot window below
+    expect(out.stopped).toBe('budget')
+    expect(h.closes()).toBe(1) // tried once per invocation, not once per drain
+    expect(out.close).toBeNull()
+    expect(out.alerts).toEqual([closePassErrorAlert(timeout)])
+    expect(out.alerts[0]).toBe(
+      'CLOSE PASS ERROR: league_weeks_to_close: canceling statement due to statement timeout — the pass stopped there; any week it had not closed stays held (scores_owed) and is retried next invocation; draining continues (F863 / R1790)',
+    )
+  })
+
+  it('R1790: the real pass over a timing-out read (57014) — the invocation resolves, it does not reject', async () => {
+    const clock = new VirtualClock(new Date('2099-09-13T20:00:00.000Z'))
+    let drains = 0
+    const timingOut = { rpc: async () => ({ data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } }) } as never
+    const out = await runScoreWeekInvocation({
+      db: {} as never,
+      time: clock,
+      sleep: async (ms) => {
+        clock.advanceBy(ms)
+      },
+      lastPollCompletedAt: async () => null,
+      isHot: async () => true,
+      closeWeeks: (deps) => runCloseScoring({ ...deps, db: timingOut }),
+      drain: async () => {
+        drains += 1
+        clock.advanceBy(1_000)
+        return report({ reason: 'queue_empty' })
+      },
+    })
+    expect(drains).toBe(8)
+    expect(out.alerts).toEqual(['CLOSE PASS ERROR: league_weeks_to_close: canceling statement due to statement timeout — the pass stopped there; any week it had not closed stays held (scores_owed) and is retried next invocation; draining continues (F863 / R1790)'])
+  })
+
+  it('R1790: idle, a throwing pass still ends the invocation normally after one drain', async () => {
+    const h = harness([report({ reason: 'queue_empty' })], false, async () => {
+      throw new Error('league_week_close_stamp (L week 9): connection reset')
+    })
+    const out = await h.promise
+    expect([out.drains.length, out.stopped, out.close]).toEqual([1, 'queue_empty_idle', null])
+    expect(out.alerts).toHaveLength(1)
+    expect(out.alerts[0]).toMatch(/^CLOSE PASS ERROR: league_week_close_stamp \(L week 9\): connection reset/)
   })
 
   it('an empty queue INSIDE a game window keeps draining every 5 s for the budget (§14: 5–10 s)', async () => {

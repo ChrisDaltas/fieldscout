@@ -28,7 +28,7 @@ import {
   foreignRowsCopy,
   foreignRowsOf,
   formatBracketScore,
-  formatTotal,
+  bracketTotalText,
   gamePlayed,
   pointsRaceCopy,
   projectionBasisCopy,
@@ -398,7 +398,7 @@ function BuiltGame({
   const homeCells = game.weeks.map((w) => formatBracketScore(w.home_score, w.status))
   const awayCells = game.weeks.map((w) => formatBracketScore(w.away_score, w.status))
   const bye = game.away_team_id === null
-  const total = (t: number, cells: string[]) => (played ? (game.weeks.length > 1 ? formatTotal(t) : cells[0]) : '—')
+  const total = (side: 'home' | 'away', cells: string[]) => (played ? (game.weeks.length > 1 ? bracketTotalText(game, side) : cells[0]) : '—')
   const decided = !bye && played && game.winner_team_id != null
   return (
     <div
@@ -419,7 +419,7 @@ function BuiltGame({
           winner={!bye && played && game.winner_team_id === game.home_team_id}
           decided={decided}
           cells={bye ? undefined : homeCells}
-          total={bye ? undefined : total(game.home_total, homeCells)}
+          total={bye ? undefined : total('home', homeCells)}
         />
         {bye ? (
           <p className="flex min-h-[34px] items-center px-3 py-1.5 text-[11px] font-medium text-n-6" data-bye>
@@ -435,7 +435,7 @@ function BuiltGame({
             winner={played && game.winner_team_id === game.away_team_id}
             decided={decided}
             cells={awayCells}
-            total={total(game.away_total, awayCells)}
+            total={total('away', awayCells)}
           />
         )}
       </div>

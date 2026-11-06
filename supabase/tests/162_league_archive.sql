@@ -135,12 +135,21 @@ select is(
   'draft_league_alive=t draft_tick=t finalize_matchups=t league_week_advance=t lineup_lock_tick=t waiver_tick=t',
   'A8 the jobs the freeze relies on still claim only leagues with deleted_at IS NULL');
 
+-- pg_temp.un216 — migration 216's hunks reversed: its marked inserted lines removed, and the one
+-- replaced predicate of playoff_bracket_sync_internal (F257(a)) put back.
+create function pg_temp.un216(p_src text) returns text language sql as $un216$
+  select regexp_replace(
+    regexp_replace(p_src,
+      E'        AND \\(m\\.home_score IS NOT NULL OR m\\.away_score IS NOT NULL\\);   -- 216 / F863[^\\n]*\\n',
+      E'        AND (   (m.home_score IS NOT NULL AND m.home_score <> 0)\n             OR (m.away_score IS NOT NULL AND m.away_score <> 0));\n'),
+    E'[^\\n]*-- 216 / F863[^\\n]*\\n', '', 'g');
+$un216$;
 -- pg_temp.un212 — 212's marked lines removed (each ends `-- 212 / F716…`).
 create function pg_temp.un212(p_src text) returns text language sql as $un$
   select regexp_replace(p_src, E'\n[^\n]*-- 212 / F716[^\n]*', '', 'g')
 $un$;
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un212(p.prosrc)), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un212(pg_temp.un216(p.prosrc))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('trade_tick', 'mock_draft_expire', 'draft_tick', 'finalize_matchups', 'op_verb_prelude_internal')),
   'draft_tick=87977590c0d9f597664192798cdfccec finalize_matchups=55c40a017c775f4bab6febb25db3a436 mock_draft_expire=b25eabbf469bb29a445bcd34d52e249f op_verb_prelude_internal=69e0a040fd961551a792fd486c107f58 trade_tick=6ad1184263167e6ebb1d013550bb171c',

@@ -48,13 +48,10 @@ import { STORAGE_STATE } from './helpers/local-env'
  * `matchups.home_score` is `runScoreWeekBatch`, the production worker, over
  * a real `score_fanout` queue (`driveScoreBatch`). That is what makes step 5
  * below a NEGATIVE CONTROL rather than a decoration: with the queue full and
- * the worker NOT invoked, BOTH sides still read the stored `0.00` the
- * schedule engine's INSERT left them (`110:773-778` omits the score columns
- * and `matchups.home_score` carries `DEFAULT 0`, `109:162`) — measured, and
- * asserted at step 5. It is NOT the door's `pending`: that NULL-as-pending
- * state (E61) belongs to a starter with an undelivered applicable key, never
- * to a never-scored week. Recorded as F293; step 5's own comment carries the
- * long form.
+ * the worker NOT invoked, BOTH sides read `pending` — a generated row is blank
+ * until its first batch (migration 216, Chris 2026-11-05: "Games stay blank
+ * until they've actually been scored."; it read `0.00` before, F293) —
+ * asserted at step 5.
  *
  * THE Q42 SAFE CONSTRUCTION (the task's §6.4 rule, applied). Q42 — what a
  * starter with NO stat line contributes — is OPEN (F263(c)), so this spec
@@ -327,13 +324,8 @@ test.describe('a scored week end to end (real browser)', () => {
       // lines and their `score_fanout` rows exist; nothing has drained them;
       // the door has written no score.
       //
-      // What that reads as on screen is `0.00`, NOT `pending`: the schedule
-      // engine's INSERT omits the score columns (`110:773-778`) and
-      // `matchups.home_score` carries `DEFAULT 0` (`109:162`), so an opened
-      // week that nothing has scored holds a stored ZERO — the door's
-      // NULL-as-pending state (E61) belongs to a starter with an undelivered
-      // applicable key, not to a never-scored week. Measured, not assumed;
-      // recorded as F293 for whoever owns that column's intent.
+      // What that reads as on screen is `pending`, never `0.00`: the row is
+      // blank until its first batch (216 closed F293).
       const linesAt = (scale: number): StatLine[] =>
         teamIds.flatMap((teamId, index) =>
           Object.entries(plans.get(teamId)!).map(([slotKey, playerId]) =>
@@ -350,8 +342,8 @@ test.describe('a scored week end to end (real browser)', () => {
       await expect(page.locator('[data-week-badge="live"]').first()).toBeVisible({ timeout: 60_000 })
       const heldMine = await sideScore(page, league.commishTeamId)
       const heldTheirs = await sideScore(page, opponentTeamId)
-      expect(Number(heldMine), 'the worker was never invoked — no score can have been written').toBe(0)
-      expect(Number(heldTheirs)).toBe(0)
+      expect(heldMine, 'the worker was never invoked — no score can have been written').toBe('pending')
+      expect(heldTheirs).toBe('pending')
       // eslint-disable-next-line no-console -- the DoD evidence line
       console.log(
         `[inseason-week] worker HELD: ${planted.queued} queue rows planted, ` +

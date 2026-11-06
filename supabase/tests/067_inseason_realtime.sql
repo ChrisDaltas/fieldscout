@@ -494,8 +494,8 @@ select throws_ok(
   '22023', 'score_write_week_batch: element 1 (team c7000000-0000-4000-8000-000000000001) points 12.345 has more than two decimals — the worker rounds (F22); the door never does',
   'E7 THREE decimals are REFUSED by name — the DB never rounds a divergent value (F22)');
 select is(
-  (select home_score::text from matchups where id = 'd7000000-0000-4000-8000-000000000031'), '0',
-  'E7b …and the refused batch wrote nothing (the cell holds 109''s DEFAULT 0)');
+  (select coalesce(home_score::text, 'blank') from matchups where id = 'd7000000-0000-4000-8000-000000000031'), 'blank',
+  'E7b …and the refused batch wrote nothing (216: the cell is still blank)');
 select is(
   (select count(*) from rt19_msgs where topic = 'league:b7000000-0000-4000-8000-000000000001' and event = 'matchups' and payload ->> 'operation' = 'UPDATE'),
   1::bigint, 'E7c …the only L1 matchups UPDATE event so far is E2c''s (every refusal emitted nothing)');
@@ -622,8 +622,8 @@ select is(current_setting('pgtap.r')::jsonb ->> 'reason', 'nothing_writable', 'F
 --    pairing
 -- ---------------------------------------------------------------------------
 select set_config('pgtap.r', public.score_write_week_batch('b7000000-0000-4000-8000-000000000004', 7, '[{"team_id": "c7000000-0000-4000-8000-000000000041", "points": 77.7}]')::text, true);
-select is((select home_score::text || '/' || away_score::text from matchups where id = 'd7000000-0000-4000-8000-000000000097'), '77.7/0',
-  'G1 the bracket row: the batched home cell 77.7; the UNBATCHED away cell keeps 109''s DEFAULT 0 (the door never touches a cell whose team it was not sent — the sentinel''s READING is the sync''s, F257(a))');
+select is((select home_score::text || '/' || coalesce(away_score::text, 'blank') from matchups where id = 'd7000000-0000-4000-8000-000000000097'), '77.7/blank',
+  'G1 the bracket row: the batched home cell 77.7; the UNBATCHED away cell stays BLANK (216 / F257(a): the door never touches a cell whose team it was not sent — the sync''s, F257(a))');
 -- A rebuild (118: DELETE + INSERT — new ids, same pairing, seeds frozen).
 delete from matchups where id = 'd7000000-0000-4000-8000-000000000097';
 insert into matchups (id, league_id, season, week, round_type, home_team_id, away_team_id, home_seed, away_seed, status) values

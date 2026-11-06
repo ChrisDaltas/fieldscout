@@ -585,6 +585,7 @@ select is((select x ->> 'separated_by' from jsonb_array_elements(public.league_s
 -- I. Round 1 played: the (A) tie; round 2 at the rollover; the reseed on/off
 --    divergence THROUGH the rewrite path; a decided round is history
 -- ---------------------------------------------------------------------------
+update matchups set home_score = 0.00 where league_id = 'b8000000-0000-4000-8000-000000000001' and week = 7 and away_team_id is null;   -- 216: a bye team's row starts blank too; the close pass writes its real score
 update matchups set home_score = 100.00, away_score = 110.00 where league_id = 'b8000000-0000-4000-8000-000000000001' and week = 7 and home_seed = 3;   -- E 100 / D 110
 update matchups set home_score = 100.104, away_score = 100.096 where league_id = 'b8000000-0000-4000-8000-000000000001' and week = 7 and home_seed = 4; -- B v F: a two-decimal tie
 update matchups set home_score = 80.00, away_score = 90.00 where league_id = 'b8000000-0000-4000-8000-000000000005' and week = 7;                       -- P 80 / Q 90

@@ -29,6 +29,7 @@ import {
   correctionsCloseDisplay,
   foreignRowsCopy,
   foreignRowsOf,
+  bracketTotalText,
   formatBracketScore,
   formatInstantForViewer,
   formatTotal,
@@ -60,6 +61,7 @@ import {
   T,
   UNRECORDED_ROLLOVER_DOC,
 } from './playoff-bracket.fixtures'
+import type { BracketGameWeek } from '@/lib/leagues/api/playoffs-service'
 
 // ---------------------------------------------------------------------------
 // THE ROLLOVER COPY PIN (Q39 (E) / §16.4) — the DoD probe's target
@@ -221,6 +223,13 @@ describe('games — the verdict is 118’s `decided_by`, never re-decided', () =
 
   it('a NULL score is the door’s pending word (E61) — never 0.00; totals are 118’s, formatted only', () => {
     expect(formatBracketScore(null)).toBe('pending')
+    // 216 (F273): a two-week round nobody has been scored in isn't "0.00" (118's sum reads a blank as 0).
+    const weeks = (home: number | null, away: number | null, status = 'live') => [{ home_score: home, away_score: away, status } as BracketGameWeek, { home_score: null, away_score: null, status: 'scheduled' } as BracketGameWeek]
+    expect(bracketTotalText({ weeks: weeks(null, null), home_total: 0, away_total: 0 }, 'home')).toBe('pending')
+    expect(bracketTotalText({ weeks: weeks(null, null, 'scheduled'), home_total: 0, away_total: 0 }, 'home')).toBe('—')
+    expect(bracketTotalText({ weeks: weeks(0, null), home_total: 0, away_total: 0 }, 'home')).toBe('0.00')
+    expect(bracketTotalText({ weeks: weeks(0, null), home_total: 0, away_total: 0 }, 'away')).toBe('pending')
+    expect(bracketTotalText({ weeks: weeks(101.25, 90), home_total: 101.25, away_total: 90 }, 'away')).toBe('90.00')
     expect(formatBracketScore(0)).toBe('0.00')
     expect(formatBracketScore(101.25)).toBe('101.25')
     expect(formatTotal(150)).toBe('150.00')

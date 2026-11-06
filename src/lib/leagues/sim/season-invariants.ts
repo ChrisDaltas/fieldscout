@@ -70,23 +70,11 @@
  *   - Q40 (what a lock countdown targets) is OPEN: nothing here asserts
  *     against `team_lineups.locked_at`, which is a RECORD, not the lock.
  *
- * ── F273: WHAT "UNSCORED" MEANS TODAY, AND WHAT IT DOES NOT ────────────────
- * 109:162-163 declares `matchups.home_score`/`away_score` `NUMERIC DEFAULT 0`
- * and 110's `league_generate_schedule` inserts without the columns, so a
- * NEVER-SCORED regular matchup reads `0.00` — indistinguishable from a
- * legitimately-scored zero. R890 asks L.D6.1's sweep to assert "an unscored
- * regular row is NULL until its first batch"; on the CURRENT chain that
- * assertion RED-FAILS by construction, and closing it is a migration
- * (110's INSERT writing NULL, or 109's DEFAULT dropped — F273's own
- * closers). L.D6.1 is a gate task, not a schema task, so **the hole is NAMED
- * and left open, not papered over**:
- *
- *   THE SWEEP NEVER READS A `0` AS "UNSCORED". Invariant 5 sums
- *   `team_week_results.points` — the worker's own output — and never the
- *   matchups' score columns, precisely because a `0` there cannot be
- *   distinguished from a DEFAULT. Treating it as "nothing happened, so it
- *   worked" is the exact failure CLAUDE.md forbids, and hardening it into a
- *   gate condition would be worse than leaving the hole visible.
+ * ── F273: WHAT "UNSCORED" MEANS (closed by migration 216) ──────────────────
+ * 216 dropped 109's `DEFAULT 0`, so a never-scored matchup cell is NULL until
+ * its first batch and a written `0` is a real 0. `season-sweep-db.test.ts`
+ * asserts that on the real generated rows (R890's assertion, F273). Invariant 5
+ * still sums `team_week_results.points`, the worker's own output.
  *
  * ── INVARIANT 1's LIVE ARM CANNOT FAIL, AND THAT IS SAID OUT LOUD ──────────
  * Roster exclusivity is enforced by `UNIQUE(league_id, player_id)` on
@@ -778,8 +766,8 @@ function sameCents(a: number, b: number): boolean {
  * result moves `wins/losses`, never `points_for`.
  *
  * READS `team_week_results`, NEVER `matchups.home_score` — see the banner's
- * F273 note: a `0` in the matchups columns cannot be distinguished from
- * 109's DEFAULT, and "nothing happened" must never be read as "it worked".
+ * F273 note (before 216 a `0` in the matchups columns could not be told from
+ * 109's DEFAULT), and "nothing happened" must never be read as "it worked".
  * A NULL `points` (E61 pending) contributes nothing and is NAMED, not summed
  * as zero.
  *

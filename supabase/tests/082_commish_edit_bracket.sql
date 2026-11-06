@@ -342,7 +342,7 @@ select is((select is_system || ':' || context from league_chat where league_id =
 select is((current_setting('pgtap.c1')::jsonb -> 'scoring' ->> 'stored_cells_rewritten') || ':' || (current_setting('pgtap.c1')::jsonb ->> 'reason_required'), '0:false',
   'C11 scoring names 0 stored cells rewritten (the kept gate is the premise); reason_required false (Q66)');
 select is((select string_agg(status, ',' order by home_seed) || '|' || string_agg(coalesce(home_score::text, 'null') || '/' || coalesce(away_score::text, 'null'), ',' order by home_seed) from matchups where league_id = 'be000000-0000-4000-8000-000000000001' and week = 7),
-  'scheduled,scheduled,scheduled,scheduled|0/0,0/0,0/0,0/0', 'C12 the rows keep their status and their untouched default scores — the verb writes teams, seeds and the mark only');
+  'scheduled,scheduled,scheduled,scheduled|null/null,null/null,null/null,null/null', 'C12 the rows keep their status and their blank scores (216) — the verb writes teams, seeds and the mark only');
 
 -- ---------------------------------------------------------------------------
 -- D. SURVIVAL — the cell that does not exist today. ***BREAK PROBE 1***
@@ -473,7 +473,7 @@ select throws_like(
   $$ select public.commish_edit_bracket('be000000-0000-4000-8000-000000000001', pg_temp.eb_m(1), 'ce000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000005', null, 'a1000000-0000-4000-8000-0000000000f9') $$,
   '%ce000000-0000-4000-8000-000000000005''s current round-1 pairing carries a result or score — a played pairing is never re-paired%',
   'F7b …and a SIBLING pairing that has been played is the same wall (E would have to leave the scored F v E)');
-update matchups set home_score = 0 where id = pg_temp.eb_m(5);
+update matchups set home_score = null where id = pg_temp.eb_m(5);
 select set_config('app.commish_action_id', current_setting('pgtap.e1')::jsonb ->> 'commissioner_action_id', true);
 update matchups set is_overridden = true where id = pg_temp.eb_m(5);
 select set_config('app.commish_action_id', '', true);
@@ -594,6 +594,7 @@ select is(pg_temp.eb_round(7, 7), '1:01v4:02,2:03vbye,5:06v3:05,6:07vbye', 'J3 �
 --    G(6) bye. A beats B; E beats F. Survivors A(1), C(2), E(3), G(6);
 --    reseed on ⇒ 1 v 6, 2 v 3.
 -- ---------------------------------------------------------------------------
+update matchups set home_score = 0.00 where league_id = 'be000000-0000-4000-8000-000000000001' and week = 7 and away_team_id is null;   -- 216: a bye team's row starts blank too; the close pass writes its real score
 update matchups set home_score = 100.00, away_score =  90.00 where id = pg_temp.eb_m(1);
 update matchups set home_score =  95.00, away_score = 105.00 where id = pg_temp.eb_m(5);
 select set_config('pgtap.r', public.league_week_advance('2071-10-27 04:00:00+00')::text, true);
@@ -694,7 +695,7 @@ select throws_like(
   '%ce000000-0000-4000-8000-000000000035''s current round-1 pairing carries a result or score%',
   'L5b …and as a SIBLING likewise (E would have to leave the week-7-scored E v F)');
 select set_config('request.jwt.claims', '', true);
-update matchups set home_score = 0 where id = pg_temp.eb3_m(7, 3);
+update matchups set home_score = null where id = pg_temp.eb3_m(7, 3);
 select is(pg_temp.eb3_ca() || ':' || (select count(*)::int from commish_bracket_actions where league_id = 'be000000-0000-4000-8000-000000000003' and action_id::text like 'a3000000-0000-4000-8000-0000000000f%'), '2:0',
   'L5c no refusal wrote a receipt or a ledger row');
 select is(pg_temp.eb3_round(7) || '|' || pg_temp.eb3_round(8), '1:31v4:32,2:33vbye,3:35v5:36,6:37vbye|1:31v4:32,2:33vbye,3:35v5:36,6:37vbye',
