@@ -3671,6 +3671,7 @@ export type Database = {
       player_stats: {
         Row: {
           advanced: Json
+          def_2pt_return: number | null
           def_block: number | null
           def_fumble_recoveries: number | null
           def_interceptions: number | null
@@ -3681,6 +3682,7 @@ export type Database = {
           def_tds: number | null
           def_yards_allowed: number | null
           fg_0_39: number | null
+          fg_60_plus: number | null
           fg_attempted: number | null
           fg_made: number | null
           fg_made_40_plus: number | null
@@ -3725,6 +3727,7 @@ export type Database = {
         }
         Insert: {
           advanced?: Json
+          def_2pt_return?: number | null
           def_block?: number | null
           def_fumble_recoveries?: number | null
           def_interceptions?: number | null
@@ -3735,6 +3738,7 @@ export type Database = {
           def_tds?: number | null
           def_yards_allowed?: number | null
           fg_0_39?: number | null
+          fg_60_plus?: number | null
           fg_attempted?: number | null
           fg_made?: number | null
           fg_made_40_plus?: number | null
@@ -3779,6 +3783,7 @@ export type Database = {
         }
         Update: {
           advanced?: Json
+          def_2pt_return?: number | null
           def_block?: number | null
           def_fumble_recoveries?: number | null
           def_interceptions?: number | null
@@ -3789,6 +3794,7 @@ export type Database = {
           def_tds?: number | null
           def_yards_allowed?: number | null
           fg_0_39?: number | null
+          fg_60_plus?: number | null
           fg_attempted?: number | null
           fg_made?: number | null
           fg_made_40_plus?: number | null
