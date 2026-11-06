@@ -50,7 +50,7 @@ import {
   PLAYOFF_NO_ROWS_COPY,
 } from './league-home-season-ops'
 import { LeagueHomeStates } from './league-home-states'
-import { NO_PROJECTION_TITLE, PENDING_SCORE_TITLE } from './matchup-view-ops'
+import { NO_PROJECTION_TITLE } from './matchup-view-ops'
 import { FORMER_MEMBER_LABEL, MESSAGE_BOARD_EMPTY_COPY, MESSAGE_BOARD_ERROR_COPY } from './league-message-board'
 import { GOLDEN_STANDINGS } from './standings-schedule.fixtures'
 import { NO_FINAL_WEEKS_COPY } from './standings-table-ops'
@@ -475,7 +475,7 @@ describe('in_season — the matchup of the week is the viewer’s row at the lad
 })
 
 describe('§16.5.3 — a total_points league’s hero is "your week so far vs the field"', () => {
-  it('the leaderboard rows with the viewer’s row filled; absence is pending, never 0', () => {
+  it('the leaderboard rows with the viewer’s row filled; absence is never 0', () => {
     const doc = weekDoc(2, {
       schedule_mode: 'total_points',
       results: [
@@ -490,8 +490,8 @@ describe('§16.5.3 — a total_points league’s hero is "your week so far vs th
     expect(html).toContain('90.00')
     expect(html).toContain('71.50')
     // Q108: the week is LIVE and no lineup is on record for the two teams
-    // with no row, so nothing can be projected — the dash, never 0 and no
-    // longer `pending` (that word is for a week whose games are over).
+    // with no row, so nothing can be projected — the dash, never 0 and
+    // never the word `pending` (D845).
     expect(html).toContain(`title="${NO_PROJECTION_TITLE}"`)
     expect(html).not.toContain('>pending<')
     expect(html).not.toContain('data-matchup=')
@@ -551,12 +551,16 @@ describe('Q108 — League Home: a team with no score in a live week shows its pr
     expect(renderHome({ lineups: [lineupOf(T3, {})], values })).not.toContain('Proj 0.0')
   })
 
-  it('a week whose games are over (correction window — incl. a held week) keeps `pending`; no projection', () => {
-    const held = { ...WEEK2, league_week: { ...WEEK2.league_week, status: 'correction_window' } }
-    const ladder = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => (w.week === 2 ? { ...w, status: 'correction_window' } : w)) }
-    const html = renderHome({ schedule: ladder, weeks: { 1: WEEK1, 2: held }, lineups, values })
-    expect(sideScore(html, T3)).toBe(`pending|plain|${PENDING_SCORE_TITLE}`)
-    expect(html).not.toContain('Proj 32.8')
+  it('D845: a week whose games are over (correction window — incl. a held week — or final) shows the projection too, never "pending"', () => {
+    for (const status of ['correction_window', 'final']) {
+      const held = { ...WEEK2, league_week: { ...WEEK2.league_week, status } }
+      const ladder = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => (w.week === 2 ? { ...w, status } : w)) }
+      const html = renderHome({ schedule: ladder, weeks: { 1: WEEK1, 2: held }, lineups, values })
+      expect(sideScore(html, T3), status).toBe('Proj 32.8|blue|Projected — this team hasn’t scored yet this week.')
+      expect(html).not.toMatch(/>pending</i)
+      // …and with nothing to project, the dash.
+      expect(sideScore(renderHome({ schedule: ladder, weeks: { 1: WEEK1, 2: held }, values }), T3), status).toBe(`—|plain|${NO_PROJECTION_TITLE}`)
+    }
   })
 
   it('the projection keeps updating: new projections in the cache re-render the cell (no reload)', () => {
@@ -579,7 +583,7 @@ describe('Q108 — League Home: a team with no score in a live week shows its pr
     expect(lineupOpts?.refetchInterval).toBe(LEAGUE_PLAYER_VALUES_REFETCH_MS)
   })
 
-  it('the poll is opt-in: a week whose games are over reads no projections and polls nothing (R1805)', () => {
+  it('the poll is opt-in: a week whose games are over reads its projections once (D845) and polls nothing (R1805)', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
     const held = { ...WEEK2, league_week: { ...WEEK2.league_week, status: 'correction_window' } }
     const ladder = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => (w.week === 2 ? { ...w, status: 'correction_window' } : w)) }
@@ -589,7 +593,8 @@ describe('Q108 — League Home: a team with no score in a live week shows its pr
       .findAll({ queryKey: ['league-player-values'] })
       .filter((q) => (q.options as { refetchInterval?: unknown }).refetchInterval)
     expect(polling).toEqual([])
-    expect((client.getQueryCache().find({ queryKey: teamLineupKeys.week(T3, 2) })?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval).toBeUndefined()
+    expect(client.getQueryCache().find({ queryKey: leaguePlayerValueKeys.week(LEAGUE, 2099, 2) })).toBeDefined()
+    expect((client.getQueryCache().find({ queryKey: teamLineupKeys.week(T3, 2) })?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval).toBeFalsy()
   })
 })
 

@@ -174,8 +174,10 @@ function statWords(value: number | null): string {
   return value === null ? 'none' : String(value)
 }
 
+/** A team score in the summary line; NULL (no score yet — E61) is the dash,
+ *  never the word "pending" (D845). */
 function scoreWords(value: number | null): string {
-  return value === null ? 'pending' : value.toFixed(2)
+  return value === null ? '—' : value.toFixed(2)
 }
 
 function outcome(value: unknown): CorrectionOutcome {

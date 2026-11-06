@@ -49,6 +49,8 @@ import {
   NO_WEEK_COPY,
   PENDING_SCORE_COPY,
   PLAYOFF_ROUND_PENDING_COPY,
+  STATS_NOT_IN_TITLE,
+  TEAM_STATS_NOT_IN_TITLE,
   YET_TO_PLAY_TITLE,
   ZERO_BY_NAME_TITLE,
 } from './matchup-view-ops'
@@ -295,14 +297,14 @@ describe('the h2h week — the viewer’s matchup, the door’s scores, the box 
     expect(html).toContain('data-variant="h2h"')
   })
 
-  it('the other matchup is listed with its PENDING home score as the word, never 0.00 (E61) — and links to its own route', () => {
+  it('the other matchup is listed with its unscored home side as the dash, never 0.00 (E61) nor the word pending (D845) — and links to its own route', () => {
     expect(html).toContain('data-matchup-row="m2"')
     expect(html).toContain('href="/app/leagues/league-1/matchup/m2"')
     expect(html).toContain(`>${PENDING_SCORE_COPY}<`)
     expect(html).toContain('>12.25<')
-    // The rendered TEXT never says 0.00 for the pending side (the E61 title
-    // mentions the number only to say it is never shown).
+    // The rendered TEXT never says 0.00 (or "pending") for the unscored side.
     expect(html.match(/data-matchup-row="m2"[\s\S]*?<\/a>/)?.[0]).not.toContain('>0.00<')
+    expect(html.match(/data-matchup-row="m2"[\s\S]*?<\/a>/)?.[0]).not.toMatch(/>pending</i)
   })
 
   it('the lineups are slot-aligned: each slot row carries the home starter, the slot, then the away starter', () => {
@@ -326,12 +328,16 @@ describe('the h2h week — the viewer’s matchup, the door’s scores, the box 
     expect(html).toContain('>18.34<')
   })
 
-  it('E61: a PENDING starter renders the word pending — never 0.00 — and holds the box total at pending', () => {
-    const row = html.match(/data-starter="rb:1"[\s\S]*?data-starter-cell="([^"]+)"[^>]*>([^<]*)</)
-    expect(row?.[1]).toBe('pending')
-    expect(row?.[2]).toBe(PENDING_SCORE_COPY)
-    expect(html).toContain('data-box-sum="pending"')
-    expect(html).toContain('charted_placeholder')
+  it('E61 / D845: a starter whose stats aren’t all in renders the dash with a plain title — never 0.00, never the word pending — and so does the box total', () => {
+    const row = html.match(/data-starter="rb:1"[\s\S]*?title="([^"]*)" data-starter-cell="([^"]+)"[^>]*>([^<]*)</)
+    expect(row?.[1]).toBe(STATS_NOT_IN_TITLE)
+    expect(row?.[2]).toBe('pending')
+    expect(row?.[3]).toBe(PENDING_SCORE_COPY)
+    expect(PENDING_SCORE_COPY).toBe('—')
+    expect(html).toMatch(new RegExp(`title="${TEAM_STATS_NOT_IN_TITLE}" data-box-sum="pending">—<`))
+    // No stat key and no "pending" word reaches the screen.
+    expect(html).not.toContain('charted_placeholder')
+    expect(html).not.toMatch(/>pending</i)
   })
 
   it('Q42: a starter with NO line in a FINAL game renders the worker’s 0.00 by name, the reason in his title', () => {
@@ -361,7 +367,7 @@ describe('the h2h week — the viewer’s matchup, the door’s scores, the box 
 })
 
 // ---------------------------------------------------------------------------
-// THE DoD: the badge lifecycle — `Final (pending corrections)` → `Final`
+// THE DoD: the badge lifecycle — the correction window → final (both "Final" — D845)
 // ---------------------------------------------------------------------------
 
 describe('§16.5.4 — the badge lifecycle is league_weeks.status as the server holds it (D295)', () => {
@@ -373,7 +379,7 @@ describe('§16.5.4 — the badge lifecycle is league_weeks.status as the server 
     expect(html).not.toContain('Final (pending corrections)')
   })
 
-  it('correction_window → `Final (pending corrections)` — the pending badge is SHOWN while the window is open, and `Final` alone is not', () => {
+  it('correction_window → its own badge state, labelled plain "Final" (D845), its title saying a late correction can still change it', () => {
     const html = renderMatchups({
       week: weekDoc({
         league_week: { status: 'correction_window', median_score: null, finalized_at: null },
@@ -381,9 +387,9 @@ describe('§16.5.4 — the badge lifecycle is league_weeks.status as the server 
       }),
     })
     expect(html).toContain('data-week-badge="pending_corrections"')
-    expect(html).toContain('>Final (pending corrections)<')
+    expect(html).toMatch(/title="Final\. A late official stat correction can still change it this week\."[^>]*data-week-badge="pending_corrections"[^>]*>Final</)
     expect(html).not.toContain('data-week-badge="final"')
-    expect(html).not.toMatch(/>Final</)
+    expect(html).not.toContain('Final (pending corrections)')
   })
 
   it('final → `Final`; the pending badge is gone; the finalized results render their W/L chips', () => {
@@ -413,7 +419,9 @@ describe('§16.5.4 — the badge lifecycle is league_weeks.status as the server 
       }),
     })
     expect(html).toContain('data-week-badge="final"')
-    expect(html).toContain('data-score="pending"')
+    // D845: no score and nothing to project (no lineup on record) — the dash, never "pending".
+    expect(html).toContain('data-score="—"')
+    expect(html).not.toContain('data-score="pending"')
   })
 
   it('a commissioner-adjusted row carries the ✸ chip', () => {
@@ -864,7 +872,7 @@ describe('the prototype layout: scoreboard header, slot-aligned board, totals, t
     expect(head).toMatch(/text-\[27px\][^"]*" data-score="71.50"/)
   })
 
-  it('the totals row carries each side’s worker total (pending stays the word) under the starters', () => {
+  it('the totals row carries each side’s worker total (the dash while stats are still to come in) under the starters', () => {
     const html = renderMatchups()
     const totals = html.slice(html.indexOf('data-total-row'))
     expect(totals).toContain('data-box-sum="pending"')
@@ -1030,9 +1038,11 @@ describe('Q108 — the matchup page: a team with no score in a live week shows i
     expect(html).not.toContain('Proj 0.0')
   })
 
-  it('a finished week (the correction window) keeps `pending` — no projection after the games', () => {
-    const html = renderMatchups({ matchupId: 'm2', lineups, values, boxes: {}, week: weekDoc({ league_week: { status: 'correction_window', median_score: null, finalized_at: null } }) })
-    expect(html).toContain('data-score="pending"')
-    expect(html).not.toContain('Proj 31.3')
+  it('D845: a week whose games are over (the correction window, or final) shows the projection too — never "pending"', () => {
+    for (const status of ['correction_window', 'final']) {
+      const html = renderMatchups({ matchupId: 'm2', lineups, values, boxes: {}, week: weekDoc({ league_week: { status, median_score: null, finalized_at: null } }) })
+      expect(html, status).toContain('data-score="Proj 31.3" data-projected="true"')
+      expect(html, status).not.toContain('data-score="pending"')
+    }
   })
 })

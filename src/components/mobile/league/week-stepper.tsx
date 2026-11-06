@@ -11,8 +11,8 @@ import { cn } from '@/lib/utils'
  *
  *  - `WeekStatus`: the week's stored status (`league_weeks.status`, the
  *    desktop `WeekStrip` badge's words): the design's live red — a 6px dot
- *    and 11/600 "Live" — for a week being played, else "Final" /
- *    "Final (pending corrections)" / "Upcoming" in t3.
+ *    and 11/600 "Live" — for a week being played, else "Final" (the
+ *    correction window reads "Final" too — D845) / "Upcoming" in t3.
  *  - `WeekStepper`: "‹ Week N ›" (handoff m-match §2.2 B — 30px round
  *    buttons, 12px #0088FF chevrons, the 13/600 blue label) over the
  *    league's own ladder, resting in t5 at either end instead of the

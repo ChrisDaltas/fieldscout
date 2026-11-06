@@ -65,15 +65,14 @@ export function scheduleHref(leagueId: string, teamId?: string | null): string {
 export interface PhoneSide {
   id: string
   name: string
-  /** The stored score as written (`scoreCell`): a number, "—" before the
-   *  week starts, "pending" for an open score — never 0 by coercion. */
+  /** The side's cell as written (`teamScoreCell`): the stored number, the
+   *  projected total once the week's games have started, else "—" — never 0
+   *  by coercion, never the word "pending" (D845). */
   score: string
   scoreTitle: string | null
-  /** No score yet: the week hasn't started ("—"). */
+  /** No score and nothing projected: the dash. */
   notStarted: boolean
-  /** An open score ("pending"). */
-  pending: boolean
-  /** Q108: `score` is the live week's projected total, not a score. */
+  /** Q108 / D845: `score` is the week's projected total, not a score. */
   projected: boolean
   /** The stored result says this side lost. */
   lost: boolean
@@ -117,22 +116,22 @@ const ROUND_TAGS: Readonly<Record<string, string>> = {
   third_place: 'Third place',
 }
 
-/** A team's projected total for the live week (`useTeamWeekProjections`). */
-export type ProjectedOf = (teamId: string) => number | null
+/** A team's projected total for one week (`useTeamProjectionsByWeek`). */
+export type ProjectedOf = (week: number, teamId: string) => number | null
 
-function side(id: string, name: string, score: number | null, matchupStatus: string, weekStatus: string, projectedOf: ProjectedOf | undefined, lost: boolean): PhoneSide {
-  const cell = teamScoreCell(score, matchupStatus, weekStatus, projectedOf?.(id))
+function side(id: string, name: string, score: number | null, matchupStatus: string, week: number, weekStatus: string, projectedOf: ProjectedOf | undefined, lost: boolean): PhoneSide {
+  const cell = teamScoreCell(score, matchupStatus, weekStatus, projectedOf?.(week, id))
   const projected = cell.projected === true
-  return { id, name, score: cell.text, scoreTitle: cell.title, notStarted: score === null && !cell.pending && !projected, pending: cell.pending, projected, lost }
+  return { id, name, score: cell.text, scoreTitle: cell.title, notStarted: score === null && !projected, projected, lost }
 }
 
 function involves(row: Pick<MatchupCell, 'home' | 'away'>, teamId: string | null): boolean {
   return teamId !== null && (row.home.id === teamId || row.away?.id === teamId)
 }
 
-function phoneRow(row: MatchupCell, weekStatus: string, projectedOf: ProjectedOf | undefined, anchor: string | null, myTeamId: string | null, filter: string | null): PhoneRow {
-  const home = side(row.home.id, row.home.name, row.home_score, row.status, weekStatus, projectedOf, row.result === 'away')
-  const away = row.away ? side(row.away.id, row.away.name, row.away_score, row.status, weekStatus, projectedOf, row.result === 'home') : null
+function phoneRow(row: MatchupCell, week: number, weekStatus: string, projectedOf: ProjectedOf | undefined, anchor: string | null, myTeamId: string | null, filter: string | null): PhoneRow {
+  const home = side(row.home.id, row.home.name, row.home_score, row.status, week, weekStatus, projectedOf, row.result === 'away')
+  const away = row.away ? side(row.away.id, row.away.name, row.away_score, row.status, week, weekStatus, projectedOf, row.result === 'home') : null
   const flip = away !== null && anchor !== null && away.id === anchor
   return {
     id: row.id,
@@ -170,7 +169,7 @@ export function phoneWeeks(
     myTeamId: string | null
     currentWeek: number | null
     totalPoints: boolean
-    /** Q108: the live week's projected totals — a team with no score shows its own. */
+    /** Q108 / D845: each started week's projected totals — a team with no score shows its own. */
     projectedOf?: ProjectedOf
   },
 ): PhoneWeek[] {
@@ -178,7 +177,7 @@ export function phoneWeeks(
   const anchor = teamId ?? myTeamId
   return grid.map((w) => {
     const kept = teamId ? w.rows.filter((r) => involves(r, teamId)) : w.rows
-    const shape = (rows: MatchupCell[]) => anchorFirst(rows, anchor).map((r) => phoneRow(r, w.status, projectedOf, anchor, myTeamId, teamId))
+    const shape = (rows: MatchupCell[]) => anchorFirst(rows, anchor).map((r) => phoneRow(r, w.week, w.status, projectedOf, anchor, myTeamId, teamId))
     const primary = shape(kept.filter((r) => r.round_type !== 'secondary'))
     const secondary = shape(kept.filter((r) => r.round_type === 'secondary'))
     let note: string | null = null

@@ -201,18 +201,17 @@ export function gameLine(
 }
 
 /** The points cell as the design draws it: a number (t1), "-" for a player
- *  who has not played yet and "–" for an empty seat (both t5), and the
- *  app's `pending` WORD — never a number — while a stat is undelivered. */
-export function pointsDisplay(cell: Pick<StarterCell, 'text' | 'tone'>): { text: string; tone: 'scored' | 'dim' | 'word' } {
+ *  who has not played yet or whose stats aren't all in yet — never a number,
+ *  never the word "pending" (D845) — and "–" for an empty seat (both t5). */
+export function pointsDisplay(cell: Pick<StarterCell, 'text' | 'tone'>): { text: string; tone: 'scored' | 'dim' } {
   switch (cell.tone) {
     case 'scored':
     case 'zero_by_name':
     case 'bye':
       return { text: cell.text, tone: 'scored' }
     case 'yet_to_play':
-      return { text: '-', tone: 'dim' }
     case 'pending':
-      return { text: cell.text, tone: 'word' }
+      return { text: '-', tone: 'dim' }
     default:
       return { text: '–', tone: 'dim' }
   }

@@ -204,6 +204,7 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
               myRole={detail.my_role}
               myTeamId={myTeamId}
               finalStandings={finalStandings.data?.standings ?? null}
+              irSlots={detail.settings.roster_settings.ir_slots}
             />
           ) : null}
         </TabsContent>

@@ -134,8 +134,9 @@ function statLineFor(playerId: string, position: string, teamIndex: number, scal
 }
 
 /** The rendered `data-score` attribute of one side of the scoreboard —
- *  the formatted number, or for the door's NULL (E61/R788): in a LIVE week
- *  the projected total (`'Proj N'`) or `'—'` (Q108), else `'pending'`. */
+ *  the formatted number, or for the door's NULL (E61/R788): once the week's
+ *  games have started the projected total (`'Proj N'`) or `'—'` (Q108 /
+ *  D845 — the word "pending" is never shown); before, `'—'`. */
 async function sideScore(page: Page, teamId: string): Promise<string> {
   const value = await page.locator(`[data-side="${teamId}"] [data-score]`).first().getAttribute('data-score')
   if (value === null) throw new Error(`no [data-score] rendered for side ${teamId}`)

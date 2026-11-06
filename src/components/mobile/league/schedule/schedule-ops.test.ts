@@ -61,7 +61,7 @@ describe('phoneWeeks', () => {
     ])
   })
 
-  it('shows the stored scores as written — the loser greyed, a tie neither, an open score pending, an unstarted one a dash', () => {
+  it('shows the stored scores as written — the loser greyed, a tie neither, an open score its projection or a dash, an unstarted one a dash', () => {
     const [w1, w2, w3] = phoneWeeks(GRID, base)
     const win = w1!.primary[0]!
     expect([win.top.name, win.top.score, win.top.lost, win.bottom?.name, win.bottom?.score, win.bottom?.lost]).toEqual(['Alpha', '120.50', false, 'Bravo', '99.00', true])
@@ -69,15 +69,15 @@ describe('phoneWeeks', () => {
     expect([tie.tie, tie.top.lost, tie.bottom?.lost, tie.overridden, tie.homeTeamId]).toEqual([true, false, false, true, 't3'])
     const live = w2!.primary[0]!
     // Q108: an open score in the LIVE week is its projection — none known here, so the dash.
-    expect([live.top.score, live.top.pending, live.bottom?.score, live.bottom?.pending, live.bottom?.projected]).toEqual(['40.25', false, '—', false, false])
-    // …and with a projection, "Proj <total>", flagged so the screen paints it blue.
-    const projectedLive = phoneWeeks(GRID, { ...base, projectedOf: (id) => (id === live.bottom?.id ? 87.04 : null) })[1]!.primary[0]!
+    expect([live.top.score, live.bottom?.score, live.bottom?.projected]).toEqual(['40.25', '—', false])
+    // …and with a projection, "Proj <total>", flagged so the screen paints it blue — read for its own week.
+    const projectedLive = phoneWeeks(GRID, { ...base, projectedOf: (week, id) => (week === w2!.week && id === live.bottom?.id ? 87.04 : null) })[1]!.primary[0]!
     expect([projectedLive.bottom?.score, projectedLive.bottom?.projected, projectedLive.bottom?.notStarted, projectedLive.top.score]).toEqual(['Proj 87.0', true, false, '40.25'])
     // A projection never reaches a week that is not live (an upcoming one keeps its dash).
     const upcoming = phoneWeeks(GRID, { ...base, projectedOf: () => 50 })[2]!.primary[0]!
     expect([upcoming.top.score, upcoming.top.projected]).toEqual(['—', false])
     const later = w3!.primary[0]!
-    expect([later.top.score, later.top.notStarted, later.top.pending]).toEqual(['—', true, false])
+    expect([later.top.score, later.top.notStarted, later.top.projected]).toEqual(['—', true, false])
   })
 
   it('puts a second-opponent league’s extra games in their own group', () => {
