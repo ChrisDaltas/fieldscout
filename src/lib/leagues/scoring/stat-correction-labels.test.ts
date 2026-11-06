@@ -16,8 +16,8 @@ import { correctionsStorageOf, type DoorReport, MISSING_CORRECTIONS_REPORT } fro
 import { CORRECTION_LABELS, correctionLabel, sentenceLabel } from './stat-correction-labels'
 
 // The HEAD of the function's chain: 172 defined it, 195 (F578) re-created it
-// with the usage keys' words.
-const MIGRATION = readFileSync(path.join(process.cwd(), 'supabase/migrations/195_player_info_c.sql'), 'utf8')
+// with the usage keys' words, 218 (F871) with `fg_60_plus` and `def_2pt_return`.
+const MIGRATION = readFileSync(path.join(process.cwd(), 'supabase/migrations/218_long_fg_two_point_rules.sql'), 'utf8')
 
 /** The head migration's `stat_key_label_internal` CASE arms, as written in the file. */
 function sqlLabels(): Map<string, string> {
@@ -28,7 +28,7 @@ function sqlLabels(): Map<string, string> {
 }
 
 describe('the plain words of a stat key (the league post, the notification, the corrections view)', () => {
-  it('the SQL map at the head of the chain (195) is exactly the registry-generated map — no key missing, none extra, no word different', () => {
+  it('the SQL map at the head of the chain (218) is exactly the registry-generated map — no key missing, none extra, no word different', () => {
     expect(Object.fromEntries(sqlLabels())).toEqual(Object.fromEntries(CORRECTION_LABELS))
   })
   it('every key an event can carry has words: every column key the ingest diff moves, every advanced key', () => {

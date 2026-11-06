@@ -148,8 +148,9 @@ export interface ScoringValidationResult {
 // ---------------------------------------------------------------------------
 
 /** §23.5 v2.11: exactly the keys a format-2 document may pay (SE.1 classified
- *  all 61 registry entries; the scorable 48 are proved ≡ the section catalog ∪
- *  the cut-generated tier keys in `stat-keys.test.ts`). */
+ *  every registry entry — 68 since migration 218; the scorable 50, F871's
+ *  `fg_60_plus` and `def_2pt_return` included, are proved ≡ the section
+ *  catalog ∪ the cut-generated tier keys in `stat-keys.test.ts`). */
 export const SCORABLE_KEYS: ReadonlySet<string> = new Set(
   STAT_KEYS.filter((def) => def.scoring_surface === 'scorable').map((def) => def.key),
 )

@@ -72,8 +72,10 @@ const G3_ROW: GameRow = {
 }
 
 describe('column surfaces (derived from the registry — D33 one namespace)', () => {
-  it('STAT_COLUMN_SURFACE is the 38-column box surface live-stats already pins (27 pre-seam + 11 from 057)', () => {
-    expect(STAT_COLUMN_SURFACE).toHaveLength(38)
+  it('STAT_COLUMN_SURFACE is the 40-column box surface live-stats already pins (27 pre-seam + 11 from 057 + 2 from 217)', () => {
+    expect(STAT_COLUMN_SURFACE).toHaveLength(40)
+    expect(STAT_COLUMN_SURFACE).toContain('fg_60_plus')
+    expect(STAT_COLUMN_SURFACE).toContain('def_2pt_return')
     expect(STAT_COLUMN_SURFACE).toContain('two_point_conversions')
     expect(STAT_COLUMN_SURFACE).toContain('def_yards_allowed')
     // Sorted and unique — the row shape is deterministic.

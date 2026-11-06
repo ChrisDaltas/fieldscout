@@ -69,7 +69,8 @@ export const POSITION_SCORABLE_KEYS: Readonly<
     WR: offense,
     TE: offense,
     // The K page — one single-section page (Q12, ruled 2026-08-16).
-    K: ['fg_0_39', 'fg_40_49', 'fg_50_plus', 'pat_made', 'fg_missed', 'pat_missed'],
+    // F871 / 218: `fg_60_plus` is the 60+ make's top-up on `fg_50_plus`.
+    K: ['fg_0_39', 'fg_40_49', 'fg_50_plus', 'fg_60_plus', 'pat_made', 'fg_missed', 'pat_missed'],
     // The D/ST page — the event categories PLUS the doc's tier tables. The
     // tier half is the GENERATED names (§23.5(b) cut lists), never a second
     // literal list: a family the generator can produce is a family the D/ST
@@ -82,6 +83,7 @@ export const POSITION_SCORABLE_KEYS: Readonly<
       'def_safety',
       'def_block',
       'def_return_td',
+      'def_2pt_return', // F871 / 218
       ...new Set([
         ...tierKeysFromCuts(DEF_PA_PREFIX, SHARED_PA_CUTS),
         ...tierKeysFromCuts(DEF_PA_PREFIX, ESPN_PA_CUTS),

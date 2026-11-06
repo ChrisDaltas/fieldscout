@@ -220,7 +220,7 @@ describe('resolveRules — THE IDENTITY PROPERTY (format 1 ≡ resolved, every p
   it('holds for 200 seeded random flat documents at a random position', () => {
     const rng = mulberry32(0x5e_02_01)
     const keys = STAT_KEYS.filter((k) => k.scoring_surface === 'scorable').map((k) => k.key)
-    expect(keys.length).toBe(48)
+    expect(keys.length).toBe(50) // 48 + F871's fg_60_plus and def_2pt_return (migration 218)
 
     for (let run = 0; run < 200; run++) {
       const doc: FlatScoringRules = {}

@@ -68,8 +68,8 @@ import type {
  *   - `fgmiss_50_59`, `fgmiss_60p`: inside `fgmiss_50p`.
  *   - `xp_blkd`: the team's own blocked PAT, already charged through `xpmiss`.
  *
- * Still unmapped, with no rule key to fill (F871 keeps them): `fgm_60p`, `def_2pt`.
- * Tier-indicator keys (the def_pa / def_ya families) and bonuses are never
+ * `fgm_60p` and `def_2pt` are actuals-only (`SLEEPER_ACTUALS_ONLY_MAP`, F871 /
+ * migration 218). Tier-indicator keys (the def_pa / def_ya families) and bonuses are never
  * adapter concerns: derived at scoring time (D44) or deferred to v1.1.
  */
 export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
@@ -143,14 +143,25 @@ export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
  * shared map because `st_td` means a player's return TD here and a team's
  * projected return TDs on the projections endpoint, and because
  * `WEEKLY_SOURCE_KEYS` must not claim projections can deliver these: a key they
- * never send stays NAMED in `projected_unscored` (`fumble_recovery_td`).
- * `st_td` appears on no K or DEF actual in 19,199 lines.
+ * never send stays NAMED in `projected_unscored` (`fumble_recovery_td`,
+ * `fg_60_plus`, `def_2pt_return`). `st_td` appears on no K or DEF actual in
+ * 19,199 lines.
+ *
+ * F871 (migration 218), MEASURED 2026-11-06 on the saved feed (2025 wk 1-18,
+ * 2026 wk 1-8, 19,199 actuals lines): `fgm_60p` is on 16 kicker lines and
+ * `def_2pt` on 3 D/ST lines, the only spellings of either play. Neither is on
+ * any weekly projections row (92,516 rows saved, every position, plus the
+ * Week 9 2026 K and DEF files), so neither is mapped for projections.
+ * `fgm_60p` is a TOP-UP: it is counted again inside `fgm_50p` (`fg_50_plus`).
+ * Never map `fgmiss_60p`: it is inside `fgmiss_50p`, which is inside `fgmiss`.
  */
 export const SLEEPER_ACTUALS_ONLY_MAP: Readonly<Record<string, string>> = {
   fgmiss: 'fg_missed',
   def_st_td: 'def_return_td',
   st_td: 'return_td',
   fum_rec_td: 'fumble_recovery_td',
+  fgm_60p: 'fg_60_plus',
+  def_2pt: 'def_2pt_return',
 }
 
 /** On an offense projection these are the player's own return TDs. */

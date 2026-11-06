@@ -115,6 +115,24 @@ const registryLabel = (key: string): string => {
   return def.label
 }
 
+/**
+ * The ONE row whose words are the editor's own rather than the registry's
+ * (F871, migration 218). `fg_60_plus` is paid ON TOP of the FG 50+ row (a
+ * 60-yarder under ESPN's rules pays 5 + 1 = 6), so the registry's
+ * "FG Made (60+)" beside a 1 would read as the whole value of the kick. Every
+ * other row is its registry label (pinned by test, with this map as the only
+ * named exception).
+ */
+export const EDITOR_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
+  fg_60_plus: 'FG 60+ extra (on top of FG 50+)',
+}
+
+/** A row's label: the registry's (which must exist), unless named above. */
+const editorLabel = (key: string): string => {
+  const registry = registryLabel(key)
+  return EDITOR_LABEL_OVERRIDES[key] ?? registry
+}
+
 const OFFENSE_POSITIONS: readonly ScoringPosition[] = ['QB', 'RB', 'WR', 'TE']
 
 /**
@@ -230,6 +248,8 @@ export const SCORING_EDITOR_SECTIONS: readonly ScoringSectionDef[] = composeCata
       { key: 'fg_0_39', label: registryLabel('fg_0_39') },
       { key: 'fg_40_49', label: registryLabel('fg_40_49') },
       { key: 'fg_50_plus', label: registryLabel('fg_50_plus') },
+      // F871 / 218: the 60+ make's top-up, read with the row above it.
+      { key: 'fg_60_plus', label: editorLabel('fg_60_plus') },
       { key: 'pat_made', label: registryLabel('pat_made') },
       { key: 'fg_missed', label: registryLabel('fg_missed') },
       { key: 'pat_missed', label: registryLabel('pat_missed') },
@@ -247,6 +267,7 @@ export const SCORING_EDITOR_SECTIONS: readonly ScoringSectionDef[] = composeCata
       { key: 'def_safety', label: registryLabel('def_safety') },
       { key: 'def_block', label: registryLabel('def_block') },
       { key: 'def_return_td', label: registryLabel('def_return_td') },
+      { key: 'def_2pt_return', label: registryLabel('def_2pt_return') }, // F871 / 218
     ],
   },
 ])

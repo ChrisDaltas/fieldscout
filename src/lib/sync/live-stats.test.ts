@@ -421,7 +421,7 @@ describe('syncLiveStats (seam integration)', () => {
 })
 
 describe('toStatColumns (D22 column surface)', () => {
-  it('writes exactly the pre-seam STAT_MAP surface plus the migration-057 columns — nothing dropped, nothing invented', () => {
+  it('writes exactly the pre-seam STAT_MAP surface plus the migration-057 and migration-217 columns — nothing dropped, nothing invented', () => {
     // The 27 player_stats columns the pre-refactor STAT_MAP wrote (D22's
     // enumerated non-catalog columns included) PLUS the 11 additive
     // migration-057 columns (L.A1.7/D41 — the upsert-surface continuity pin
@@ -440,6 +440,9 @@ describe('toStatColumns (D22 column surface)', () => {
       'return_td',
       'def_yards_allowed',
     ]
+    // F871 (D834): written from PR 4 (migration 218) on — the 60+ make's
+    // top-up count and the D/ST two-point return.
+    const MIGRATION_217_COLUMNS = ['fg_60_plus', 'def_2pt_return']
     const PRE_SEAM_COLUMNS = [
       'pass_attempts',
       'pass_completions',
@@ -469,7 +472,7 @@ describe('toStatColumns (D22 column surface)', () => {
       'def_safeties',
       'def_points_allowed',
     ]
-    const EXPECTED_SURFACE = [...PRE_SEAM_COLUMNS, ...MIGRATION_057_COLUMNS].sort()
+    const EXPECTED_SURFACE = [...PRE_SEAM_COLUMNS, ...MIGRATION_057_COLUMNS, ...MIGRATION_217_COLUMNS].sort()
     const writableSurface = [
       ...new Set([...Object.values(STAT_COLUMN_BY_KEY), 'two_point_conversions']),
     ].sort()
