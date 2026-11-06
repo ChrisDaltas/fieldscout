@@ -1,6 +1,8 @@
 /**
  * sync:fill-ruled — fill the ruled stat columns on finished weeks, quietly
- * (PROGRESS F890, D832). The logic and the argument rules live in
+ * (PROGRESS F890, D832, D835). Nine columns since migration 218 (F871): the
+ * first seven, plus `fg_60_plus` and `def_2pt_return`. A run on weeks a first
+ * run already filled moves only those two. The logic and the argument rules live in
  * `src/lib/sync/fill-ruled-columns.ts`; this wrapper binds the provider the
  * cron route binds, so a new line's `source` is the live poll's.
  *
