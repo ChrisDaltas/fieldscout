@@ -257,6 +257,13 @@ const LAUBE = line('11574', 8, { return_td: 1 }, { off_snaps: 1 }, 'LV', 'NYJ')
 const MITCHELL = line('8170', 8, { fumble_recovery_td: 1 }, { off_snaps: 31 }, 'DAL', 'ARI')
 /** A plain receiver whose ruled columns don't move. */
 const WR = line('wr-1', 1, { targets: 7, receptions: 5, receiving_yards: 61 }, { off_snaps: 40 }, 'BUF', 'HOU')
+/**
+ * Sleeper 14026, a Miami RB, week 2 (real, production's feed, 2026-11-06): a
+ * line production never stored, in no week, with no ruled value (F895, D833).
+ * Sleeper's `fum` 1 has no key in the map (`fum_lost` does), so it never
+ * reaches the line.
+ */
+const LATE_RB = line('14026', 2, { targets: 3, receptions: 1, receiving_yards: 18 })
 /** Arizona and the Chargers, week 1 (real): Arizona's blocked kick, and a D/ST line with nothing to fill. */
 const ARI = line('ARI', 1, { def_sack: 3, def_int: 1, def_fumble_rec: 1, def_points_allowed: 14, def_yards_allowed: 268, def_block: 1 }, {}, 'ARI', 'LAC')
 const LAC = line('LAC', 1, { def_sack: 1, def_points_allowed: 26, def_yards_allowed: 393 }, {}, 'LAC', 'ARI')
@@ -770,14 +777,15 @@ describe('unknown players', () => {
 })
 
 describe('new rows: every non-ruled stat column must be empty', () => {
-  it('today’s three pass: Price wk3, Laube wk8, Mitchell wk8', async () => {
+  it('today’s three pass: Price wk3, Laube wk8, Mitchell wk8 (D833 (d))', async () => {
     const report = await run(worldWith(ALL_LINES), ALL_LINES)
     expect(report.ok).toBe(true)
     expect(report.weeks.flatMap((w) => w.newRows.map((r) => r.player_id))).toEqual(['13075', '11574', '8170'])
     expect(report.weeks.flatMap((w) => w.problems)).toEqual([])
+    expect(report.weeks.flatMap((w) => w.lateLines)).toEqual([])
   })
 
-  it('a new line carrying a non-ruled stat is a named problem, is not written, and blocks the whole --apply', async () => {
+  it('a new line carrying a ruled value and a non-ruled stat is a named problem, is not written, and blocks the whole --apply (D833 (c))', async () => {
     const late = line('wr-1', 8, { return_td: 1, receiving_yards: 22 })
     const lines = [...ALL_LINES, late]
     const world = worldWith(ALL_LINES)
@@ -789,9 +797,8 @@ describe('new rows: every non-ruled stat column must be empty', () => {
     expectNothingWritten(world, before)
   })
 
-  it('so is one with no ruled value at all, a delivered yards zero, a scoring advanced key, or a two-point sum', async () => {
+  it('so is a ruled value beside a delivered yards zero, a scoring advanced key, or a two-point sum', async () => {
     const cases: Array<[ProviderPlayerWeekStats, RegExp]> = [
-      [line('wr-1', 8, { receptions: 1 }), /receptions=1/],
       [line('wr-1', 8, { return_td: 1, def_yards_allowed: 0 }), /def_yards_allowed=0/],
       [line('wr-1', 8, { return_td: 1 }, { example_tracking_yards: 3 }), /example_tracking_yards=3/],
       [line('wr-1', 8, { return_td: 1, rec_2pt: 1 }), /two_point_conversions=1/],
@@ -810,12 +817,120 @@ describe('new rows: every non-ruled stat column must be empty', () => {
     expect(world.stored('13075', 3).advanced).toEqual({ off_snaps: 4 })
   })
 
-  it('a new line with every column empty is counted and not inserted', async () => {
+  it('a new line with every column empty is counted and not inserted (D833 (a)): a display-only key alone makes it no late line', async () => {
     const world = worldWith(ALL_LINES)
-    const report = await run(world, [...ALL_LINES, line('wr-1', 8, { receptions: 0 })], { apply: true })
+    world.players.push({ id: 'wr-snaps', position: 'WR' })
+    const report = await run(world, [...ALL_LINES, line('wr-1', 8, { receptions: 0 }), line('wr-snaps', 8, {}, { off_snaps: 3 })], { apply: true })
     expect(report.ok).toBe(true)
-    expect(report.weeks[3].zeroNewLines).toBe(1)
-    expect(world.stats.find((r) => r.player_id === 'wr-1' && r.week === 8)).toBeUndefined()
+    expect(report.weeks[3].zeroNewLines).toBe(2)
+    expect(report.weeks[3].lateLines).toEqual([])
+    expect(report.weeks[3].otherDifferences).toEqual([])
+    expect(world.stats.find((r) => r.week === 8 && ['wr-1', 'wr-snaps'].includes(String(r.player_id)))).toBeUndefined()
+  })
+})
+
+describe('a new line with no ruled value but other data is a late line: listed, never written, never a problem (D833 (b), F895)', () => {
+  const WEEKS = [1, 2, 3, 6, 8]
+  const LINES = [...ALL_LINES, LATE_RB]
+  const lateWorld = (): World => {
+    const world = worldWith(ALL_LINES)
+    world.players.push({ id: '14026', position: 'RB' })
+    return world
+  }
+
+  it('the week 2 line production never stored: no problem, listed, its keys in otherDifferences, nothing to write', async () => {
+    const report = await run(lateWorld(), LINES, { weeks: WEEKS })
+    expect(report.ok).toBe(true)
+    const week2 = weekOf(report, 2)
+    expect(week2.problems).toEqual([])
+    expect(week2.lateLines).toEqual(['14026'])
+    expect(week2.zeroNewLines).toBe(0)
+    expect(week2.newRows).toEqual([])
+    expect(week2.updates).toEqual([])
+    expect(Object.values(week2.moves).every((n) => n === 0)).toBe(true)
+    expect(week2.otherDifferences).toEqual([
+      { player_id: '14026', key: 'receptions', column: 'receptions', stored: null, feed: 1 },
+      { player_id: '14026', key: 'receiving_yards', column: 'receiving_yards', stored: null, feed: 18 },
+      { player_id: '14026', key: 'targets', column: 'targets', stored: null, feed: 3 },
+    ])
+    expect(report.weeks.filter((w) => w.week !== 2).flatMap((w) => w.lateLines)).toEqual([])
+  })
+
+  it('--apply goes ahead: the door never receives it, every other week fills, the row counts hold', async () => {
+    const world = lateWorld()
+    const report = await run(world, LINES, { weeks: WEEKS, apply: true })
+    expect(report.afterProblems).toEqual([])
+    expect(report.ok).toBe(true)
+    expect(report.linesWritten).toBe(8)
+    expect(world.doorCalls.flatMap((call) => call.p_rows.map((e) => e.stat.player_id))).not.toContain('14026')
+    expect(world.doorCalls.map((call) => call.p_rows[0].stat.week)).not.toContain(2)
+    expect(world.stats.filter((r) => r.player_id === '14026')).toEqual([])
+    expect(world.stored('7042', 1)).toMatchObject({ fg_0_39: 2 })
+    expect(world.stored('8170', 8)).toMatchObject({ fumble_recovery_td: 1 })
+  })
+
+  it('a ruled value on the same line flips it back to a problem: --apply blocked, no door call (D833 (c))', async () => {
+    const world = lateWorld()
+    const before = snapshot(world)
+    const withRuled = { ...LATE_RB, stats: { ...LATE_RB.stats, return_td: 1 } }
+    const report = await run(world, [...ALL_LINES, withRuled], { weeks: WEEKS, apply: true })
+    expect(report.ok).toBe(false)
+    expect(weekOf(report, 2).problems).toEqual(['week 2: new line for 14026 also carries receptions=1, receiving_yards=18, targets=3 — a late provider line, not written'])
+    expect(weekOf(report, 2).lateLines).toEqual([])
+    expect(weekOf(report, 2).newRows).toEqual([])
+    expectNothingWritten(world, before)
+  })
+
+  it('any other data with no ruled value is a late line: a stat, a delivered yards zero, a scoring advanced key, a two-point sum', async () => {
+    const cases: Array<[ProviderPlayerWeekStats, string]> = [
+      [line('wr-1', 8, { receptions: 1 }), 'receptions'],
+      [line('wr-1', 8, { def_yards_allowed: 0 }), 'def_yards_allowed'],
+      [line('wr-1', 8, {}, { example_tracking_yards: 3 }), 'example_tracking_yards'],
+      [line('wr-1', 8, { rec_2pt: 1 }), 'two_point_conversions'],
+    ]
+    for (const [late, key] of cases) {
+      const world = worldWith(ALL_LINES)
+      const report = await run(world, [...ALL_LINES, late], { apply: true })
+      expect(report.ok, key).toBe(true)
+      expect(weekOf(report, 8).problems, key).toEqual([])
+      expect(weekOf(report, 8).lateLines, key).toEqual(['wr-1'])
+      expect(weekOf(report, 8).otherDifferences.map((o) => o.key), key).toContain(key)
+      expect(world.stats.find((r) => r.player_id === 'wr-1' && r.week === 8), key).toBeUndefined()
+    }
+  })
+
+  it('several in a week are listed in code-point order, whatever the feed’s order', () => {
+    const plan = planFillWeek({
+      week: 2,
+      lines: [line('rb-b', 2, { rush_yards: 3 }), line('rb-a', 2, { receptions: 1 })],
+      stored: new Map(),
+      positions: new Map([
+        ['rb-a', 'RB'],
+        ['rb-b', 'RB'],
+      ]),
+      ctx: CTX,
+    })
+    expect(plan.problems).toEqual([])
+    expect(plan.lateLines).toEqual(['rb-a', 'rb-b'])
+  })
+
+  it('prints: the count on the week line, the player by name on its own line, the total on the all-weeks line; exit 0 and Done', async () => {
+    const world = lateWorld()
+    world.players.find((p) => p.id === '14026')!.full_name = 'Runner Hotel' // made up: real names never go in a repo file
+    const { code, out, err } = await cli(['--season', '2026', '--weeks', '1,2,3,6,8', '--apply', '--confirm-target', HOST], world, LINES)
+    expect(code).toBe(0)
+    expect(err).toEqual([])
+    const week2 = out.findIndex((l) => l.startsWith('  week 2:'))
+    expect(out.slice(week2, week2 + 5)).toEqual([
+      '  week 2: 0 lines to write (0 updated, 0 new), 0 moves: no ruled column moved | feed lines=1 unchanged=0 unknownPlayers=0 empty=0 repeats=0 zeroNewLines=0 lateLines=1 storedOnly=0',
+      '      late line (not written, F895) Runner Hotel (14026): no ruled value',
+      '      other (not written) Runner Hotel (14026) receptions: stored null → feed 1',
+      '      other (not written) Runner Hotel (14026) receiving_yards: stored null → feed 18',
+      '      other (not written) Runner Hotel (14026) targets: stored null → feed 3',
+    ])
+    expect(out.find((l) => l.startsWith('  all weeks: '))).toMatch(/^ {2}all weeks: 8 lines \(5 updated, 3 new\), 10 moves: .*; 3 other-column differences; 1 late lines \(not written\)$/)
+    expect(out).toContain('  written: 8 lines; queue rows 0; events 0')
+    expect(out.at(-1)).toBe('Done — ruled columns only; no queue row, no event; K identities and row counts hold.')
   })
 })
 
@@ -1293,19 +1408,19 @@ describe('the printed output', () => {
     const lines = [BASS, receiver, MIN, PRICE, TEN, CHI, BOSWELL, LAUBE, MITCHELL, line('nobody', 8, { return_td: 1 })]
     const report = await run(worldWith(ALL_LINES), lines)
     expect(renderFill(report)).toEqual([
-      '  week 1: 1 lines to write (1 updated, 0 new), 1 moves: fg_0_39=1 | feed lines=2 unchanged=1 unknownPlayers=0 empty=0 repeats=0 zeroNewLines=0 storedOnly=0',
+      '  week 1: 1 lines to write (1 updated, 0 new), 1 moves: fg_0_39=1 | feed lines=2 unchanged=1 unknownPlayers=0 empty=0 repeats=0 zeroNewLines=0 lateLines=0 storedOnly=0',
       '      other (not written) wr-1 targets: stored 7 → feed 8',
       '      display-only (not written) off_snaps: 1 lines differ',
-      '  week 3: 2 lines to write (1 updated, 1 new), 2 moves: def_return_td=1 return_td=1 | feed lines=2 unchanged=0 unknownPlayers=0 empty=0 repeats=0 zeroNewLines=0 storedOnly=0',
+      '  week 3: 2 lines to write (1 updated, 1 new), 2 moves: def_return_td=1 return_td=1 | feed lines=2 unchanged=0 unknownPlayers=0 empty=0 repeats=0 zeroNewLines=0 lateLines=0 storedOnly=0',
       '      new line 13075: return_td=1',
-      '  week 6: 2 lines to write (2 updated, 0 new), 3 moves: def_block=1 def_return_td=1 def_fumble_recoveries=1 | feed lines=2 unchanged=0 unknownPlayers=0 empty=0 repeats=0 zeroNewLines=0 storedOnly=0',
+      '  week 6: 2 lines to write (2 updated, 0 new), 3 moves: def_block=1 def_return_td=1 def_fumble_recoveries=1 | feed lines=2 unchanged=0 unknownPlayers=0 empty=0 repeats=0 zeroNewLines=0 lateLines=0 storedOnly=0',
       '      from a stored value CHI def_fumble_recoveries: stored 1 → feed 3',
       '      summed def_fumble_recoveries CHI: stored 1 → feed 3',
-      '  week 8: 3 lines to write (1 updated, 2 new), 4 moves: fg_0_39=1 fg_missed=1 return_td=1 fumble_recovery_td=1 | feed lines=4 unchanged=0 unknownPlayers=1 empty=0 repeats=0 zeroNewLines=0 storedOnly=0',
+      '  week 8: 3 lines to write (1 updated, 2 new), 4 moves: fg_0_39=1 fg_missed=1 return_td=1 fumble_recovery_td=1 | feed lines=4 unchanged=0 unknownPlayers=1 empty=0 repeats=0 zeroNewLines=0 lateLines=0 storedOnly=0',
       '      new line 11574: return_td=1',
       '      new line 8170: fumble_recovery_td=1',
       '      PROBLEM: week 8: player nobody is not in players, and its line carries return_td=1',
-      '  all weeks: 8 lines (5 updated, 3 new), 10 moves: fg_0_39=2 fg_missed=1 def_block=1 def_return_td=2 def_fumble_recoveries=1 return_td=2 fumble_recovery_td=1; 1 from a non-zero stored value; 1 other-column differences',
+      '  all weeks: 8 lines (5 updated, 3 new), 10 moves: fg_0_39=2 fg_missed=1 def_block=1 def_return_td=2 def_fumble_recoveries=1 return_td=2 fumble_recovery_td=1; 1 from a non-zero stored value; 1 other-column differences; 0 late lines (not written)',
       '  all weeks def_fumble_recoveries by player, stored → feed: wk6 CHI 1→3',
     ])
   })
