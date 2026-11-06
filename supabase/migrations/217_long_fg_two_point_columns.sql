@@ -25,7 +25,8 @@
 --                   try for 2 (Sleeper `def_2pt`).
 -- Existing rows read 0 at once: a constant DEFAULT is stored in the catalog
 -- (Postgres 11+), so there is no table rewrite and no backfill. The ALTER
--- holds ACCESS EXCLUSIVE on player_stats only for the catalog change.
+-- holds ACCESS EXCLUSIVE on player_stats only for the catalog change, and
+-- waits at most 5s to get it (below).
 --
 -- WHY (F871). ESPN's defaults pay a 60+ yard field goal 6 (one more than 50+)
 -- and a D/ST two-point return 2. Spec Q9 (v2.8.5) made both named parity
@@ -68,6 +69,14 @@
 -- 001-217, `migration up` from 216 over a stored line, and the full pgTAP run
 -- (PROGRESS D834).
 -- ============================================================================
+
+-- Bounded wait (R1797, 216's and 077's precedent): queued behind a long
+-- reader or an open ingest transaction, this ALTER's ACCESS EXCLUSIVE request
+-- would make every later read of player_stats (stats pages, box scores, the
+-- scoring worker, the ingest door) queue behind it until it got through.
+-- Failing fast rolls back the whole file, and the push is simply re-run.
+-- SET LOCAL: this transaction only.
+SET LOCAL lock_timeout = '5s';
 
 ALTER TABLE public.player_stats
   ADD COLUMN fg_60_plus INTEGER DEFAULT 0,

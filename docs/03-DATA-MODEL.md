@@ -244,7 +244,7 @@ CREATE POLICY "Stats are viewable by authenticated users"
   ON player_stats FOR SELECT USING (auth.role() = 'authenticated');
 ```
 
-The block above is the table as first written. Later migrations added columns (057's box-score counts, 109's `advanced`, 194's `team`, and 143 dropped `def_yards_allowed`'s default); `src/types/database.ts` has the full set, and pgTAP `011_player_stats_box_columns.sql` pins it.
+The block above is the table as first written. Later migrations changed it: 002 added `source` (and its index), 005 replaced the authenticated-only SELECT policy with one open to everyone, 057 added the box-score counts, 109 added `advanced` (and its object CHECK), 143 dropped `def_yards_allowed`'s default, 194 added `team`, and 217 (below) added two counts. `src/types/database.ts` has the full column set, and pgTAP `011_player_stats_box_columns.sql` pins it.
 
 **Migration 217 (F871): two kicking and D/ST counts.**
 
