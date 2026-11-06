@@ -74,6 +74,7 @@ import {
   resultChip,
   leaderboardPendingCell,
   teamScoreCell,
+  unscoredTeamIds,
   secondChip,
   selectedMatchup,
   sideResult,
@@ -201,8 +202,9 @@ function MatchupContent({
   const delay = liveScoringDelay(degraded.data)
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
-  // Q108: a team with no score in a live week shows its projected total.
-  const weekTeamIds = useMemo(() => (matchups.data?.teams ?? []).map((t) => t.id), [matchups.data?.teams])
+  // Q108 / D845: a team with no score in a started week shows its projected
+  // total — read only for the teams with no score (R1807).
+  const weekTeamIds = useMemo(() => unscoredTeamIds(matchups.data), [matchups.data])
   const projectedOf = useTeamWeekProjections({
     leagueId,
     season: matchups.data?.season,

@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useMemo, useState } from 'react'
 
 import { formatKickoff } from '@/components/leagues/lineup-editor-ops'
-import { splitRows, teamName, teamScoreCell } from '@/components/leagues/matchup-view-ops'
+import { splitRows, teamName, teamScoreCell, unscoredTeamIds } from '@/components/leagues/matchup-view-ops'
 import { CenteredNote, SkeletonBlocks, StatusLine, useChipRowInView } from '@/components/mobile/league/league/league-bits'
 import { sideScore, sidesOf } from '@/components/mobile/league/match/match-ops'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
@@ -156,8 +156,13 @@ function MatchStrip({
   const doc = matchups.data
   const row = doc ? (splitRows(doc.matchups).primary.find((m) => m.home_team_id === myTeamId || m.away_team_id === myTeamId) ?? null) : null
   const sides = row ? sidesOf(row, myTeamId) : null
-  // Q108: a side with no score in a live week shows its projected total.
-  const stripTeams = useMemo(() => (sides?.b ? [sides.a, sides.b] : []), [sides?.a, sides?.b])
+  // Q108 / D845: a side with no score in a started week shows its projected
+  // total — read only for a side with no score (R1807).
+  const stripTeams = useMemo(() => {
+    if (!sides?.b) return []
+    const unscored = new Set(unscoredTeamIds(doc))
+    return [sides.a, sides.b].filter((id) => unscored.has(id))
+  }, [doc, sides?.a, sides?.b])
   const projectedOf = useTeamWeekProjections({
     leagueId,
     season: doc?.season,

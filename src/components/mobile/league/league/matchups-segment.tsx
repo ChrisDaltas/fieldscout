@@ -15,6 +15,7 @@ import {
   leaderboardRows,
   teamName,
   teamScoreCell,
+  unscoredTeamIds,
 } from '@/components/leagues/matchup-view-ops'
 import { formatRecord } from '@/components/leagues/standings-table-ops'
 import { LIVE_STATS_DELAYED_COPY, STALE_SCORES_COPY } from '@/components/leagues/status-banners'
@@ -111,13 +112,15 @@ function SeasonMatchups({
   const av = (id: string | null) => teamAvatarClass(id, teamIds, myTeamId)
   // Who's online (gap list §3 #25): a team's avatar lights up with its manager.
   const online = useTeamOnline(detail.members)
-  // Q108: a team with no score in a live week shows its projected total.
+  // Q108 / D845: a team with no score in a started week shows its projected
+  // total — read only for the teams with no score (R1807).
+  const unscored = useMemo(() => unscoredTeamIds(matchups.data), [matchups.data])
   const projectedOf = useTeamWeekProjections({
     leagueId,
     season: matchups.data?.season,
     week: matchups.data?.week,
     weekStatus: matchups.data?.league_week.status,
-    teamIds,
+    teamIds: unscored,
     irSlots: detail.settings.roster_settings.ir_slots,
   })
 

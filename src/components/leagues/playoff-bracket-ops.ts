@@ -10,7 +10,6 @@ import type {
 import { formatInstantInZone } from './league-home-states-ops'
 import {
   NO_PROJECTION_TITLE,
-  PROJECTED_SCORE_TITLE,
   WEEK_NOT_STARTED_TITLE,
   projectedScoreText,
   teamScoreCell,
@@ -207,6 +206,10 @@ export type WeekStatusOf = (week: number) => string | undefined
 
 const NO_PROJECTIONS: BracketProjectedOf = () => null
 
+/** A multi-week round's projected TOTAL (the review's nit on PR #588): the
+ *  number is the round's, not one week's. */
+export const PROJECTED_ROUND_TITLE = 'Projected — this team hasn’t scored yet this round.'
+
 /** The round's own week statuses, by week (each `BracketGameWeek` row is a
  *  matchup; its week's status is the round's). */
 export function roundWeekStatus(round: Pick<BracketRound, 'weeks'> | null | undefined): WeekStatusOf {
@@ -261,7 +264,7 @@ export function bracketTotalCell(
   const projections = started.map((w) => (team ? projectedOf(w.week, team) : null))
   if (projections.some((p) => p === null)) return { text: '—', title: NO_PROJECTION_TITLE, pending: false }
   const sum = projections.reduce<number>((a, p) => a + (p ?? 0), 0)
-  return { text: projectedScoreText(sum), title: PROJECTED_SCORE_TITLE, pending: false, projected: true }
+  return { text: projectedScoreText(sum), title: PROJECTED_ROUND_TITLE, pending: false, projected: true }
 }
 
 /** The built rounds' started weeks with a side that has no score yet — the

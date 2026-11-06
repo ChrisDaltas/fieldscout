@@ -56,6 +56,7 @@ import {
   leaderboardPendingCell,
   projectedScoreText,
   teamScoreCell,
+  unscoredTeamIds,
 } from './matchup-view-ops'
 import { lineupProjectedTotal } from './my-team-ops'
 import { liveWeekOf, weekStatusBadge } from './schedule-view-ops'
@@ -186,6 +187,23 @@ function doc(over: Partial<WeekMatchups> = {}): WeekMatchups {
     ...over,
   }
 }
+
+describe('unscoredTeamIds — the only teams a projection is read for (R1807)', () => {
+  it('a fully scored h2h week lists nobody, so it reads nothing', () => {
+    const scored = doc({ matchups: [row({ id: 'm1', home_team_id: T1, away_team_id: T2, home_score: 10, away_score: 0 }), row({ id: 'm2', home_team_id: T3, away_team_id: T4, home_score: 5, away_score: 7 })] })
+    expect(unscoredTeamIds(scored)).toEqual([])
+  })
+  it('a NULL side is listed (a real 0 is a score, not listed); a bye row has no away side', () => {
+    const d = doc({ matchups: [row({ id: 'm1', home_team_id: T1, away_team_id: T2, home_score: null, away_score: 0 }), row({ id: 'm2', home_team_id: T3, away_team_id: null, home_score: 5 })] })
+    // T4 is on no row and has no results row — listed (the leaderboard's absence rule); T5 is retired.
+    expect(unscoredTeamIds(d)).toEqual([T1, T4].sort())
+  })
+  it('a total_points week (no rows): the seated teams with no results row, never a retired one', () => {
+    const d = doc({ schedule_mode: 'total_points', results: [result({ team_id: T1, points: 70 }), result({ team_id: T3, points: 0 })] })
+    expect(unscoredTeamIds(d)).toEqual([T2, T4].sort())
+    expect(unscoredTeamIds(undefined)).toEqual([])
+  })
+})
 
 function starter(over: Partial<BoxStarter> = {}): BoxStarter {
   return {

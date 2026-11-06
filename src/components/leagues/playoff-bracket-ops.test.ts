@@ -51,6 +51,7 @@ import {
   AWAITING_BUILD_DOC,
   BRACKET_NAMES,
   BUILT_DOC,
+  BUILT_UNPLAYED_DOC,
   COMPLETE_DOC,
   CORRECTIONS_CLOSE_AT,
   FOREIGN_ROWS_DOC,
@@ -66,6 +67,7 @@ import {
 import type { BracketGameWeek } from '@/lib/leagues/api/playoffs-service'
 
 import { NO_PROJECTION_TITLE, PROJECTED_SCORE_TITLE, WEEK_NOT_STARTED_TITLE } from './matchup-view-ops'
+import { PROJECTED_ROUND_TITLE } from './playoff-bracket-ops'
 
 // ---------------------------------------------------------------------------
 // THE ROLLOVER COPY PIN (Q39 (E) / §16.4) — the DoD probe's target
@@ -253,7 +255,9 @@ describe('games — the verdict is 118’s `decided_by`, never re-decided', () =
       ],
     })
     const statusOf = (week: number) => (week === 15 ? 'live' : 'upcoming')
-    expect(bracketTotalCell(two(null, null), 'home', statusOf, proj)).toEqual({ text: 'Proj 98.4', title: PROJECTED_SCORE_TITLE, pending: false, projected: true })
+    // A two-week round's total is the ROUND's number — its hover says so (PR #588 nit).
+    expect(bracketTotalCell(two(null, null), 'home', statusOf, proj)).toEqual({ text: 'Proj 98.4', title: PROJECTED_ROUND_TITLE, pending: false, projected: true })
+    expect(PROJECTED_ROUND_TITLE).toBe('Projected — this team hasn’t scored yet this round.')
     expect(bracketTotalCell(two(null, null), 'away', statusOf, proj)).toEqual({ text: '—', title: NO_PROJECTION_TITLE, pending: false })
     expect(bracketTotalCell(two(null, null, 'scheduled'), 'home', () => 'upcoming', proj)).toEqual({ text: '—', title: WEEK_NOT_STARTED_TITLE, pending: false })
     expect(bracketTotalCell(two(0, null), 'home', statusOf, proj).text).toBe('0.00')
@@ -264,12 +268,26 @@ describe('games — the verdict is 118’s `decided_by`, never re-decided', () =
     expect(formatTotal(150)).toBe('150.00')
   })
 
-  it('bracketProjectionWeeks: the built rounds’ started weeks with an unscored side, by week and team', () => {
+  it('bracketProjectionWeeks: the built rounds’ started weeks with an unscored side, by week and team (exact — R1808)', () => {
     expect(bracketProjectionWeeks({ ...BUILT_DOC, round_list: [] })).toEqual([])
-    for (const w of bracketProjectionWeeks(BUILT_DOC)) {
-      expect(['live', 'correction_window', 'final']).toContain(w.status)
-      expect(w.teamIds.length).toBeGreaterThan(0)
+    // Round 2 (week 16, live): Delta's side is NULL; Bravo v Charlie is scored. Round 1 is
+    // fully scored (its byes have no away side); round 3 is unbuilt.
+    expect(bracketProjectionWeeks(BUILT_DOC)).toEqual([{ week: 16, status: 'live', teamIds: [T.delta] }])
+    // A final week with an unscored side is read too (D845), each week on its own.
+    const r1 = BUILT_DOC.round_list[0]
+    const echoBlank = {
+      ...BUILT_DOC,
+      round_list: [
+        { ...r1, games: r1.games.map((g) => (g.away_team_id === T.echo ? { ...g, weeks: g.weeks.map((w) => ({ ...w, away_score: null })) } : g)) },
+        ...BUILT_DOC.round_list.slice(1),
+      ],
     }
+    expect(bracketProjectionWeeks(echoBlank)).toEqual([
+      { week: 15, status: 'final', teamIds: [T.echo] },
+      { week: 16, status: 'live', teamIds: [T.delta] },
+    ])
+    // Nothing for an upcoming week, even with blank sides.
+    expect(bracketProjectionWeeks(BUILT_UNPLAYED_DOC)).toEqual([])
     expect(roundWeekStatus(BUILT_DOC.round_list[0])(BUILT_DOC.round_list[0].weeks[0].week)).toBe(BUILT_DOC.round_list[0].weeks[0].status)
     expect(roundWeekStatus(null)(15)).toBeUndefined()
   })

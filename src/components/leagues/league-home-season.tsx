@@ -62,6 +62,7 @@ import {
   splitRows,
   teamName,
   teamScoreCell,
+  unscoredTeamIds,
   weekBadge,
 } from './matchup-view-ops'
 import { PlayoffBracket } from './playoff-bracket'
@@ -149,8 +150,9 @@ export function SeasonHero({
   // standings page's "Playoffs" tab mounts; fetched only in that state.
   const bracket = usePlayoffBracketLive(leagueId, state === 'playoffs', { fallbackPoll: true })
   const managers = useMemo(() => managersByTeam(data.members), [data.members])
-  // Q108: a team with no score in a live week shows its projected total.
-  const weekTeamIds = useMemo(() => (matchups.data?.teams ?? []).map((t) => t.id), [matchups.data?.teams])
+  // Q108 / D845: a team with no score in a started week shows its projected
+  // total — read only for the teams with no score (R1807).
+  const weekTeamIds = useMemo(() => unscoredTeamIds(matchups.data), [matchups.data])
   const projectedOf = useTeamWeekProjections({
     leagueId,
     season: matchups.data?.season,

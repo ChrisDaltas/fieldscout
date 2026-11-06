@@ -27,7 +27,10 @@ import { lineupQueryOptions } from './use-lineup'
  * window focus, so a projection the hourly job moves shows up without a
  * reload; a week whose games are over does not poll.
  *
- * Reads nothing for a week that has not started (its cells are the dash).
+ * Reads nothing for a week that has not started (its cells are the dash),
+ * nor for a week with no team listed — callers list only the teams with no
+ * score yet (`unscoredTeamIds`, `scheduleProjectionWeeks`,
+ * `bracketProjectionWeeks`), so a fully scored week reads nothing (R1807).
  * Display only: callers pass the number to `teamScoreCell` /
  * `leaderboardPendingCell`, never to a result, a sort, the median, the win
  * chance or the standings.
@@ -44,7 +47,8 @@ export function useTeamProjectionsByWeek(input: {
     if (!ready) return []
     const byWeek = new Map<number, { week: number; live: boolean; teamIds: string[] }>()
     for (const w of input.weeks) {
-      if (!weekGamesStarted(w.status)) continue
+      // R1807: a week with no unscored team reads nothing at all.
+      if (!weekGamesStarted(w.status) || w.teamIds.length === 0) continue
       const entry = byWeek.get(w.week) ?? { week: w.week, live: w.status === 'live', teamIds: [] }
       entry.teamIds = [...new Set([...entry.teamIds, ...w.teamIds])]
       byWeek.set(w.week, entry)
@@ -79,7 +83,8 @@ export function useTeamProjectionsByWeek(input: {
 }
 
 /** One week's projected totals (`useTeamProjectionsByWeek` over that week) —
- *  every team in `teamIds`, read only once the week's games have started. */
+ *  the teams in `teamIds` (pass only the unscored ones — `unscoredTeamIds`),
+ *  read only once the week's games have started. */
 export function useTeamWeekProjections(input: {
   leagueId: string | undefined
   season: number | undefined

@@ -150,6 +150,30 @@ export function teamScoreCell(score: number | null, matchupStatus: string, weekS
   return { text: projectedScoreText(projected), title: PROJECTED_SCORE_TITLE, pending: false, projected: true }
 }
 
+/**
+ * The teams of one week's read that have no score yet — the only teams a
+ * projection is read for (R1807: a fully scored week reads nothing). A side
+ * of a matchup row with a NULL score (the filter `scheduleProjectionWeeks`
+ * uses), plus a seated team on no row with no results row (a `total_points`
+ * week's leaderboard absence — `leaderboardPendingCell`).
+ */
+export function unscoredTeamIds(doc: Pick<WeekMatchups, 'teams' | 'matchups' | 'results'> | null | undefined): string[] {
+  if (!doc) return []
+  const ids = new Set<string>()
+  const onRow = new Set<string>()
+  for (const m of doc.matchups) {
+    onRow.add(m.home_team_id)
+    if (m.home_score === null) ids.add(m.home_team_id)
+    if (m.away_team_id) {
+      onRow.add(m.away_team_id)
+      if (m.away_score === null) ids.add(m.away_team_id)
+    }
+  }
+  const resulted = new Set(doc.results.map((r) => r.team_id))
+  for (const t of doc.teams) if (t.status !== 'retired' && !onRow.has(t.id) && !resulted.has(t.id)) ids.add(t.id)
+  return [...ids].sort()
+}
+
 /** A `total_points` leaderboard row with no results row yet: the same cell
  *  as any unscored team (`teamScoreCell` — its projected total once the
  *  week's games have started, else the dash). Shown as text only; the row

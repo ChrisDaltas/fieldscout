@@ -44,6 +44,7 @@ import {
   starterCell,
   teamName,
   teamScoreCell,
+  unscoredTeamIds,
   type StarterCell,
 } from '@/components/leagues/matchup-view-ops'
 import { formatRecord } from '@/components/leagues/standings-table-ops'
@@ -343,13 +344,15 @@ function HeadToHead({
 
   const status = doc.league_week.status
   const teamIds = useMemo(() => detail.teams.map((t) => t.id), [detail.teams])
-  // Q108: a team with no score in a live week shows its projected total.
+  // Q108 / D845: a team with no score in a started week shows its projected
+  // total — read only for the teams with no score (R1807).
+  const unscored = useMemo(() => unscoredTeamIds(doc), [doc])
   const projectedOf = useTeamWeekProjections({
     leagueId,
     season: doc.season,
     week: doc.week,
     weekStatus: doc.league_week.status,
-    teamIds,
+    teamIds: unscored,
     irSlots: detail.settings.roster_settings.ir_slots,
   })
   const sides = row ? sidesOf(row, myTeamId) : null
@@ -1300,13 +1303,15 @@ function LeaderboardWeek({
   const values = useLeaguePlayerValues(leagueId, doc.season, doc.week)
   const projOf = (id: string) => values.byPlayer.get(id)?.projected_points ?? null
   const status = doc.league_week.status
-  // Q108: a team with no results row in a live week shows its projected total.
+  // Q108 / D845: a team with no results row in a started week shows its
+  // projected total — read only for those teams (R1807).
+  const unscored = useMemo(() => unscoredTeamIds(doc), [doc])
   const projectedOf = useTeamWeekProjections({
     leagueId,
     season: doc.season,
     week: doc.week,
     weekStatus: status,
-    teamIds,
+    teamIds: unscored,
     irSlots: detail.settings.roster_settings.ir_slots,
   })
 
