@@ -122,9 +122,16 @@
 -- unchanged on all of them. Typegen: the two helpers join `Functions`
 -- (additive; alias block untouched). R6 waiver: no staging clone; rehearsal
 -- = a fresh local `db reset` 001-218, `migration up` 217 → 218 over
--- fixtures, and the full pgTAP run (D835). pgTAP 170 (extended), with 011,
--- 012, 013, 051, 143 moved where they pin the key sets, labels or rows.
+-- fixtures, and the full pgTAP run (D835). pgTAP 170 (extended), with 012,
+-- 013, 051, 054, 056 and 092 moved where they pin the key sets, the template
+-- rows or the ESPN documents' md5s.
 -- ============================================================================
+
+-- Bounded wait (R1797; 216's, 217's and 077's precedent): (d) takes the
+-- reached league rows FOR UPDATE, and the scoring jobs claim the same rows
+-- each minute. Should a stuck transaction hold one, fail fast: the whole file
+-- rolls back and the push is simply re-run. SET LOCAL: this transaction only.
+SET LOCAL lock_timeout = '5s';
 
 -- ---------------------------------------------------------------------------
 -- (a) scoring_rules_validate — 195_player_info_c.sql:50-727 FILE TEXT (D137),
