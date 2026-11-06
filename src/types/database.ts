@@ -6704,6 +6704,11 @@ export type Database = {
         }
         Returns: string
       }
+      long_fg_two_point_doc_plan_internal: {
+        Args: { p_doc: Json; p_system: string }
+        Returns: Json
+      }
+      long_fg_two_point_rules_add_internal: { Args: never; Returns: Json }
       mark_content_report_reviewed: {
         Args: { p_report_id: string }
         Returns: Json

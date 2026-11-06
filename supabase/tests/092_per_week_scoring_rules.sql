@@ -32,6 +32,12 @@
 --       literals (via md5 + system id), the mixed week named AMBIGUOUS, an
 --       unreadable one UNRECOVERABLE, a planted receipt ignored, dry run
 --       writes nothing, a re-run finds nothing.
+--
+-- Migration 218 (F871, D835) added fg_60_plus and def_2pt_return to the two
+-- ESPN template rows, so their documents' stored-literal md5s were re-cut:
+-- ESPN Standard 924bff8a… → 27a7c1aa…, ESPN Full PPR 7a448a2a… → 4ca99f0f…
+-- (each equals md5 of the 218 row; the pre-218 value is md5 of the row minus
+-- the two keys). Yahoo Half PPR's is unchanged.
 -- ============================================================================
 
 begin;
@@ -187,7 +193,7 @@ select is(
   (select status || '|' || coalesce(scoring_rules_snapshot::text, 'null') from league_weeks
    where league_id = 'b9200000-0000-4000-8000-00000000000a' and week = 4)
   || '|' || (select md5(scoring_rules_snapshot::text) from leagues where id = 'b9200000-0000-4000-8000-00000000000a'),
-  'upcoming|null|924bff8a8c664badf14685a236c2274e',
+  'upcoming|null|27a7c1aa2d7ada2c84aacf977120d191',
   'C1 PREMISE: LA week 4 is upcoming and holds NO rules; the league holds ESPN Standard (md5 stored literal)');
 select set_config('pgtap.pw_c2', public.league_week_advance('2026-09-30 03:59:59+00', 'b9200000-0000-4000-8000-00000000000a')::text, true);
 select is(
@@ -200,19 +206,19 @@ select is(
           || (scoring_system_id = (select id from scoring_systems where is_template and name = 'ESPN Standard'))::text
           || '|' || scoring_rules_source || '|' || coalesce(scoring_rules_action_id::text, 'null')
    from league_weeks where league_id = 'b9200000-0000-4000-8000-00000000000a' and week = 4),
-  'live|924bff8a8c664badf14685a236c2274e|true|week_open|null',
+  'live|27a7c1aa2d7ada2c84aacf977120d191|true|week_open|null',
   'C3 THE WEEK-OPEN WRITE: at starts_at league_week_advance opens week 4 AND it now stores ESPN Standard (md5 stored literal), its system, source week_open (probe W: drop the open stamp ⇒ red)');
 select is((current_setting('pgtap.pw_c3')::jsonb ->> 'opened'), '1', 'C4 …and the job opened exactly that one week');
 insert into league_weeks (league_id, season, week, status) values ('b9200000-0000-4000-8000-00000000000a', 2026, 5, 'live');
 select is(
   (select md5(scoring_rules_snapshot::text) || '|' || scoring_rules_source from league_weeks
    where league_id = 'b9200000-0000-4000-8000-00000000000a' and week = 5),
-  '924bff8a8c664badf14685a236c2274e|week_open',
+  '27a7c1aa2d7ada2c84aacf977120d191|week_open',
   'C5 a week INSERTED already opened takes the league rules too — no road to an opened week skips the stamp');
 select is(
   (select string_agg(week || ':' || coalesce(md5(scoring_rules_snapshot::text), '') || ':' || coalesce(scoring_rules_source, ''), ',' order by week) from league_weeks
    where league_id = 'b9200000-0000-4000-8000-00000000000b'),
-  '1:924bff8a8c664badf14685a236c2274e:week_open,2:924bff8a8c664badf14685a236c2274e:week_open,3:924bff8a8c664badf14685a236c2274e:week_open,4::',
+  '1:27a7c1aa2d7ada2c84aacf977120d191:week_open,2:27a7c1aa2d7ada2c84aacf977120d191:week_open,3:27a7c1aa2d7ada2c84aacf977120d191:week_open,4::',
   'C6 LB weeks 1-3 were stamped with ESPN Standard as they opened (the plain status UPDATE, 110 steps); upcoming week 4 holds none');
 
 -- B, now that LA week 4 holds rules.
@@ -228,7 +234,7 @@ select results_eq(
   $$ with w as (update league_weeks set scoring_rules_snapshot = '{}' where league_id = 'b9200000-0000-4000-8000-00000000000a' returning 1) select count(*) from w $$,
   $$ values (0::bigint) $$, 'B2 a league MEMBER: UPDATE of a week rules touches 0 rows');
 select is((select md5(scoring_rules_snapshot::text) from league_weeks where league_id = 'b9200000-0000-4000-8000-00000000000a' and week = 4),
-  '924bff8a8c664badf14685a236c2274e', 'B3 …but a member CAN read the week rules (056 SELECT policy — league scoring is shown to members, §12.25)');
+  '27a7c1aa2d7ada2c84aacf977120d191', 'B3 …but a member CAN read the week rules (056 SELECT policy — league scoring is shown to members, §12.25)');
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9f200000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -244,7 +250,7 @@ select ok(not has_table_privilege('anon', 'public.league_weeks', 'TRUNCATE')
           and not has_table_privilege('authenticated', 'public.league_weeks', 'TRUNCATE'),
   'B6 no TRUNCATE on league_weeks for anon or authenticated (133 sweep holds)');
 select is((select md5(scoring_rules_snapshot::text) from league_weeks where league_id = 'b9200000-0000-4000-8000-00000000000a' and week = 4),
-  '924bff8a8c664badf14685a236c2274e', 'B7 …and after all three attempts the stored rules are unchanged');
+  '27a7c1aa2d7ada2c84aacf977120d191', 'B7 …and after all three attempts the stored rules are unchanged');
 
 -- ---------------------------------------------------------------------------
 -- D. THE GUARD (postgres context — the service role / a job is the only writer)
@@ -308,7 +314,7 @@ select is(
   (select md5(lw.scoring_rules_snapshot::text) || '|' || (lw.scoring_system_id = (select id from scoring_systems where is_template and name = 'ESPN Full PPR'))::text
           || '|' || lw.scoring_rules_source || '|' || (lw.scoring_rules_action_id::text = current_setting('pgtap.pw_e')::jsonb ->> 'commissioner_action_id')::text
    from league_weeks lw where lw.league_id = 'b9200000-0000-4000-8000-00000000000b' and lw.week = 3),
-  '7a448a2aaa6997cc8e734a52b6231e17|true|rescore|true',
+  '4ca99f0f19187e9da59281e6e32ddd5e|true|rescore|true',
   'E3 week 3 now STORES Full PPR (md5 stored literal), source rescore, stamped with THIS receipt — the worker re-scores it under them');
 select is(
   (select string_agg(row_to_json(lw)::text, ' ; ' order by lw.week) from league_weeks lw
@@ -338,10 +344,10 @@ select is((select message from league_chat where league_id = 'b9200000-0000-4000
 select is(
   (select coalesce(scoring_rules_snapshot::text, 'null') from league_weeks where league_id = 'b9200000-0000-4000-8000-00000000000b' and week = 4)
   || '|' || (select md5(scoring_rules_snapshot::text) from leagues where id = 'b9200000-0000-4000-8000-00000000000b'),
-  'null|7a448a2aaa6997cc8e734a52b6231e17', 'E8 upcoming week 4 still holds nothing, and the league (the rules the next week takes) is Full PPR');
+  'null|4ca99f0f19187e9da59281e6e32ddd5e', 'E8 upcoming week 4 still holds nothing, and the league (the rules the next week takes) is Full PPR');
 update league_weeks set status = 'live' where league_id = 'b9200000-0000-4000-8000-00000000000b' and week = 4;
 select is((select md5(scoring_rules_snapshot::text) || '|' || scoring_rules_source from league_weeks where league_id = 'b9200000-0000-4000-8000-00000000000b' and week = 4),
-  '7a448a2aaa6997cc8e734a52b6231e17|week_open', 'E9 …and when week 4 opens it takes Full PPR — the new rules start with the coming week');
+  '4ca99f0f19187e9da59281e6e32ddd5e|week_open', 'E9 …and when week 4 opens it takes Full PPR — the new rules start with the coming week');
 
 -- rescore = FALSE (LC): no opened week's rules change.
 select set_config('pgtap.pw_lc_before',
@@ -367,7 +373,7 @@ select is(
   '[]|false|0', 'E11 …nothing re-written, nothing stale (no week is mixed), nothing queued');
 update league_weeks set status = 'live' where league_id = 'b9200000-0000-4000-8000-00000000000c' and week = 4;
 select is((select md5(scoring_rules_snapshot::text) from league_weeks where league_id = 'b9200000-0000-4000-8000-00000000000c' and week = 4),
-  '7a448a2aaa6997cc8e734a52b6231e17', 'E12 …and the next week to open takes Full PPR');
+  '4ca99f0f19187e9da59281e6e32ddd5e', 'E12 …and the next week to open takes Full PPR');
 
 -- ---------------------------------------------------------------------------
 -- F. THE BACKFILL over a pre-144 shape. Weeks opened while the league held
@@ -486,7 +492,7 @@ select is(
 select is(
   (select string_agg(lw.week || ':' || md5(lw.scoring_rules_snapshot::text), ',' order by lw.week) from league_weeks lw
    where lw.league_id = 'b9200000-0000-4000-8000-00000000000d' and lw.scoring_rules_snapshot is not null),
-  '1:924bff8a8c664badf14685a236c2274e,2:f6a10e87490bde3f85204213d1c18b47,3:7a448a2aaa6997cc8e734a52b6231e17,4:7a448a2aaa6997cc8e734a52b6231e17',
+  '1:27a7c1aa2d7ada2c84aacf977120d191,2:f6a10e87490bde3f85204213d1c18b47,3:4ca99f0f19187e9da59281e6e32ddd5e,4:4ca99f0f19187e9da59281e6e32ddd5e',
   'F3 …the rules DOCUMENTS as stored literals (md5): ESPN Standard, Yahoo Half PPR, Full PPR, Full PPR');
 select is(
   (select jsonb_agg(x -> 'week' order by x ->> 'league_id', (x ->> 'week')::int)
