@@ -578,6 +578,19 @@ describe('Q108 — League Home: a team with no score in a live week shows its pr
     const lineupOpts = client.getQueryCache().find({ queryKey: teamLineupKeys.week(T3, 2) })?.options as { refetchInterval?: unknown } | undefined
     expect(lineupOpts?.refetchInterval).toBe(LEAGUE_PLAYER_VALUES_REFETCH_MS)
   })
+
+  it('the poll is opt-in: a week whose games are over reads no projections and polls nothing (R1805)', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    const held = { ...WEEK2, league_week: { ...WEEK2.league_week, status: 'correction_window' } }
+    const ladder = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => (w.week === 2 ? { ...w, status: 'correction_window' } : w)) }
+    renderHome({ client, schedule: ladder, weeks: { 1: WEEK1, 2: held }, lineups, values })
+    const polling = client
+      .getQueryCache()
+      .findAll({ queryKey: ['league-player-values'] })
+      .filter((q) => (q.options as { refetchInterval?: unknown }).refetchInterval)
+    expect(polling).toEqual([])
+    expect((client.getQueryCache().find({ queryKey: teamLineupKeys.week(T3, 2) })?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval).toBeUndefined()
+  })
 })
 
 // ---------------------------------------------------------------------------

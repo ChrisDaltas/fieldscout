@@ -376,6 +376,9 @@ function HeadToHeadWeek({
   if (!selected) {
     return <EmptyCard copy={emptyWeekCopy(doc.week, weeks, detail.settings.regular_season_weeks)} data-empty="no-matchups" />
   }
+  // Q108: is the scoreboard showing this side's projection in its score's place?
+  const onScoreboard = (teamId: string, score: number | null) =>
+    teamScoreCell(score, selected.status, doc.league_week.status, projectedOf(teamId)).projected === true
 
   return (
     <div className="flex flex-col gap-4" data-variant="h2h">
@@ -417,8 +420,12 @@ function HeadToHeadWeek({
         season={doc.season}
         week={doc.week}
         weekStatus={doc.league_week.status}
-        home={{ teamId: selected.home_team_id, name: teamName(doc, selected.home_team_id) }}
-        away={selected.away_team_id ? { teamId: selected.away_team_id, name: teamName(doc, selected.away_team_id) } : 'bye'}
+        home={{ teamId: selected.home_team_id, name: teamName(doc, selected.home_team_id), projectedOnScoreboard: onScoreboard(selected.home_team_id, selected.home_score) }}
+        away={
+          selected.away_team_id
+            ? { teamId: selected.away_team_id, name: teamName(doc, selected.away_team_id), projectedOnScoreboard: onScoreboard(selected.away_team_id, selected.away_score) }
+            : 'bye'
+        }
         leagueTimeZone={leagueTimeZone}
       />
 
@@ -813,27 +820,6 @@ function TotalPointsWeek({
   )
 }
 
-// ---------------------------------------------------------------------------
-// The board — both lineups slot by slot, the totals, then the benches
-// ---------------------------------------------------------------------------
-
-interface BoardSide {
-  teamId: string
-  name: string
-}
-
-/**
- * The prototype's slot-aligned lineups: one row per lineup slot, the home
- * starter on the left, the slot in the middle, the away starter mirrored on
- * the right; then the two totals; then both benches (never counted). Each
- * side is ONE `useBoxScore` read — every point and pending state is the
- * server's (`box-score-service.ts`); projections are `league_player_values`
- * only, shown where one is stored. `away = null` is the total-points
- * variant's single box; `'bye'` is an h2h side with no opponent.
- *
- * Mobile keeps the two columns as a compact table (the headshots drop, the
- * slot column narrows) — no horizontal page scroll.
- */
 /** A leaderboard row with no results row: its projection in a live week
  *  (Q108, the projected-points blue), else `pending` / the dash. */
 function PendingRowCell({ cell }: { cell: ReturnType<typeof leaderboardPendingCell> }) {
@@ -848,6 +834,30 @@ function PendingRowCell({ cell }: { cell: ReturnType<typeof leaderboardPendingCe
   )
 }
 
+// ---------------------------------------------------------------------------
+// The board — both lineups slot by slot, the totals, then the benches
+// ---------------------------------------------------------------------------
+
+interface BoardSide {
+  teamId: string
+  name: string
+  /** Q108: the scoreboard above already shows this side's projected total in
+   *  its score's place — the box total doesn't repeat it. */
+  projectedOnScoreboard?: boolean
+}
+
+/**
+ * The prototype's slot-aligned lineups: one row per lineup slot, the home
+ * starter on the left, the slot in the middle, the away starter mirrored on
+ * the right; then the two totals; then both benches (never counted). Each
+ * side is ONE `useBoxScore` read — every point and pending state is the
+ * server's (`box-score-service.ts`); projections are `league_player_values`
+ * only, shown where one is stored. `away = null` is the total-points
+ * variant's single box; `'bye'` is an h2h side with no opponent.
+ *
+ * Mobile keeps the two columns as a compact table (the headshots drop, the
+ * slot column narrows) — no horizontal page scroll.
+ */
 function LineupBoard({
   leagueId,
   season,
@@ -944,9 +954,9 @@ function LineupBoard({
                 ))}
                 <div className={cn(grid, 'py-2')} data-total-row>
                   {!two && centre(BOX_SUM_LABEL)}
-                  <TotalCell data={homeData} teamId={home.teamId} projOf={projOf} live={live} />
+                  <TotalCell data={homeData} teamId={home.teamId} projOf={projOf} live={live} hideProj={home.projectedOnScoreboard} />
                   {two && centre(BOX_SUM_LABEL)}
-                  {two && (awaySide ? <TotalCell data={awayData} teamId={awaySide.teamId} projOf={projOf} live={live} mirror /> : <span />)}
+                  {two && (awaySide ? <TotalCell data={awayData} teamId={awaySide.teamId} projOf={projOf} live={live} hideProj={awaySide.projectedOnScoreboard} mirror /> : <span />)}
                 </div>
               </section>
             )}
@@ -1098,12 +1108,15 @@ function TotalCell({
   teamId,
   projOf,
   live,
+  hideProj = false,
   mirror = false,
 }: {
   data: TeamBoxScore | undefined
   teamId: string
   projOf: (id: string) => number | null
   live: boolean
+  /** Q108: the scoreboard side already shows the projection — not twice. */
+  hideProj?: boolean
   mirror?: boolean
 }) {
   // No lineup ⇒ no sum to speak of (the side's state says why), not `pending`.
@@ -1121,7 +1134,7 @@ function TotalCell({
       >
         {sum.text}
       </span>
-      {proj && (
+      {proj && !hideProj && (
         <span className={cn('fs-num text-[10px] font-semibold', PROJ_TEXT)} data-proj-total>
           {proj}
         </span>

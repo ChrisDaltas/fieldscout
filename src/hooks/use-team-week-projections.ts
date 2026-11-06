@@ -37,7 +37,7 @@ export function useTeamWeekProjections(input: {
   const { leagueId, season, weekStatus, irSlots } = input
   const week = input.week ?? undefined
   const live = weekStatus === 'live' && Boolean(leagueId) && season !== undefined && week !== undefined
-  const values = useLeaguePlayerValues(live ? leagueId : undefined, season, week)
+  const values = useLeaguePlayerValues(live ? leagueId : undefined, season, week, { live })
   const ids = useMemo(() => (live ? [...new Set(input.teamIds)] : []), [live, input.teamIds])
   const lineups = useQueries({
     queries: ids.map((teamId) => ({

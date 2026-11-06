@@ -1009,6 +1009,21 @@ describe('Q108 — the matchup page: a team with no score in a live week shows i
     expect(html).not.toContain('data-score="pending"')
   })
 
+  it('R1806: the box total does not repeat the projection the scoreboard side already shows; the scored side keeps its box projection', () => {
+    const html = renderMatchups({
+      matchupId: 'm2',
+      lineups: [{ team_id: T3, slot_map: { 'qb:0': 'p-qb:0', 'rb:0': 'p-rb:0' } }],
+      values: [val('p-qb:0', 20), val('p-rb:0', 11.5)],
+      boxes: { [T3]: SCORED_BOX(T3), [T4]: SCORED_BOX(T4) },
+    })
+    expect(html).toContain('data-score="Proj 31.5" data-projected="true"')
+    const totals = html.slice(html.indexOf('data-total-row'))
+    const t3 = totals.slice(totals.indexOf(`data-box-total="${T3}"`), totals.indexOf(`data-box-total="${T4}"`))
+    const t4 = totals.slice(totals.indexOf(`data-box-total="${T4}"`))
+    expect(t3).not.toContain('data-proj-total')
+    expect(t4).toMatch(/data-proj-total="true">Proj 31\.5</)
+  })
+
   it('no lineup on record → the dash (never "Proj 0.0")', () => {
     const html = renderMatchups({ matchupId: 'm2', values, boxes: {} })
     expect(html).toContain('data-score="—"')
