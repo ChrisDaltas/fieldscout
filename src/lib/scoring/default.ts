@@ -122,6 +122,8 @@ export interface StatRow {
   receiving_tds?: number | null
   fumbles_lost?: number | null
   two_point_conversions?: number | null
+  return_td?: number | null
+  fumble_recovery_td?: number | null
   fg_made?: number | null
   fg_made_40_plus?: number | null
   fg_made_50_plus?: number | null
@@ -144,6 +146,8 @@ const STAT_FIELDS: (keyof StatRow)[] = [
   'receiving_tds',
   'fumbles_lost',
   'two_point_conversions',
+  'return_td',
+  'fumble_recovery_td',
   'fg_made',
   'fg_made_40_plus',
   'fg_made_50_plus',

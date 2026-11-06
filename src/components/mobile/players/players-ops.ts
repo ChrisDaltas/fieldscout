@@ -204,7 +204,7 @@ export const COLUMNS: readonly ColDef[] = [
   { key: 'xpa', group: 'kick', chip: 'XP att', abbr: 'XPA', name: 'Extra points attempted', desc: 'Extra point tries.', only: 'research' },
   { key: 'dsack', group: 'def', chip: 'Sacks', abbr: 'Sck', name: 'Sacks', desc: 'Quarterback sacks by the defense.', only: 'research' },
   { key: 'dint', group: 'def', chip: 'Int', abbr: 'DInt', name: 'Interceptions', desc: 'Passes the defense intercepted.', only: 'research' },
-  { key: 'dfr', group: 'def', chip: 'Fum rec', abbr: 'FR', name: 'Fumble recoveries', desc: 'Fumbles the defense recovered.', only: 'research' },
+  { key: 'dfr', group: 'def', chip: 'Fum rec', abbr: 'FR', name: 'Fumble recoveries', desc: 'Fumbles the defense recovered, special teams included.', only: 'research' },
   { key: 'dtd', group: 'def', chip: 'Def TD', abbr: 'DTD', name: 'Defensive touchdowns', desc: 'Touchdowns scored by the defense.', only: 'research' },
   { key: 'dsaf', group: 'def', chip: 'Safeties', abbr: 'Sfty', name: 'Safeties', desc: 'Safeties scored by the defense.', only: 'research' },
 ]
