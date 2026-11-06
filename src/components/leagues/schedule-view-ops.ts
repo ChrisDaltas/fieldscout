@@ -169,6 +169,12 @@ export function weekStatusBadge(status: string): { label: string; variant: 'stro
   }
 }
 
+/** The ladder's LIVE week (`league_weeks.status = 'live'` — at most one), or
+ *  null: the one week whose unscored teams show a projection (Q108). */
+export function liveWeekOf<W extends { season: number; week: number; status: string }>(weeks: readonly W[] | undefined): W | null {
+  return weeks?.find((w) => w.status === 'live') ?? null
+}
+
 /** A score cell: pending is a dash, never `0.00` by coercion (E61). */
 export function formatScore(score: number | null, status: string): string {
   if (status === 'scheduled') return '—'

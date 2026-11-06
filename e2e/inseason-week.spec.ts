@@ -48,10 +48,12 @@ import { STORAGE_STATE } from './helpers/local-env'
  * `matchups.home_score` is `runScoreWeekBatch`, the production worker, over
  * a real `score_fanout` queue (`driveScoreBatch`). That is what makes step 5
  * below a NEGATIVE CONTROL rather than a decoration: with the queue full and
- * the worker NOT invoked, BOTH sides read `pending` — a generated row is blank
- * until its first batch (migration 216, Chris 2026-11-05: "Games stay blank
- * until they've actually been scored."; it read `0.00` before, F293) —
- * asserted at step 5.
+ * the worker NOT invoked, NEITHER side reads a score — a generated row is
+ * blank until its first batch (migration 216, Chris 2026-11-05: "Games stay
+ * blank until they've actually been scored."; it read `0.00` before, F293).
+ * In a LIVE week a blank side shows its projected total ("Proj N"), or `—`
+ * when nothing can be projected (Q108, Chris 2026-11-06) — asserted at
+ * step 5.
  *
  * THE Q42 SAFE CONSTRUCTION (the task's §6.4 rule, applied). Q42 — what a
  * starter with NO stat line contributes — is OPEN (F263(c)), so this spec
@@ -132,7 +134,8 @@ function statLineFor(playerId: string, position: string, teamIndex: number, scal
 }
 
 /** The rendered `data-score` attribute of one side of the scoreboard —
- *  `'pending'` (the door's NULL, E61/R788) or the formatted number. */
+ *  the formatted number, or for the door's NULL (E61/R788): in a LIVE week
+ *  the projected total (`'Proj N'`) or `'—'` (Q108), else `'pending'`. */
 async function sideScore(page: Page, teamId: string): Promise<string> {
   const value = await page.locator(`[data-side="${teamId}"] [data-score]`).first().getAttribute('data-score')
   if (value === null) throw new Error(`no [data-score] rendered for side ${teamId}`)
@@ -324,8 +327,11 @@ test.describe('a scored week end to end (real browser)', () => {
       // lines and their `score_fanout` rows exist; nothing has drained them;
       // the door has written no score.
       //
-      // What that reads as on screen is `pending`, never `0.00`: the row is
-      // blank until its first batch (216 closed F293).
+      // What that reads as on screen is never a number, never `0.00`: the
+      // row is blank until its first batch (216 closed F293), and in this LIVE
+      // week a blank side shows its projected total, or `—` when nothing can be
+      // projected (Q108 — `teamScoreCell`; the render test
+      // `league-home-season.render.test.ts` "Q108" pins both readings).
       const linesAt = (scale: number): StatLine[] =>
         teamIds.flatMap((teamId, index) =>
           Object.entries(plans.get(teamId)!).map(([slotKey, playerId]) =>
@@ -342,8 +348,8 @@ test.describe('a scored week end to end (real browser)', () => {
       await expect(page.locator('[data-week-badge="live"]').first()).toBeVisible({ timeout: 60_000 })
       const heldMine = await sideScore(page, league.commishTeamId)
       const heldTheirs = await sideScore(page, opponentTeamId)
-      expect(heldMine, 'the worker was never invoked — no score can have been written').toBe('pending')
-      expect(heldTheirs).toBe('pending')
+      expect(heldMine, 'the worker was never invoked — no score can have been written').toMatch(/^(—|Proj \d+\.\d)$/)
+      expect(heldTheirs).toMatch(/^(—|Proj \d+\.\d)$/)
       // eslint-disable-next-line no-console -- the DoD evidence line
       console.log(
         `[inseason-week] worker HELD: ${planted.queued} queue rows planted, ` +

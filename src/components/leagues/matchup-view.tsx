@@ -18,6 +18,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useBoxScore } from '@/hooks/use-box-score'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useLeaguePlayerValues } from '@/hooks/use-league-player-values'
+import { useTeamWeekProjections } from '@/hooks/use-team-week-projections'
 import { useMatchupsLive } from '@/hooks/use-matchups'
 import { useRosters } from '@/hooks/use-rosters'
 import { useSchedule, type ScheduleWeek } from '@/hooks/use-schedule'
@@ -71,7 +72,8 @@ import {
   projectionText,
   resolveWeek,
   resultChip,
-  scoreCell,
+  leaderboardPendingCell,
+  teamScoreCell,
   secondChip,
   selectedMatchup,
   sideResult,
@@ -199,6 +201,16 @@ function MatchupContent({
   const delay = liveScoringDelay(degraded.data)
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
+  // Q108: a team with no score in a live week shows its projected total.
+  const weekTeamIds = useMemo(() => (matchups.data?.teams ?? []).map((t) => t.id), [matchups.data?.teams])
+  const projectedOf = useTeamWeekProjections({
+    leagueId,
+    season: matchups.data?.season,
+    week: matchups.data?.week,
+    weekStatus: matchups.data?.league_week.status,
+    teamIds: weekTeamIds,
+    irSlots: detail.settings.roster_settings.ir_slots,
+  })
 
   const header = (
     <LeaguePageTitle title="Matchups" />
@@ -253,7 +265,7 @@ function MatchupContent({
         />
       ) : doc ? (
         doc.schedule_mode === 'total_points' ? (
-          <TotalPointsWeek leagueId={leagueId} doc={doc} myTeamId={myTeamId} leagueTimeZone={leagueTimeZone} />
+          <TotalPointsWeek leagueId={leagueId} doc={doc} myTeamId={myTeamId} leagueTimeZone={leagueTimeZone} projectedOf={projectedOf} />
         ) : (
           <HeadToHeadWeek
             leagueId={leagueId}
@@ -263,6 +275,7 @@ function MatchupContent({
             matchupId={matchupId}
             myTeamId={myTeamId}
             leagueTimeZone={leagueTimeZone}
+            projectedOf={projectedOf}
           />
         )
       ) : null}
@@ -339,6 +352,7 @@ function HeadToHeadWeek({
   matchupId,
   myTeamId,
   leagueTimeZone,
+  projectedOf,
 }: {
   leagueId: string
   doc: WeekMatchups
@@ -347,6 +361,7 @@ function HeadToHeadWeek({
   matchupId: string | null
   myTeamId: string | null
   leagueTimeZone: string | null
+  projectedOf: ProjectedOf
 }) {
   const { primary, secondary } = splitRows(doc.matchups)
   const selected = selectedMatchup(primary, matchupId, myTeamId)
@@ -361,10 +376,13 @@ function HeadToHeadWeek({
   if (!selected) {
     return <EmptyCard copy={emptyWeekCopy(doc.week, weeks, detail.settings.regular_season_weeks)} data-empty="no-matchups" />
   }
+  // Q108: is the scoreboard showing this side's projection in its score's place?
+  const onScoreboard = (teamId: string, score: number | null) =>
+    teamScoreCell(score, selected.status, doc.league_week.status, projectedOf(teamId)).projected === true
 
   return (
     <div className="flex flex-col gap-4" data-variant="h2h">
-      <Scoreboard doc={doc} row={selected} settings={settings} myTeamId={myTeamId} managers={managers} streakOf={streakOf} />
+      <Scoreboard doc={doc} row={selected} settings={settings} myTeamId={myTeamId} managers={managers} streakOf={streakOf} projectedOf={projectedOf} />
 
       {selected.away_team_id && (
         <WinChanceMeter
@@ -402,8 +420,12 @@ function HeadToHeadWeek({
         season={doc.season}
         week={doc.week}
         weekStatus={doc.league_week.status}
-        home={{ teamId: selected.home_team_id, name: teamName(doc, selected.home_team_id) }}
-        away={selected.away_team_id ? { teamId: selected.away_team_id, name: teamName(doc, selected.away_team_id) } : 'bye'}
+        home={{ teamId: selected.home_team_id, name: teamName(doc, selected.home_team_id), projectedOnScoreboard: onScoreboard(selected.home_team_id, selected.home_score) }}
+        away={
+          selected.away_team_id
+            ? { teamId: selected.away_team_id, name: teamName(doc, selected.away_team_id), projectedOnScoreboard: onScoreboard(selected.away_team_id, selected.away_score) }
+            : 'bye'
+        }
         leagueTimeZone={leagueTimeZone}
       />
 
@@ -415,10 +437,11 @@ function HeadToHeadWeek({
           title="Around the league"
           myTeamId={myTeamId}
           linkable
+          projectedOf={projectedOf}
         />
       )}
       {secondary.length > 0 && (
-        <MatchupList leagueId={leagueId} doc={doc} rows={secondary} title="Second opponents" myTeamId={myTeamId} linkable={false} />
+        <MatchupList leagueId={leagueId} doc={doc} rows={secondary} title="Second opponents" myTeamId={myTeamId} linkable={false} projectedOf={projectedOf} />
       )}
     </div>
   )
@@ -439,6 +462,7 @@ export function Scoreboard({
   myTeamId,
   managers,
   streakOf,
+  projectedOf,
 }: {
   doc: WeekMatchups
   row: MatchupRow
@@ -448,6 +472,8 @@ export function Scoreboard({
   managers?: ReadonlyMap<string, string>
   /** F566: the team's current streak; null before a decided game. */
   streakOf?: (teamId: string) => Streak | null
+  /** Q108: a team's projected total for the week (`useTeamWeekProjections`). */
+  projectedOf?: ProjectedOf
 }) {
   const homeMedian = medianRow(doc, row.home_team_id, settings.median_game)
   const homeSecond = secondChip(doc, row.home_team_id, settings.second_opponent)
@@ -458,7 +484,7 @@ export function Scoreboard({
     <Card className="min-w-0 overflow-hidden" data-matchup={row.id} data-matchup-status={row.status}>
       <CardContent className="flex flex-col gap-3 p-[15px]">
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3">
-          <Side doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} manager={managers?.get(row.home_team_id) ?? null} streak={streakOf?.(row.home_team_id) ?? null} mine={row.home_team_id === myTeamId} />
+          <Side doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} projected={projectedOf?.(row.home_team_id) ?? null} manager={managers?.get(row.home_team_id) ?? null} streak={streakOf?.(row.home_team_id) ?? null} mine={row.home_team_id === myTeamId} />
           <div className="flex flex-col items-center gap-1 text-center">
             <span className="whitespace-nowrap text-[10px] font-semibold text-n-6">
               Week <span className="fs-num">{doc.week}</span>
@@ -480,7 +506,7 @@ export function Scoreboard({
             )}
           </div>
           {row.away_team_id ? (
-            <Side doc={doc} row={row} teamId={row.away_team_id} score={row.away_score} manager={managers?.get(row.away_team_id) ?? null} streak={streakOf?.(row.away_team_id) ?? null} mine={row.away_team_id === myTeamId} mirror />
+            <Side doc={doc} row={row} teamId={row.away_team_id} score={row.away_score} projected={projectedOf?.(row.away_team_id) ?? null} manager={managers?.get(row.away_team_id) ?? null} streak={streakOf?.(row.away_team_id) ?? null} mine={row.away_team_id === myTeamId} mirror />
           ) : (
             <div className="flex min-w-0 flex-col items-end gap-1 text-right" data-side="bye">
               <span className="text-[13px] font-bold text-n-3">Bye</span>
@@ -499,6 +525,9 @@ export function Scoreboard({
   )
 }
 
+/** A team's projected total for the shown week (`useTeamWeekProjections`). */
+type ProjectedOf = (teamId: string) => number | null
+
 /** Desktop's fixed streak green / red (the phone's pair is themed). */
 const STREAK_TONE: StreakTone = { W: 'text-positive-strong', L: 'text-negative-strong' }
 
@@ -507,6 +536,7 @@ function Side({
   row,
   teamId,
   score,
+  projected = null,
   manager,
   streak = null,
   mine,
@@ -516,13 +546,15 @@ function Side({
   row: MatchupRow
   teamId: string
   score: number | null
+  /** Q108: shown only while the team has no score in a live week. */
+  projected?: number | null
   manager: string | null
   streak?: Streak | null
   mine: boolean
   mirror?: boolean
 }) {
   const name = teamName(doc, teamId)
-  const cell = scoreCell(score, row.status)
+  const cell = teamScoreCell(score, row.status, doc.league_week.status, projected)
   const h2h = resultChip(sideResult(row, teamId, doc.results))
   const lost = h2h.text === 'L'
   return (
@@ -562,9 +594,10 @@ function Side({
         </div>
       </div>
       <p
-        className={cn('fs-num shrink-0 text-[27px] font-bold leading-none tracking-[-0.035em]', cell.pending || lost ? 'text-n-3' : 'text-ink')}
+        className={cn('fs-num shrink-0 text-[27px] font-bold leading-none tracking-[-0.035em]', cell.projected ? PROJ_TEXT : cell.pending || lost ? 'text-n-3' : 'text-ink')}
         title={cell.title ?? undefined}
         data-score={cell.pending ? 'pending' : cell.text}
+        data-projected={cell.projected || undefined}
       >
         {cell.text}
       </p>
@@ -631,6 +664,7 @@ function MatchupList({
   title,
   myTeamId,
   linkable,
+  projectedOf,
 }: {
   leagueId: string
   doc: WeekMatchups
@@ -638,6 +672,7 @@ function MatchupList({
   title: string
   myTeamId: string | null
   linkable: boolean
+  projectedOf: ProjectedOf
 }) {
   return (
     <Card className="overflow-hidden" data-matchup-list={title}>
@@ -646,8 +681,9 @@ function MatchupList({
       </CardHeader>
       <CardContent className="flex flex-col divide-y divide-n-4 border-t border-n-4 px-0 py-0">
         {rows.map((m) => {
-          const home = scoreCell(m.home_score, m.status)
-          const away = scoreCell(m.away_score, m.status)
+          const weekStatus = doc.league_week.status
+          const home = teamScoreCell(m.home_score, m.status, weekStatus, projectedOf(m.home_team_id))
+          const away = teamScoreCell(m.away_score, m.status, weekStatus, m.away_team_id ? projectedOf(m.away_team_id) : null)
           const mine = m.home_team_id === myTeamId || m.away_team_id === myTeamId
           // A `linkable` row IS an anchor (to its own matchup), and an <a>
           // inside an <a> is invalid HTML — so the team names get their door
@@ -663,11 +699,15 @@ function MatchupList({
                 teamId={doorId(m.home_team_id)}
                 className={cn('min-w-0 flex-1 truncate text-[12px] font-semibold', mine && 'text-accent-strong')}
               />
-              <span className="fs-num shrink-0 text-[13px] font-bold tracking-[-0.01em]" title={home.title ?? undefined}>
+              <span className={cn('fs-num shrink-0 text-[13px] font-bold tracking-[-0.01em]', home.projected && PROJ_TEXT)} title={home.title ?? undefined} data-projected={home.projected || undefined}>
                 {home.text}
               </span>
               <span className="text-[10px] font-semibold text-n-6">–</span>
-              <span className="fs-num shrink-0 text-[13px] font-bold tracking-[-0.01em]" title={away.title ?? undefined}>
+              <span
+                className={cn('fs-num shrink-0 text-[13px] font-bold tracking-[-0.01em]', m.away_team_id && away.projected && PROJ_TEXT)}
+                title={away.title ?? undefined}
+                data-projected={(m.away_team_id && away.projected) || undefined}
+              >
                 {m.away_team_id ? away.text : '—'}
               </span>
               {/* A bye row has no away id — `teamName` renders the literal
@@ -710,11 +750,13 @@ function TotalPointsWeek({
   doc,
   myTeamId,
   leagueTimeZone,
+  projectedOf,
 }: {
   leagueId: string
   doc: WeekMatchups
   myTeamId: string | null
   leagueTimeZone: string | null
+  projectedOf: ProjectedOf
 }) {
   const rows = leaderboardRows(doc)
   const [picked, setPicked] = useState<string | null>(null)
@@ -750,9 +792,7 @@ function TotalPointsWeek({
               {row.points !== null ? (
                 <span className="fs-num shrink-0 text-[13px] font-bold tracking-[-0.01em] text-ink">{formatPoints(row.points)}</span>
               ) : (
-                <span className="shrink-0 text-[11px] font-medium text-n-6" title="No scoring batch has reached this team yet — an absent row is not a score.">
-                  pending
-                </span>
+                <PendingRowCell cell={leaderboardPendingCell(doc.league_week.status, projectedOf(row.team_id))} />
               )}
               <Badge variant={row.is_final ? 'stroke' : 'lime'} className="shrink-0" title={row.is_final ? 'Final' : 'Provisional — the week has not finalized.'}>
                 {row.is_final ? 'Final' : 'Live'}
@@ -780,6 +820,20 @@ function TotalPointsWeek({
   )
 }
 
+/** A leaderboard row with no results row: its projection in a live week
+ *  (Q108, the projected-points blue), else `pending` / the dash. */
+function PendingRowCell({ cell }: { cell: ReturnType<typeof leaderboardPendingCell> }) {
+  return (
+    <span
+      className={cn('shrink-0 text-[11px] font-medium', cell.projected ? cn('fs-num font-bold', PROJ_TEXT) : 'text-n-6')}
+      title={cell.title ?? undefined}
+      data-projected={cell.projected || undefined}
+    >
+      {cell.text}
+    </span>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // The board — both lineups slot by slot, the totals, then the benches
 // ---------------------------------------------------------------------------
@@ -787,6 +841,9 @@ function TotalPointsWeek({
 interface BoardSide {
   teamId: string
   name: string
+  /** Q108: the scoreboard above already shows this side's projected total in
+   *  its score's place — the box total doesn't repeat it. */
+  projectedOnScoreboard?: boolean
 }
 
 /**
@@ -897,9 +954,9 @@ function LineupBoard({
                 ))}
                 <div className={cn(grid, 'py-2')} data-total-row>
                   {!two && centre(BOX_SUM_LABEL)}
-                  <TotalCell data={homeData} teamId={home.teamId} projOf={projOf} live={live} />
+                  <TotalCell data={homeData} teamId={home.teamId} projOf={projOf} live={live} hideProj={home.projectedOnScoreboard} />
                   {two && centre(BOX_SUM_LABEL)}
-                  {two && (awaySide ? <TotalCell data={awayData} teamId={awaySide.teamId} projOf={projOf} live={live} mirror /> : <span />)}
+                  {two && (awaySide ? <TotalCell data={awayData} teamId={awaySide.teamId} projOf={projOf} live={live} hideProj={awaySide.projectedOnScoreboard} mirror /> : <span />)}
                 </div>
               </section>
             )}
@@ -1051,12 +1108,15 @@ function TotalCell({
   teamId,
   projOf,
   live,
+  hideProj = false,
   mirror = false,
 }: {
   data: TeamBoxScore | undefined
   teamId: string
   projOf: (id: string) => number | null
   live: boolean
+  /** Q108: the scoreboard side already shows the projection — not twice. */
+  hideProj?: boolean
   mirror?: boolean
 }) {
   // No lineup ⇒ no sum to speak of (the side's state says why), not `pending`.
@@ -1074,7 +1134,7 @@ function TotalCell({
       >
         {sum.text}
       </span>
-      {proj && (
+      {proj && !hideProj && (
         <span className={cn('fs-num text-[10px] font-semibold', PROJ_TEXT)} data-proj-total>
           {proj}
         </span>

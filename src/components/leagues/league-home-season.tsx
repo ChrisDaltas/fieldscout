@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import type { LeagueDetail } from '@/hooks/use-league'
@@ -19,6 +20,7 @@ import { useMatchupsLive } from '@/hooks/use-matchups'
 import { usePlayoffBracketLive } from '@/hooks/use-playoff-bracket'
 import { useSchedule } from '@/hooks/use-schedule'
 import { useStandingsLive } from '@/hooks/use-standings'
+import { useTeamWeekProjections } from '@/hooks/use-team-week-projections'
 import { liveScoringDelay, useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import type { PlayoffBracket as PlayoffBracketDoc } from '@/lib/leagues/api/playoffs-service'
@@ -53,12 +55,13 @@ import {
   OVERRIDDEN_LABEL,
   OVERRIDDEN_TITLE,
   formatPoints,
+  leaderboardPendingCell,
   leaderboardRows,
   resultChip,
-  scoreCell,
   sideResult,
   splitRows,
   teamName,
+  teamScoreCell,
   weekBadge,
 } from './matchup-view-ops'
 import { PlayoffBracket } from './playoff-bracket'
@@ -146,6 +149,16 @@ export function SeasonHero({
   // standings page's "Playoffs" tab mounts; fetched only in that state.
   const bracket = usePlayoffBracketLive(leagueId, state === 'playoffs', { fallbackPoll: true })
   const managers = useMemo(() => managersByTeam(data.members), [data.members])
+  // Q108: a team with no score in a live week shows its projected total.
+  const weekTeamIds = useMemo(() => (matchups.data?.teams ?? []).map((t) => t.id), [matchups.data?.teams])
+  const projectedOf = useTeamWeekProjections({
+    leagueId,
+    season: matchups.data?.season,
+    week: matchups.data?.week,
+    weekStatus: matchups.data?.league_week.status,
+    teamIds: weekTeamIds,
+    irSlots: data.settings.roster_settings.ir_slots,
+  })
 
   const connection =
     matchups.connection === 'reconnecting' || standings.connection === 'reconnecting' || bracket.connection === 'reconnecting'
@@ -192,6 +205,7 @@ export function SeasonHero({
               onMatchupsRetry={() => matchups.refetch()}
               myTeamId={myTeamId}
               managers={managers}
+              projectedOf={projectedOf}
               bracket={
                 <BracketCard
                   leagueId={leagueId}
@@ -253,6 +267,7 @@ function LiveScoreboard({
   onMatchupsRetry,
   myTeamId,
   managers,
+  projectedOf,
   bracket,
 }: {
   leagueId: string
@@ -268,6 +283,7 @@ function LiveScoreboard({
   onMatchupsRetry: () => void
   myTeamId: string | null
   managers: ReadonlyMap<string, string>
+  projectedOf: ProjectedOf
   bracket: ReactNode
 }) {
   // "● Live" only while the shown week's games are being played.
@@ -310,6 +326,7 @@ function LiveScoreboard({
           onMatchupsRetry={onMatchupsRetry}
           myTeamId={myTeamId}
           managers={managers}
+          projectedOf={projectedOf}
         />
       )}
     </section>
@@ -328,6 +345,7 @@ function ScoreboardWeek({
   onMatchupsRetry,
   myTeamId,
   managers,
+  projectedOf,
 }: {
   leagueId: string
   data: LeagueDetail
@@ -340,6 +358,7 @@ function ScoreboardWeek({
   onMatchupsRetry: () => void
   myTeamId: string | null
   managers: ReadonlyMap<string, string>
+  projectedOf: ProjectedOf
 }) {
   if (scheduleState === 'pending' || (week !== null && matchupsPending && !matchups)) {
     return <Skeleton className="h-36 rounded-xl" data-skeleton="scoreboard" />
@@ -356,7 +375,7 @@ function ScoreboardWeek({
   if (!matchups) return null
 
   if (matchups.schedule_mode === 'total_points') {
-    return <WeekSoFar leagueId={leagueId} doc={matchups} myTeamId={myTeamId} title={`Week ${week}`} />
+    return <WeekSoFar leagueId={leagueId} doc={matchups} myTeamId={myTeamId} title={`Week ${week}`} projectedOf={projectedOf} />
   }
 
   const { primary } = splitRows(matchups.matchups)
@@ -376,12 +395,15 @@ function ScoreboardWeek({
     <ol className="flex flex-col gap-[9px]" data-scoreboard-week={week}>
       {rows.map((row) => (
         <li key={row.id}>
-          <ScoreboardMatchup leagueId={leagueId} doc={matchups} row={row} myTeamId={myTeamId} managers={managers} />
+          <ScoreboardMatchup leagueId={leagueId} doc={matchups} row={row} myTeamId={myTeamId} managers={managers} projectedOf={projectedOf} />
         </li>
       ))}
     </ol>
   )
 }
+
+/** A team's projected total for the shown week (`useTeamWeekProjections`). */
+type ProjectedOf = (teamId: string) => number | null
 
 function isMine(row: MatchupRow, myTeamId: string | null): boolean {
   return myTeamId !== null && (row.home_team_id === myTeamId || row.away_team_id === myTeamId)
@@ -397,21 +419,23 @@ function ScoreboardMatchup({
   row,
   myTeamId,
   managers,
+  projectedOf,
 }: {
   leagueId: string
   doc: WeekMatchups
   row: MatchupRow
   myTeamId: string | null
   managers: ReadonlyMap<string, string>
+  projectedOf: ProjectedOf
 }) {
   const href = `/app/leagues/${leagueId}/matchup/${row.id}`
   return (
     <div className="flex min-w-0 flex-col gap-[7px]" data-matchup={row.id} data-matchup-status={row.status}>
       {/* v7's matchup pair: two side tiles with a "vs" disc between them. */}
       <div className="relative grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-[7px]">
-        <ScoreboardSide doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} manager={managers.get(row.home_team_id) ?? null} mine={row.home_team_id === myTeamId} />
+        <ScoreboardSide doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} projected={projectedOf(row.home_team_id)} manager={managers.get(row.home_team_id) ?? null} mine={row.home_team_id === myTeamId} />
         {row.away_team_id ? (
-          <ScoreboardSide doc={doc} row={row} teamId={row.away_team_id} score={row.away_score} manager={managers.get(row.away_team_id) ?? null} mine={row.away_team_id === myTeamId} align="end" />
+          <ScoreboardSide doc={doc} row={row} teamId={row.away_team_id} score={row.away_score} projected={projectedOf(row.away_team_id)} manager={managers.get(row.away_team_id) ?? null} mine={row.away_team_id === myTeamId} align="end" />
         ) : (
           <p className="flex min-w-0 items-center justify-end rounded-xl border border-n-4 px-3.5 py-3 text-right text-[12px] font-semibold text-n-6" data-side="bye">
             Bye
@@ -450,6 +474,7 @@ function ScoreboardSide({
   row,
   teamId,
   score,
+  projected,
   manager,
   mine,
   align = 'start',
@@ -458,12 +483,14 @@ function ScoreboardSide({
   row: MatchupRow
   teamId: string
   score: number | null
+  /** Q108: the team's projected total — shown only while it has no score in a live week. */
+  projected: number | null
   manager: string | null
   mine: boolean
   align?: 'start' | 'end'
 }) {
   const name = teamName(doc, teamId)
-  const cell = scoreCell(score, row.status)
+  const cell = teamScoreCell(score, row.status, doc.league_week.status, projected)
   const lost = resultChip(sideResult(row, teamId, doc.results)).text === 'L'
   return (
     <div
@@ -489,9 +516,10 @@ function ScoreboardSide({
         </div>
       </div>
       <p
-        className={cn('fs-num text-[20px] font-bold leading-none tracking-[-0.02em]', cell.pending || lost ? 'text-n-6' : 'text-ink')}
+        className={cn('fs-num text-[20px] font-bold leading-none tracking-[-0.02em]', cell.projected ? PROJ_TEXT : cell.pending || lost ? 'text-n-6' : 'text-ink')}
         title={cell.title ?? undefined}
         data-score={cell.pending ? 'pending' : cell.text}
+        data-projected={cell.projected || undefined}
       >
         {cell.text}
       </p>
@@ -566,7 +594,19 @@ function BracketCard({
  *  field" — the week leaderboard's top rows (stored `team_week_results`,
  *  ranked by the ops; absence is `pending`, never 0) with the viewer's own
  *  row when it sits below. */
-function WeekSoFar({ leagueId, doc, myTeamId, title }: { leagueId: string; doc: WeekMatchups; myTeamId: string | null; title: string }) {
+function WeekSoFar({
+  leagueId,
+  doc,
+  myTeamId,
+  title,
+  projectedOf,
+}: {
+  leagueId: string
+  doc: WeekMatchups
+  myTeamId: string | null
+  title: string
+  projectedOf: ProjectedOf
+}) {
   const rows = leaderboardRows(doc)
   const top = rows.slice(0, 4)
   const mine = myTeamId ? rows.find((r) => r.team_id === myTeamId) : undefined
@@ -605,12 +645,26 @@ function WeekSoFar({ leagueId, doc, myTeamId, title }: { leagueId: string; doc: 
             {row.points !== null ? (
               <span className="fs-num shrink-0 text-[12px] font-bold text-ink">{formatPoints(row.points)}</span>
             ) : (
-              <span className="shrink-0 text-[10px] font-medium text-n-6">pending</span>
+              <PendingRowCell cell={leaderboardPendingCell(doc.league_week.status, projectedOf(row.team_id))} />
             )}
           </div>
         ))}
       </div>
     </div>
+  )
+}
+
+/** A leaderboard row with no results row: its projection in a live week
+ *  (Q108, the projected-points blue), else `pending` / the dash. */
+function PendingRowCell({ cell }: { cell: ReturnType<typeof leaderboardPendingCell> }) {
+  return (
+    <span
+      className={cn('shrink-0 text-[10px] font-medium', cell.projected ? cn('fs-num font-bold', PROJ_TEXT) : 'text-n-6')}
+      title={cell.title ?? undefined}
+      data-projected={cell.projected || undefined}
+    >
+      {cell.text}
+    </span>
   )
 }
 

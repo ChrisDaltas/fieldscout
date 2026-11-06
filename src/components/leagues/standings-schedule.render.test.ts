@@ -405,7 +405,10 @@ describe('schedule — the grid and the commissioner’s doors', () => {
     expect(between(html, 'data-week="1"', 'data-week="2"')).toContain('120.50')
     expect(between(html, 'data-week="2"', 'data-week="3"')).toContain('>Live<')
     expect(between(html, 'data-week="2"', 'data-week="3"')).toContain('>Current<')
-    expect(between(html, 'data-week="2"', 'data-week="3"')).toContain('pending') // E61: the unscored side
+    // Q108: the unscored side of the LIVE week shows its projection — none is
+    // on record here, so the dash (never 0.00, and no longer `pending`).
+    expect(between(html, 'data-week="2"', 'data-week="3"')).toMatch(/title="No score yet this week, and no projection to show[^"]*"[^>]*>—</)
+    expect(between(html, 'data-week="2"', 'data-week="3"')).not.toMatch(/>0\.00</)
     expect(between(html, 'data-week="3"', 'data-week="4"')).toContain('second game')
     expect(between(html, 'data-week="3"', 'data-week="4"')).toContain('>—<')
     expect(html).not.toMatch(/L\.D\d|Q39|Q30/)

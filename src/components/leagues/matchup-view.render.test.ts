@@ -30,6 +30,7 @@ import { useLeagueChannel } from '@/hooks/use-league-channel'
 import { leaguePlayerValueKeys, type LeaguePlayerValue } from '@/hooks/use-league-player-values'
 import { leaguesKeys } from '@/hooks/use-leagues'
 import { leagueMatchupKeys } from '@/hooks/use-matchups'
+import { teamLineupKeys } from '@/hooks/use-lineup'
 import { leagueRosterKeys } from '@/hooks/use-rosters'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import { statsDegradedKeys } from '@/hooks/use-stats-degraded'
@@ -231,6 +232,8 @@ interface Seed {
   connection?: 'live' | 'reconnecting' | 'connecting'
   rosters?: LeagueRosters
   values?: LeaguePlayerValue[]
+  /** Q108: stored lineups for the shown week (every team's projection). */
+  lineups?: Array<{ team_id: string; slot_map: Record<string, string> }>
 }
 
 function renderMatchups(seed: Seed = {}): string {
@@ -257,6 +260,20 @@ function renderMatchups(seed: Seed = {}): string {
   qc.setQueryData(statsDegradedKeys.flag(), seed.flag ?? FLAG_OK)
   if (seed.rosters) qc.setQueryData(leagueRosterKeys.all(LEAGUE), seed.rosters)
   if (seed.values) qc.setQueryData(leaguePlayerValueKeys.week(LEAGUE, 2099, weekNumber), seed.values)
+  for (const l of seed.lineups ?? []) {
+    qc.setQueryData(teamLineupKeys.week(l.team_id, weekNumber), {
+      id: `l-${l.team_id}`,
+      team_id: l.team_id,
+      season: 2099,
+      week: weekNumber,
+      slot_map: l.slot_map,
+      starters: [],
+      bench: [],
+      locked_at: null,
+      edited_by_commish: false,
+      set_at: null,
+    })
+  }
 
   vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live', degraded: false })
   return render(qc, createElement(MatchupPage, { leagueId: LEAGUE, matchupId: seed.matchupId ?? null, weekParam: seed.weekParam ?? null }))
@@ -439,7 +456,9 @@ describe('§16.5.3 — total_points REPLACES the matchup surface with the week l
     expect(html).toContain('>120.50<')
     expect(html).toContain('>101.02<')
     const pendingRow = html.match(/data-leaderboard-row="[^"]+" data-rank="pending"[\s\S]*?<\/button>/)?.[0]
-    expect(pendingRow).toContain('>pending<')
+    // Q108: the week is LIVE; with no lineup on record nothing can be
+    // projected, so the dash — never 0.00.
+    expect(pendingRow).toContain('title="No score yet this week, and no projection to show')
     expect(pendingRow).not.toContain('0.00')
   })
 
@@ -963,5 +982,57 @@ describe('F566 — win chance from the remaining projections, and the W/L streak
     expect(head).not.toMatch(/text-m-(?:green|red)/)
     // No decided game → no streak (the default schedule is all live).
     expect(renderMatchups()).not.toContain('data-streak')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Q108 (Chris 2026-11-06): "a Team with no score should show the projected
+// total for the week, and that projection should keep updating as
+// projections change"
+// ---------------------------------------------------------------------------
+
+describe('Q108 — the matchup page: a team with no score in a live week shows its projected total', () => {
+  const val = (player_id: string, projected_points: number | null): LeaguePlayerValue => ({ player_id, projected_points, projected_missing: null, season_points: null, season_games: 0 })
+  const lineups = [{ team_id: T3, slot_map: { 'qb:0': 'p3a', 'rb:0': 'p3b' } }]
+  const values = [val('p3a', 21.3), val('p3b', 9.95)]
+
+  it('"Around the league": the unscored side reads "Proj 31.3" in the projected blue; the scored side keeps its score', () => {
+    const html = renderMatchups({ lineups, values })
+    const row = html.slice(html.indexOf('data-matchup-row="m2"'))
+    expect(row).toMatch(/text-fs-blue-deep" title="Projected — this team hasn’t scored yet this week\." data-projected="true">Proj 31\.3</)
+    expect(row).toContain('>12.25<')
+  })
+
+  it('the scoreboard side of an opened matchup reads the projection the same way — never a score, never 0.00', () => {
+    const html = renderMatchups({ matchupId: 'm2', lineups, values, boxes: {} })
+    expect(html).toMatch(/text-fs-blue-deep" title="Projected — this team hasn’t scored yet this week\." data-score="Proj 31\.3" data-projected="true">Proj 31\.3</)
+    expect(html).not.toContain('data-score="pending"')
+  })
+
+  it('R1806: the box total does not repeat the projection the scoreboard side already shows; the scored side keeps its box projection', () => {
+    const html = renderMatchups({
+      matchupId: 'm2',
+      lineups: [{ team_id: T3, slot_map: { 'qb:0': 'p-qb:0', 'rb:0': 'p-rb:0' } }],
+      values: [val('p-qb:0', 20), val('p-rb:0', 11.5)],
+      boxes: { [T3]: SCORED_BOX(T3), [T4]: SCORED_BOX(T4) },
+    })
+    expect(html).toContain('data-score="Proj 31.5" data-projected="true"')
+    const totals = html.slice(html.indexOf('data-total-row'))
+    const t3 = totals.slice(totals.indexOf(`data-box-total="${T3}"`), totals.indexOf(`data-box-total="${T4}"`))
+    const t4 = totals.slice(totals.indexOf(`data-box-total="${T4}"`))
+    expect(t3).not.toContain('data-proj-total')
+    expect(t4).toMatch(/data-proj-total="true">Proj 31\.5</)
+  })
+
+  it('no lineup on record → the dash (never "Proj 0.0")', () => {
+    const html = renderMatchups({ matchupId: 'm2', values, boxes: {} })
+    expect(html).toContain('data-score="—"')
+    expect(html).not.toContain('Proj 0.0')
+  })
+
+  it('a finished week (the correction window) keeps `pending` — no projection after the games', () => {
+    const html = renderMatchups({ matchupId: 'm2', lineups, values, boxes: {}, week: weekDoc({ league_week: { status: 'correction_window', median_score: null, finalized_at: null } }) })
+    expect(html).toContain('data-score="pending"')
+    expect(html).not.toContain('Proj 31.3')
   })
 })

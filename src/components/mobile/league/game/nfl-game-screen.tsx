@@ -1,19 +1,21 @@
 'use client'
 
 import { useParams, useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { formatKickoff } from '@/components/leagues/lineup-editor-ops'
-import { scoreCell, splitRows, teamName } from '@/components/leagues/matchup-view-ops'
+import { splitRows, teamName, teamScoreCell } from '@/components/leagues/matchup-view-ops'
 import { CenteredNote, SkeletonBlocks, StatusLine, useChipRowInView } from '@/components/mobile/league/league/league-bits'
 import { sideScore, sidesOf } from '@/components/mobile/league/match/match-ops'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MobileScreen, RoundNavButton } from '@/components/mobile/ui/mobile-header'
+import { M_PROJ_TEXT } from '@/components/players/projected-points'
 import { useAuth } from '@/hooks/use-auth'
 import { useLeague } from '@/hooks/use-league'
 import { useMatchupsLive } from '@/hooks/use-matchups'
 import { useMobileTeamGames, type MobileWeekGame } from '@/hooks/use-mobile-team-games'
 import { useNflGameBox } from '@/hooks/use-nfl-game-box'
+import { useTeamWeekProjections } from '@/hooks/use-team-week-projections'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
@@ -128,25 +130,53 @@ function TopStrip({ leagueId, game, pending }: { leagueId: string; game: NflGame
   // that week loads; the game's own title waits for that game.
   const title = pending ? '\u00a0' : `${game.away_team} @ ${game.home_team}`
   if (!myTeamId || !sameSeason) return <GameTitle title={title} />
-  return <MatchStrip leagueId={leagueId} week={game.week} myTeamId={myTeamId} title={title} />
+  return <MatchStrip leagueId={leagueId} week={game.week} myTeamId={myTeamId} title={title} irSlots={league.data?.settings.roster_settings.ir_slots ?? NO_IR_SLOTS} />
 }
 
 function GameTitle({ title }: { title: string }) {
   return <p className="truncate text-center text-[16px] font-semibold text-m-t1">{title}</p>
 }
 
-function MatchStrip({ leagueId, week, myTeamId, title }: { leagueId: string; week: number; myTeamId: string; title: string }) {
+const NO_IR_SLOTS: ReadonlyArray<{ key: string }> = []
+
+function MatchStrip({
+  leagueId,
+  week,
+  myTeamId,
+  title,
+  irSlots,
+}: {
+  leagueId: string
+  week: number
+  myTeamId: string
+  title: string
+  irSlots: ReadonlyArray<{ key: string }>
+}) {
   const matchups = useMatchupsLive(leagueId, week)
   const doc = matchups.data
   const row = doc ? (splitRows(doc.matchups).primary.find((m) => m.home_team_id === myTeamId || m.away_team_id === myTeamId) ?? null) : null
   const sides = row ? sidesOf(row, myTeamId) : null
+  // Q108: a side with no score in a live week shows its projected total.
+  const stripTeams = useMemo(() => (sides?.b ? [sides.a, sides.b] : []), [sides?.a, sides?.b])
+  const projectedOf = useTeamWeekProjections({
+    leagueId,
+    season: doc?.season,
+    week: doc?.week,
+    weekStatus: doc?.league_week.status,
+    teamIds: stripTeams,
+    irSlots,
+  })
   if (!doc || !row || !sides?.b) return <GameTitle title={title} />
   const side = (teamId: string, mirror: boolean) => {
-    const score = scoreCell(sideScore(row, teamId), row.status)
+    const score = teamScoreCell(sideScore(row, teamId), row.status, doc.league_week.status, projectedOf(teamId))
     return (
       <div className={cn('flex min-w-0 flex-col', !mirror && 'items-end')} data-strip-team={teamId}>
         <span className="max-w-full truncate whitespace-nowrap text-[11px] font-medium text-m-t3">{teamName(doc, teamId)}</span>
-        <span className={cn('text-[16px] font-semibold', score.pending ? 'text-m-t3' : 'text-m-t1')} title={score.title ?? undefined}>
+        <span
+          className={cn('text-[16px] font-semibold', score.projected ? M_PROJ_TEXT : score.pending ? 'text-m-t3' : 'text-m-t1')}
+          title={score.title ?? undefined}
+          data-projected={score.projected || undefined}
+        >
           {score.text}
         </span>
       </div>

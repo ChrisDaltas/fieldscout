@@ -282,7 +282,8 @@ describe('League › Matchups', () => {
     expect(html).toContain('href="/app/leagues/league-1/matchup/mB"')
     expect(html).toContain('39.70')
     expect(html).toContain('16.40')
-    expect(html).toContain('pending')
+    // Q108: the LIVE week's unscored side shows its projection — none on record here, so the dash.
+    expect(html).toContain('title="No score yet this week, and no projection to show')
     expect(html).toContain('0-1')
     expect(html).toContain('1-0')
   })
@@ -431,7 +432,7 @@ describe('League › Matchups — second-opponent games', () => {
     expect(mine).toContain(`aria-label="${OVERRIDDEN_TITLE}"`)
     const theirs = group.slice(group.indexOf('data-matchup="sA"'))
     expect(theirs).toContain('16.40')
-    expect(theirs).toContain('pending')
+    expect(theirs).toContain('title="No score yet this week, and no projection to show')
     expect(theirs).not.toMatch(/>0\.00</)
   })
 

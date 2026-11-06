@@ -27,6 +27,7 @@ import { commishLogKeys } from '@/hooks/use-commish-log'
 import type { DraftChatRow } from '@/hooks/use-draft-chat-ops'
 import { leagueActivityKeys } from '@/hooks/use-league-activity'
 import { leagueChatKeys } from '@/hooks/use-league-chat'
+import { LEAGUE_PLAYER_VALUES_REFETCH_MS, leaguePlayerValueKeys, type LeaguePlayerValue } from '@/hooks/use-league-player-values'
 import { useLeagueChannel } from '@/hooks/use-league-channel'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { leaguesKeys } from '@/hooks/use-leagues'
@@ -49,6 +50,7 @@ import {
   PLAYOFF_NO_ROWS_COPY,
 } from './league-home-season-ops'
 import { LeagueHomeStates } from './league-home-states'
+import { NO_PROJECTION_TITLE, PENDING_SCORE_TITLE } from './matchup-view-ops'
 import { FORMER_MEMBER_LABEL, MESSAGE_BOARD_EMPTY_COPY, MESSAGE_BOARD_ERROR_COPY } from './league-message-board'
 import { GOLDEN_STANDINGS } from './standings-schedule.fixtures'
 import { NO_FINAL_WEEKS_COPY } from './standings-table-ops'
@@ -204,6 +206,11 @@ interface Seed {
   flag?: LiveScoringFlags
   connection?: 'live' | 'reconnecting' | 'connecting'
   chat?: DraftChatRow[] | 'error'
+  /** Q108: other teams' week-2 lineups and the week's projections. */
+  lineups?: TeamLineupRow[]
+  values?: LeaguePlayerValue[]
+  /** Re-render over the same cache (the "keeps updating" probe). */
+  client?: QueryClient
 }
 
 const logItem = (over: Partial<CommishLogItem> & Pick<CommishLogItem, 'id'>): CommishLogItem => ({
@@ -236,8 +243,10 @@ const LOG: CommishLogPage = {
 }
 
 function renderHome(seed: Seed = {}): string {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+  const qc = seed.client ?? new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
   const detail = seed.detail ?? detailWith()
+  for (const row of seed.lineups ?? []) qc.setQueryData(teamLineupKeys.week(row.team_id, row.week), row)
+  if (seed.values) qc.setQueryData(leaguePlayerValueKeys.week(LEAGUE, 2099, 2), seed.values)
   qc.setQueryData(leaguesKeys.detail(LEAGUE), detail)
 
   const schedule = seed.schedule ?? SCHEDULE
@@ -480,8 +489,107 @@ describe('§16.5.3 — a total_points league’s hero is "your week so far vs th
     expect(html).toContain(`data-leaderboard-row="${T2}"`)
     expect(html).toContain('90.00')
     expect(html).toContain('71.50')
-    expect(html).toContain('>pending<')
+    // Q108: the week is LIVE and no lineup is on record for the two teams
+    // with no row, so nothing can be projected — the dash, never 0 and no
+    // longer `pending` (that word is for a week whose games are over).
+    expect(html).toContain(`title="${NO_PROJECTION_TITLE}"`)
+    expect(html).not.toContain('>pending<')
     expect(html).not.toContain('data-matchup=')
+  })
+
+  it('Q108: a team with no row in a LIVE week shows its projected total in the projected blue, still unranked', () => {
+    const doc = weekDoc(2, {
+      schedule_mode: 'total_points',
+      results: [{ team_id: T1, points: 71.5, opponent_team_id: null, h2h_result: null, median_result: null, second_opponent_team_id: null, second_result: null, is_final: false }],
+    })
+    const html = renderHome({ weeks: { 2: doc }, lineups: [lineupOf(T2, { 'qb:0': 'p-qb', 'rb:0': 'p-rb' })], values: [value('p-qb', 18.4), value('p-rb', 10.1)] })
+    const row = html.slice(html.indexOf(`data-leaderboard-row="${T2}"`))
+    expect(row).toMatch(/text-fs-blue-deep[^>]*title="Projected — this team hasn’t scored yet this week\."[^>]*data-projected="true">Proj 28\.5</)
+    // Still unranked: the rank cell is the dash, the scored team ranks 1.
+    expect(row.slice(0, row.indexOf('Proj 28.5'))).toMatch(/>—</)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Q108 (Chris 2026-11-06) — "a Team with no score should show the projected
+// total for the week, and that projection should keep updating as
+// projections change"
+// ---------------------------------------------------------------------------
+
+function lineupOf(teamId: string, slotMap: Record<string, string>): TeamLineupRow {
+  return { ...LINEUP, id: `l-${teamId}`, team_id: teamId, slot_map: slotMap }
+}
+
+function value(playerId: string, projected: number | null): LeaguePlayerValue {
+  return { player_id: playerId, projected_points: projected, projected_missing: projected === null ? 'no_projection' : null, season_points: null, season_games: 0 }
+}
+
+/** The side tile's score cell for one team: "text|blue-or-plain|title". */
+function sideScore(html: string, teamId: string): string {
+  const at = html.indexOf(`data-side="${teamId}"`)
+  const cell = html.slice(at).match(/<p class="([^"]*)"(?: title="([^"]*)")? data-score="[^"]*"(?: data-projected="true")?>([^<]*)</)
+  return cell ? `${cell[3]}|${cell[1]!.includes('text-fs-blue-deep') ? 'blue' : 'plain'}|${cell[2] ?? ''}` : 'none'
+}
+
+describe('Q108 — League Home: a team with no score in a live week shows its projected total', () => {
+  // IR seats are not starters (`starterIdsOf`): p-ir's 99 is never counted.
+  const lineups = [lineupOf(T3, { 'qb:0': 'p-qb', 'wr:0': 'p-wr', 'ir1': 'p-ir' }), lineupOf(T4, { 'qb:0': 'p-qb2' })]
+  const values = [value('p-qb', 20.25), value('p-wr', 12.5), value('p-ir', 99), value('p-qb2', 17)]
+
+  it('the unscored side reads "Proj <total>" in the projected blue with the explaining title; IR is not a starter; a real score stays ink', () => {
+    const html = renderHome({ lineups, values })
+    expect(sideScore(html, T3)).toBe('Proj 32.8|blue|Projected — this team hasn’t scored yet this week.')
+    // T4 HAS a score (12.25) — the score wins over any projection.
+    expect(sideScore(html, T4)).toBe('12.25|plain|')
+    expect(html).not.toMatch(/data-score="pending"/)
+  })
+
+  it('no lineup on record, no filled starter, or one starter without a projection → the dash, never "Proj 0.0"', () => {
+    expect(sideScore(renderHome({ values }), T3)).toBe(`—|plain|${NO_PROJECTION_TITLE}`)
+    expect(sideScore(renderHome({ lineups: [lineupOf(T3, {})], values }), T3)).toBe(`—|plain|${NO_PROJECTION_TITLE}`)
+    expect(sideScore(renderHome({ lineups: [lineupOf(T3, { 'qb:0': 'p-qb', 'wr:0': 'p-none' })], values: [...values, value('p-none', null)] }), T3)).toBe(`—|plain|${NO_PROJECTION_TITLE}`)
+    expect(renderHome({ lineups: [lineupOf(T3, {})], values })).not.toContain('Proj 0.0')
+  })
+
+  it('a week whose games are over (correction window — incl. a held week) keeps `pending`; no projection', () => {
+    const held = { ...WEEK2, league_week: { ...WEEK2.league_week, status: 'correction_window' } }
+    const ladder = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => (w.week === 2 ? { ...w, status: 'correction_window' } : w)) }
+    const html = renderHome({ schedule: ladder, weeks: { 1: WEEK1, 2: held }, lineups, values })
+    expect(sideScore(html, T3)).toBe(`pending|plain|${PENDING_SCORE_TITLE}`)
+    expect(html).not.toContain('Proj 32.8')
+  })
+
+  it('the projection keeps updating: new projections in the cache re-render the cell (no reload)', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    expect(sideScore(renderHome({ client, lineups, values }), T3)).toMatch(/^Proj 32\.8\|blue/)
+    client.setQueryData(leaguePlayerValueKeys.week(LEAGUE, 2099, 2), [value('p-qb', 24), value('p-wr', 12.5), value('p-qb2', 17)])
+    expect(sideScore(renderHome({ client }), T3)).toMatch(/^Proj 36\.5\|blue/)
+    // …and a lineup change does too (the shared `useLineup` cache entry).
+    client.setQueryData(teamLineupKeys.week(T3, 2), lineupOf(T3, { 'qb:0': 'p-qb' }))
+    expect(sideScore(renderHome({ client }), T3)).toMatch(/^Proj 24\.0\|blue/)
+  })
+
+  it('the projections read re-polls on an interval and on focus — the "keeps updating" wiring', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    renderHome({ client, lineups, values })
+    const opts = client.getQueryCache().find({ queryKey: leaguePlayerValueKeys.week(LEAGUE, 2099, 2) })?.options as { refetchInterval?: unknown; refetchOnWindowFocus?: unknown } | undefined
+    expect(opts?.refetchInterval).toBe(LEAGUE_PLAYER_VALUES_REFETCH_MS)
+    expect(opts?.refetchOnWindowFocus).toBe(true)
+    const lineupOpts = client.getQueryCache().find({ queryKey: teamLineupKeys.week(T3, 2) })?.options as { refetchInterval?: unknown } | undefined
+    expect(lineupOpts?.refetchInterval).toBe(LEAGUE_PLAYER_VALUES_REFETCH_MS)
+  })
+
+  it('the poll is opt-in: a week whose games are over reads no projections and polls nothing (R1805)', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    const held = { ...WEEK2, league_week: { ...WEEK2.league_week, status: 'correction_window' } }
+    const ladder = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => (w.week === 2 ? { ...w, status: 'correction_window' } : w)) }
+    renderHome({ client, schedule: ladder, weeks: { 1: WEEK1, 2: held }, lineups, values })
+    const polling = client
+      .getQueryCache()
+      .findAll({ queryKey: ['league-player-values'] })
+      .filter((q) => (q.options as { refetchInterval?: unknown }).refetchInterval)
+    expect(polling).toEqual([])
+    expect((client.getQueryCache().find({ queryKey: teamLineupKeys.week(T3, 2) })?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval).toBeUndefined()
   })
 })
 

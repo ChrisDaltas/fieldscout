@@ -264,6 +264,20 @@ export function starterIdsOf(slotMap: Readonly<Record<string, string>>, irSlots:
     .map(([, pid]) => pid)
 }
 
+/** A stored lineup's whole projected total (Q108 — a team with no score
+ *  shows this): its starters (`starterIdsOf`) by `wholeProjectedTotal`'s
+ *  rule. Null — the dash — with no lineup row, no filled starter, or any
+ *  starter without a projection (incl. while the projections read loads). */
+export function lineupProjectedTotal(
+  slotMap: Readonly<Record<string, string>> | null | undefined,
+  irSlots: ReadonlyArray<{ key: string }>,
+  projOf: (playerId: string) => number | null | undefined,
+): number | null {
+  if (!slotMap) return null
+  const ids = starterIdsOf(slotMap, irSlots)
+  return wholeProjectedTotal(projectedTotal(ids, projOf), ids.filter(Boolean).length)
+}
+
 export interface LineupCheck {
   id: 'starters' | 'injury' | 'bye' | 'proj'
   label: string

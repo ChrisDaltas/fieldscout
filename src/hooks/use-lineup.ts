@@ -113,7 +113,14 @@ export interface TeamLineupRow {
 
 /** The stored lineup, or `null` when no row exists yet for the week. */
 export function useLineup(teamId: string | undefined, week: number | undefined) {
-  return useQuery({
+  return useQuery(lineupQueryOptions(teamId, week))
+}
+
+/** `useLineup`'s query, shared so a read of many teams' lineups
+ *  (`useTeamWeekProjections`, Q108) uses the SAME cache entries — and so a
+ *  lineup save's `teamLineupKeys.all` invalidation refreshes it too. */
+export function lineupQueryOptions(teamId: string | undefined, week: number | undefined) {
+  return {
     queryKey: teamLineupKeys.week(teamId ?? 'none', week ?? 0),
     enabled: Boolean(teamId) && week !== undefined,
     queryFn: async (): Promise<TeamLineupRow | null> => {
@@ -133,7 +140,7 @@ export function useLineup(teamId: string | undefined, week: number | undefined) 
         bench: (data.bench ?? []) as unknown as string[],
       }
     },
-  })
+  }
 }
 
 export interface SetLineupInput {

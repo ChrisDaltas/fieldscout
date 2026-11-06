@@ -29,6 +29,8 @@ const SURFACES = [
   'src/components/lists/builder/player-sidebar.tsx',
   'src/components/big-board/board-row.tsx',
   'src/components/home/trending-players-card.tsx',
+  'src/components/leagues/league-home-season.tsx', // Q108: League Home — an unscored team's projected total, the leaderboard's
+  'src/components/leagues/schedule-view.tsx', // Q108: the schedule's live week — an unscored team's projected total
 ]
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -89,6 +91,12 @@ describe('projected points are dark blue, one mechanism (D497)', () => {
  */
 const PHONE_SURFACES = [
   'src/components/mobile/community/community-detail.tsx', // Community list detail: each player's projection
+  // Q108 (Chris 2026-11-06): an unscored team's projected total in a live week
+  'src/components/mobile/league/league/matchups-segment.tsx', // League › Matchups cards + leaderboard
+  'src/components/mobile/league/match/mobile-match.tsx', // Match card + leaderboard
+  'src/components/mobile/league/schedule/schedule-screen.tsx', // Schedule rows
+  'src/components/mobile/league/game/nfl-game-screen.tsx', // the NFL game's matchup strip
+  'src/components/mobile/home/home-matchups.tsx', // Home's league card
 ]
 
 const ROOT = process.cwd()
@@ -164,7 +172,7 @@ describe('projected points are dark blue on the phone too, one mechanism (gap li
     for (const rel of PHONE_SURFACES) {
       const src = readFileSync(path.join(ROOT, rel), 'utf8')
       expect(src, rel).toMatch(/import \{[^}]*\bM_PROJ_TEXT\b[^}]*\} from '@\/components\/players\/projected-points'/)
-      expect(src, rel).toMatch(/M_PROJ_TEXT\)/)
+      expect(src, rel).toMatch(/M_PROJ_TEXT\)|M_PROJ_TEXT :/)
       // The desktop's fixed blue would stay dim in phone dark mode.
       expect(src, rel).not.toMatch(/\bPROJ_TEXT\b/)
     }

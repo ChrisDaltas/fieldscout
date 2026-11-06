@@ -6,6 +6,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { currentWeekOf } from '@/components/leagues/lineup-editor-ops'
 import { JoinLeagueDialog } from '@/components/leagues/leagues-index'
 import { LeagueCreateModal } from '@/components/leagues/league-create-modal'
+import { PROJECTED_SCORE_TITLE } from '@/components/leagues/matchup-view-ops'
 import { useLeagueTabStore } from '@/components/mobile/league/league/league-tab-store'
 import { leaguesCardSub, leagueStatusPill } from '@/components/mobile/leagues/leagues-ops'
 import { MessagesAvatar } from '@/components/mobile/messages/messages-avatar'
@@ -13,6 +14,7 @@ import { leagueTabHref } from '@/components/mobile/shell/mobile-nav'
 import { initials, leagueAvClass } from '@/components/mobile/shell/use-league-card'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
+import { M_PROJ_TEXT } from '@/components/players/projected-points'
 import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 import { useMobileHomeAlert } from '@/hooks/use-mobile-home-alerts'
 import { useMobileHomeMatchup } from '@/hooks/use-mobile-home-matchup'
@@ -191,11 +193,23 @@ export function LeagueCard({
             <span className="min-w-0 truncate">{live.opp ? live.opp.label : 'Bye'}</span>
           </span>
           <span className="flex items-center gap-[10px]">
-            <span className="text-[20px] font-semibold leading-[24px] tracking-[-0.02em] text-m-t1 tabular-nums">{live.me.points}</span>
+            <span
+              className={cn('text-[20px] font-semibold leading-[24px] tracking-[-0.02em] tabular-nums', live.me.pointsProjected ? M_PROJ_TEXT : 'text-m-t1')}
+              title={live.me.pointsProjected ? PROJECTED_SCORE_TITLE : undefined}
+              data-projected={live.me.pointsProjected || undefined}
+            >
+              {live.me.points}
+            </span>
             {/* The design's win-probability bar sits here; the app has no model for it. */}
             <span className="flex-1" />
             {live.opp && (
-              <span className="text-[20px] font-semibold leading-[24px] tracking-[-0.02em] text-m-t1 tabular-nums">{live.opp.points}</span>
+              <span
+                className={cn('text-[20px] font-semibold leading-[24px] tracking-[-0.02em] tabular-nums', live.opp.pointsProjected ? M_PROJ_TEXT : 'text-m-t1')}
+                title={live.opp.pointsProjected ? PROJECTED_SCORE_TITLE : undefined}
+                data-projected={live.opp.pointsProjected || undefined}
+              >
+                {live.opp.points}
+              </span>
             )}
           </span>
           {(live.me.proj || live.opp?.proj) && (

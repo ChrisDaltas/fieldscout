@@ -68,7 +68,14 @@ describe('phoneWeeks', () => {
     const tie = w1!.primary[1]!
     expect([tie.tie, tie.top.lost, tie.bottom?.lost, tie.overridden, tie.homeTeamId]).toEqual([true, false, false, true, 't3'])
     const live = w2!.primary[0]!
-    expect([live.top.score, live.top.pending, live.bottom?.score, live.bottom?.pending]).toEqual(['40.25', false, 'pending', true])
+    // Q108: an open score in the LIVE week is its projection — none known here, so the dash.
+    expect([live.top.score, live.top.pending, live.bottom?.score, live.bottom?.pending, live.bottom?.projected]).toEqual(['40.25', false, '—', false, false])
+    // …and with a projection, "Proj <total>", flagged so the screen paints it blue.
+    const projectedLive = phoneWeeks(GRID, { ...base, projectedOf: (id) => (id === live.bottom?.id ? 87.04 : null) })[1]!.primary[0]!
+    expect([projectedLive.bottom?.score, projectedLive.bottom?.projected, projectedLive.bottom?.notStarted, projectedLive.top.score]).toEqual(['Proj 87.0', true, false, '40.25'])
+    // A projection never reaches a week that is not live (an upcoming one keeps its dash).
+    const upcoming = phoneWeeks(GRID, { ...base, projectedOf: () => 50 })[2]!.primary[0]!
+    expect([upcoming.top.score, upcoming.top.projected]).toEqual(['—', false])
     const later = w3!.primary[0]!
     expect([later.top.score, later.top.notStarted, later.top.pending]).toEqual(['—', true, false])
   })

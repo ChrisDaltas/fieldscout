@@ -11,13 +11,15 @@ import {
   OVERRIDDEN_TITLE,
   emptyWeekCopy,
   formatPoints,
+  leaderboardPendingCell,
   leaderboardRows,
-  scoreCell,
   teamName,
+  teamScoreCell,
 } from '@/components/leagues/matchup-view-ops'
 import { formatRecord } from '@/components/leagues/standings-table-ops'
 import { LIVE_STATS_DELAYED_COPY, STALE_SCORES_COPY } from '@/components/leagues/status-banners'
 import { WeekStatus, WeekStepper } from '@/components/mobile/league/week-stepper'
+import { M_PROJ_TEXT } from '@/components/players/projected-points'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useTeamOnline } from '@/hooks/use-online'
 import { useLineup } from '@/hooks/use-lineup'
@@ -25,6 +27,7 @@ import { useMatchupsLive } from '@/hooks/use-matchups'
 import { usePlayoffBracketLive } from '@/hooks/use-playoff-bracket'
 import { useSchedule, type ScheduleWeek } from '@/hooks/use-schedule'
 import { useStandingsLive } from '@/hooks/use-standings'
+import { useTeamWeekProjections } from '@/hooks/use-team-week-projections'
 import { liveScoringDelay, useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { cn } from '@/lib/utils'
@@ -108,6 +111,15 @@ function SeasonMatchups({
   const av = (id: string | null) => teamAvatarClass(id, teamIds, myTeamId)
   // Who's online (gap list §3 #25): a team's avatar lights up with its manager.
   const online = useTeamOnline(detail.members)
+  // Q108: a team with no score in a live week shows its projected total.
+  const projectedOf = useTeamWeekProjections({
+    leagueId,
+    season: matchups.data?.season,
+    week: matchups.data?.week,
+    weekStatus: matchups.data?.league_week.status,
+    teamIds,
+    irSlots: detail.settings.roster_settings.ir_slots,
+  })
 
   return (
     <div className="flex flex-col gap-2.5 px-3 pb-5 pt-2.5" data-matchups-segment>
@@ -165,6 +177,7 @@ function SeasonMatchups({
           records={records}
           av={av}
           online={online}
+          projectedOf={projectedOf}
         />
       )}
 
@@ -217,6 +230,8 @@ function weekStatusOf(weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>[], w
 type Av = (id: string | null) => string
 /** Is this team's manager online (`useTeamOnline`)? */
 type Online = (id: string | null) => boolean
+/** A team's projected total for the shown week (`useTeamWeekProjections`). */
+type ProjectedOf = (teamId: string) => number | null
 
 function WeekCards({
   leagueId,
@@ -228,6 +243,7 @@ function WeekCards({
   records,
   av,
   online,
+  projectedOf,
 }: {
   leagueId: string
   doc: WeekMatchups
@@ -238,15 +254,16 @@ function WeekCards({
   records: ReadonlyMap<string, string>
   av: Av
   online: Online
+  projectedOf: ProjectedOf
 }) {
-  if (doc.schedule_mode === 'total_points') return <Leaderboard leagueId={leagueId} doc={doc} myTeamId={myTeamId} av={av} online={online} />
+  if (doc.schedule_mode === 'total_points') return <Leaderboard leagueId={leagueId} doc={doc} myTeamId={myTeamId} av={av} online={online} projectedOf={projectedOf} />
   const { primary, secondary } = matchupGroups(doc.matchups, myTeamId)
   // The empty copy reads the week SHOWN, not the league's state: a playoff
   // week stepped to in the regular season says its pairings come later
   // (the Match tab's and the desktop matchup page's own helper).
   if (primary.length === 0) return <CenteredNote message={emptyWeekCopy(doc.week, weeks, regularSeasonWeeks)} />
   const regular = primary.every((r) => r.round_type !== 'playoff')
-  const card = { leagueId, doc, records, av, online, myTeamId }
+  const card = { leagueId, doc, records, av, online, myTeamId, projectedOf }
   return (
     <>
       {medianGame && regular && <MedianCard median={doc.league_week.median_score} />}
@@ -312,6 +329,7 @@ function MatchupCard({
   av,
   online,
   myTeamId,
+  projectedOf,
   door = 'matchup',
 }: {
   leagueId: string
@@ -321,6 +339,7 @@ function MatchupCard({
   av: Av
   online: Online
   myTeamId: string | null
+  projectedOf: ProjectedOf
   door?: 'matchup' | 'teams'
 }) {
   // Your own matchup puts you on the left (the design's team A), home or away.
@@ -335,8 +354,8 @@ function MatchupCard({
     <>
       <Side
         name={teamName(doc, left.id)}
-        score={left.score}
-        status={row.status}
+        cell={teamScoreCell(left.score, row.status, doc.league_week.status, projectedOf(left.id))}
+        scored={left.score !== null}
         record={records.get(left.id) ?? null}
         avClass={av(left.id)}
         online={online(left.id)}
@@ -353,8 +372,8 @@ function MatchupCard({
       {right ? (
         <Side
           name={teamName(doc, right.id)}
-          score={right.score}
-          status={row.status}
+          cell={teamScoreCell(right.score, row.status, doc.league_week.status, projectedOf(right.id))}
+          scored={right.score !== null}
           record={records.get(right.id) ?? null}
           avClass={av(right.id)}
           online={online(right.id)}
@@ -385,8 +404,8 @@ function MatchupCard({
 
 function Side({
   name,
-  score,
-  status,
+  cell,
+  scored,
   record,
   avClass,
   online,
@@ -394,8 +413,9 @@ function Side({
   end = false,
 }: {
   name: string
-  score: number | null
-  status: string
+  /** The side's score cell (`teamScoreCell` — Q108's projection in a live week). */
+  cell: ReturnType<typeof teamScoreCell>
+  scored: boolean
   record: string | null
   avClass: string
   online: boolean
@@ -404,7 +424,6 @@ function Side({
   href?: string
   end?: boolean
 }) {
-  const cell = scoreCell(score, status)
   const className = cn('flex min-w-0 flex-col gap-[5px]', end && 'text-right')
   const body = (
     <>
@@ -414,9 +433,16 @@ function Side({
         <span
           className={cn(
             'tabular-nums',
-            cell.pending ? 'text-[13px] font-semibold text-m-t3' : score === null ? 'text-[17px] font-semibold text-m-t4' : 'text-[17px] font-semibold text-m-t1',
+            cell.projected
+              ? cn('text-[13px] font-semibold', M_PROJ_TEXT)
+              : cell.pending
+                ? 'text-[13px] font-semibold text-m-t3'
+                : !scored
+                  ? 'text-[17px] font-semibold text-m-t4'
+                  : 'text-[17px] font-semibold text-m-t1',
           )}
           title={cell.title ?? undefined}
+          data-projected={cell.projected || undefined}
         >
           {cell.text}
         </span>
@@ -444,12 +470,14 @@ function Leaderboard({
   myTeamId,
   av,
   online,
+  projectedOf,
 }: {
   leagueId: string
   doc: WeekMatchups
   myTeamId: string | null
   av: Av
   online: Online
+  projectedOf: ProjectedOf
 }) {
   const rows = leaderboardRows(doc)
   return (
@@ -472,11 +500,25 @@ function Leaderboard({
             {r.points !== null ? (
               <span className="text-[14px] font-semibold tabular-nums text-m-t1">{formatPoints(r.points)}</span>
             ) : (
-              <span className="text-[12px] font-medium text-m-t3">pending</span>
+              <PendingRowCell cell={leaderboardPendingCell(doc.league_week.status, projectedOf(r.team_id))} />
             )}
           </Link>
         )
       })}
     </section>
+  )
+}
+
+/** A leaderboard row with no results row: its projection in a live week
+ *  (Q108, the projected-points blue), else `pending` / the dash. */
+function PendingRowCell({ cell }: { cell: ReturnType<typeof leaderboardPendingCell> }) {
+  return (
+    <span
+      className={cn('text-[12px] font-medium', cell.projected ? cn('font-semibold tabular-nums', M_PROJ_TEXT) : 'text-m-t3')}
+      title={cell.title ?? undefined}
+      data-projected={cell.projected || undefined}
+    >
+      {cell.text}
+    </span>
   )
 }

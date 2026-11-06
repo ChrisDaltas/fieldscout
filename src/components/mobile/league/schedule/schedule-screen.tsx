@@ -9,7 +9,7 @@ import { commishMatchupHref } from '@/components/leagues/activity-page-ops'
 import { currentWeekOf } from '@/components/leagues/lineup-editor-ops'
 import { NO_LADDER_COPY } from '@/components/leagues/league-home-season-ops'
 import { OVERRIDDEN_LABEL, OVERRIDDEN_TITLE } from '@/components/leagues/matchup-view-ops'
-import { reasonHint, scheduleConsoleHref, scheduleGrid } from '@/components/leagues/schedule-view-ops'
+import { liveWeekOf, reasonHint, scheduleConsoleHref, scheduleGrid } from '@/components/leagues/schedule-view-ops'
 import { STALE_LEAGUE_COPY } from '@/components/leagues/status-banners'
 import { CenteredNote, LeaguePageBar, PageChip, SkeletonBlocks, StatusLine, useChipRowInView } from '@/components/mobile/league/league/league-bits'
 import { historyTeams } from '@/components/mobile/league/league/league-history-ops'
@@ -19,9 +19,11 @@ import { teamOrder } from '@/components/mobile/league/team/team-ops'
 import { WeekStatus } from '@/components/mobile/league/week-stepper'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
+import { M_PROJ_TEXT } from '@/components/players/projected-points'
 import { useAuth } from '@/hooks/use-auth'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useScheduleLive } from '@/hooks/use-schedule'
+import { useTeamWeekProjections } from '@/hooks/use-team-week-projections'
 import { cn } from '@/lib/utils'
 
 import {
@@ -137,9 +139,20 @@ function ScheduleScreen({ leagueId, detail }: { leagueId: string; detail: League
     window.history.replaceState(window.history.state, '', `${window.location.pathname}${search}`)
   }
 
+  // Q108: in the live week, a team with no score shows its projected total.
+  const liveWeek = liveWeekOf(schedule.data?.weeks)
+  const allTeamIds = useMemo(() => detail.teams.map((t) => t.id), [detail.teams])
+  const projectedOf = useTeamWeekProjections({
+    leagueId,
+    season: liveWeek?.season,
+    week: liveWeek?.week,
+    weekStatus: liveWeek?.status,
+    teamIds: allTeamIds,
+    irSlots: detail.settings.roster_settings.ir_slots,
+  })
   const weeks = useMemo(
-    () => phoneWeeks(grid, { teamId, myTeamId, currentWeek, totalPoints }),
-    [grid, teamId, myTeamId, currentWeek, totalPoints],
+    () => phoneWeeks(grid, { teamId, myTeamId, currentWeek, totalPoints, projectedOf }),
+    [grid, teamId, myTeamId, currentWeek, totalPoints, projectedOf],
   )
   const showChips = !totalPoints && grid.length > 0 && chips.length > 1
   const chipRow = useChipRowInView<HTMLDivElement>(showChips)
@@ -402,10 +415,11 @@ function SideLine({
       <span
         className={cn(
           'flex-none tabular-nums',
-          side.pending ? 'text-[12px] font-semibold text-m-t3' : side.notStarted ? 'text-[14px] font-semibold text-m-t4' : side.lost ? 'text-[14px] font-semibold text-m-t3' : 'text-[14px] font-semibold text-m-t1',
+          side.projected ? cn('text-[12px] font-semibold', M_PROJ_TEXT) : side.pending ? 'text-[12px] font-semibold text-m-t3' : side.notStarted ? 'text-[14px] font-semibold text-m-t4' : side.lost ? 'text-[14px] font-semibold text-m-t3' : 'text-[14px] font-semibold text-m-t1',
         )}
         title={side.scoreTitle ?? undefined}
         data-score
+        data-projected={side.projected || undefined}
       >
         {side.score}
       </span>
