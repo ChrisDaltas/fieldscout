@@ -55,11 +55,15 @@ the feed. There is no "finalize anyway" (M8 ruled it out): take it to Chris.
 
 **After migration 216 is pushed (F863, once):**
 
-- The first close pass recomputes **every** team of an open correction-window
-  week (week 8 on push day) from the stored stats, so any score that was
-  already wrong moves on screen at that minute. Before the push, run
-  `npm run reconcile -- <season>` and check week 8 shows **zero `drift`**; a
-  drift cell is a score that will change, and it is Chris's call first.
+- The first close pass recomputes **every** team of the week that is in its
+  correction window at push time (a final week is never touched), from the
+  stored stats, so any score that was already wrong moves on screen at that
+  minute. Before the push, run `npm run reconcile -- <season>` **from a
+  checkout at the deployed main SHA** and check that week shows **zero
+  `drift`**; a drift cell is a score that will change, and it is Chris's call
+  first. A checkout behind main can misread a scoring change that main has
+  shipped (a newly paid stat, say) as drift. If no week is in its correction
+  window at push time, the first pass recomputes nothing.
 - **The app can't be rolled back past the F863 merge while 216 is in the
   database.** The older app has no close pass, nothing would record a week's
   close, and every league's week would sit held as `scores_owed`
