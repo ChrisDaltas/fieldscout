@@ -152,12 +152,12 @@ describe('mobile Match — starter rows', () => {
     expect(gameLine('KC', 'bye', null, null)).toBe('Bye week')
     expect(gameLine('KC', 'up_next', null, null)).toBe('')
   })
-  it('draws points the design’s way and keeps pending a word', () => {
+  it('draws points the design’s way; stats still to come in is the not-yet dash, never the word pending (D845)', () => {
     expect(pointsDisplay({ text: '9.60', tone: 'scored' })).toEqual({ text: '9.60', tone: 'scored' })
     expect(pointsDisplay({ text: '0.00', tone: 'zero_by_name' })).toEqual({ text: '0.00', tone: 'scored' })
     expect(pointsDisplay({ text: '—', tone: 'yet_to_play' })).toEqual({ text: '-', tone: 'dim' })
     expect(pointsDisplay({ text: '—', tone: 'empty' })).toEqual({ text: '–', tone: 'dim' })
-    expect(pointsDisplay({ text: 'pending', tone: 'pending' })).toEqual({ text: 'pending', tone: 'word' })
+    expect(pointsDisplay({ text: '—', tone: 'pending' })).toEqual({ text: '-', tone: 'dim' })
   })
   it('fits the slot into its chip and hands MPosChip the position to fill it by', () => {
     expect(slotChipText('FLEX (W/R/T)', 'flex')).toBe('FLEX')

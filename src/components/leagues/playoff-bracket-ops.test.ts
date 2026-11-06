@@ -29,8 +29,10 @@ import {
   correctionsCloseDisplay,
   foreignRowsCopy,
   foreignRowsOf,
-  bracketTotalText,
-  formatBracketScore,
+  bracketProjectionWeeks,
+  bracketTotalCell,
+  bracketWeekCells,
+  roundWeekStatus,
   formatInstantForViewer,
   formatTotal,
   gamePlayed,
@@ -49,6 +51,7 @@ import {
   AWAITING_BUILD_DOC,
   BRACKET_NAMES,
   BUILT_DOC,
+  BUILT_UNPLAYED_DOC,
   COMPLETE_DOC,
   CORRECTIONS_CLOSE_AT,
   FOREIGN_ROWS_DOC,
@@ -62,6 +65,9 @@ import {
   UNRECORDED_ROLLOVER_DOC,
 } from './playoff-bracket.fixtures'
 import type { BracketGameWeek } from '@/lib/leagues/api/playoffs-service'
+
+import { NO_PROJECTION_TITLE, PROJECTED_SCORE_TITLE, WEEK_NOT_STARTED_TITLE } from './matchup-view-ops'
+import { PROJECTED_ROUND_TITLE } from './playoff-bracket-ops'
 
 // ---------------------------------------------------------------------------
 // THE ROLLOVER COPY PIN (Q39 (E) / §16.4) — the DoD probe's target
@@ -221,24 +227,76 @@ describe('games — the verdict is 118’s `decided_by`, never re-decided', () =
     expect(verdictCopy({ ...final, decided_by: 'points' }).title).toContain('added together')
   })
 
-  it('a NULL score is the door’s pending word (E61) — never 0.00; totals are 118’s, formatted only', () => {
-    expect(formatBracketScore(null)).toBe('pending')
+  it('D845 / F907: a NULL score is the scoreboard’s cell — the projected total once the week started, else the dash; never 0.00, never "pending"; totals are 118’s, formatted only', () => {
+    const one = (home: number | null, status = 'live') => ({
+      home_team_id: 'h',
+      away_team_id: 'a',
+      home_total: 0,
+      away_total: 0,
+      weeks: [{ week: 15, home_score: home, away_score: 40, status } as BracketGameWeek],
+    })
+    const live = () => 'live'
+    const proj = (week: number, team: string) => (week === 15 && team === 'h' ? 98.44 : week === 16 && team === 'h' ? 10 : null)
+    expect(bracketWeekCells(one(null), 'home', live, proj)).toEqual([{ text: 'Proj 98.4', title: PROJECTED_SCORE_TITLE, pending: false, projected: true }])
+    expect(bracketWeekCells(one(null), 'home', () => 'final', proj)[0]).toMatchObject({ text: 'Proj 98.4', projected: true })
+    expect(bracketWeekCells(one(null), 'home', live)[0]).toEqual({ text: '—', title: NO_PROJECTION_TITLE, pending: false })
+    expect(bracketTotalCell(one(null), 'home', live, proj).text).toBe('Proj 98.4')
+    expect(bracketTotalCell(one(101.25), 'home', live, proj)).toEqual({ text: '101.25', title: null, pending: false })
+    expect(bracketTotalCell(one(0), 'home', live, proj).text).toBe('0.00')
     // 216 (F273): a two-week round nobody has been scored in isn't "0.00" (118's sum reads a blank as 0).
-    const weeks = (home: number | null, away: number | null, status = 'live') => [{ home_score: home, away_score: away, status } as BracketGameWeek, { home_score: null, away_score: null, status: 'scheduled' } as BracketGameWeek]
-    expect(bracketTotalText({ weeks: weeks(null, null), home_total: 0, away_total: 0 }, 'home')).toBe('pending')
-    expect(bracketTotalText({ weeks: weeks(null, null, 'scheduled'), home_total: 0, away_total: 0 }, 'home')).toBe('—')
-    expect(bracketTotalText({ weeks: weeks(0, null), home_total: 0, away_total: 0 }, 'home')).toBe('0.00')
-    expect(bracketTotalText({ weeks: weeks(0, null), home_total: 0, away_total: 0 }, 'away')).toBe('pending')
-    expect(bracketTotalText({ weeks: weeks(101.25, 90), home_total: 101.25, away_total: 90 }, 'away')).toBe('90.00')
-    expect(formatBracketScore(0)).toBe('0.00')
-    expect(formatBracketScore(101.25)).toBe('101.25')
+    const two = (home: number | null, away: number | null, status = 'live') => ({
+      home_team_id: 'h',
+      away_team_id: 'a',
+      home_total: home ?? 0,
+      away_total: away ?? 0,
+      weeks: [
+        { week: 15, home_score: home, away_score: away, status } as BracketGameWeek,
+        { week: 16, home_score: null, away_score: null, status: 'scheduled' } as BracketGameWeek,
+      ],
+    })
+    const statusOf = (week: number) => (week === 15 ? 'live' : 'upcoming')
+    // A two-week round's total is the ROUND's number — its hover says so (PR #588 nit).
+    expect(bracketTotalCell(two(null, null), 'home', statusOf, proj)).toEqual({ text: 'Proj 98.4', title: PROJECTED_ROUND_TITLE, pending: false, projected: true })
+    expect(PROJECTED_ROUND_TITLE).toBe('Projected — this team hasn’t scored yet this round.')
+    expect(bracketTotalCell(two(null, null), 'away', statusOf, proj)).toEqual({ text: '—', title: NO_PROJECTION_TITLE, pending: false })
+    expect(bracketTotalCell(two(null, null, 'scheduled'), 'home', () => 'upcoming', proj)).toEqual({ text: '—', title: WEEK_NOT_STARTED_TITLE, pending: false })
+    expect(bracketTotalCell(two(0, null), 'home', statusOf, proj).text).toBe('0.00')
+    expect(bracketTotalCell(two(101.25, 90), 'away', statusOf, proj).text).toBe('90.00')
+    // Both weeks started, neither scored: the two weeks' projections, added.
+    expect(bracketTotalCell(two(null, null), 'home', () => 'live', proj).text).toBe('Proj 108.4')
+    expect(bracketWeekCells(two(null, null), 'home', statusOf, proj).map((c) => c.text)).toEqual(['Proj 98.4', '—'])
     expect(formatTotal(150)).toBe('150.00')
   })
 
+  it('bracketProjectionWeeks: the built rounds’ started weeks with an unscored side, by week and team (exact — R1808)', () => {
+    expect(bracketProjectionWeeks({ ...BUILT_DOC, round_list: [] })).toEqual([])
+    // Round 2 (week 16, live): Delta's side is NULL; Bravo v Charlie is scored. Round 1 is
+    // fully scored (its byes have no away side); round 3 is unbuilt.
+    expect(bracketProjectionWeeks(BUILT_DOC)).toEqual([{ week: 16, status: 'live', teamIds: [T.delta] }])
+    // A final week with an unscored side is read too (D845), each week on its own.
+    const r1 = BUILT_DOC.round_list[0]
+    const echoBlank = {
+      ...BUILT_DOC,
+      round_list: [
+        { ...r1, games: r1.games.map((g) => (g.away_team_id === T.echo ? { ...g, weeks: g.weeks.map((w) => ({ ...w, away_score: null })) } : g)) },
+        ...BUILT_DOC.round_list.slice(1),
+      ],
+    }
+    expect(bracketProjectionWeeks(echoBlank)).toEqual([
+      { week: 15, status: 'final', teamIds: [T.echo] },
+      { week: 16, status: 'live', teamIds: [T.delta] },
+    ])
+    // Nothing for an upcoming week, even with blank sides.
+    expect(bracketProjectionWeeks(BUILT_UNPLAYED_DOC)).toEqual([])
+    expect(roundWeekStatus(BUILT_DOC.round_list[0])(BUILT_DOC.round_list[0].weeks[0].week)).toBe(BUILT_DOC.round_list[0].weeks[0].status)
+    expect(roundWeekStatus(null)(15)).toBeUndefined()
+  })
+
   it('an UNPLAYED game (every row still `scheduled`) shows a dash, not 109’s DEFAULT 0 as a 0–0 tie (F273 / F257(a)) — read from the status, never inferred from a 0', () => {
-    expect(formatBracketScore(0, 'scheduled')).toBe('—')
-    expect(formatBracketScore(null, 'scheduled')).toBe('—')
-    expect(formatBracketScore(0, 'live')).toBe('0.00')
+    const g = (score: number | null, status: string) => ({ home_team_id: 'h', away_team_id: 'a', weeks: [{ week: 15, home_score: score, away_score: null, status } as BracketGameWeek] })
+    expect(bracketWeekCells(g(0, 'scheduled'), 'home', () => 'upcoming')[0].text).toBe('—')
+    expect(bracketWeekCells(g(null, 'scheduled'), 'home', () => 'upcoming', () => 50)[0].text).toBe('—')
+    expect(bracketWeekCells(g(0, 'live'), 'home', () => 'live')[0].text).toBe('0.00')
     const unplayed = { weeks: [{ ...BUILT_DOC.round_list[0].games[2].weeks[0], status: 'scheduled' }] }
     expect(gamePlayed(unplayed)).toBe(false)
     expect(gamePlayed(BUILT_DOC.round_list[0].games[2])).toBe(true)

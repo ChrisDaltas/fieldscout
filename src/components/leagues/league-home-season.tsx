@@ -62,6 +62,7 @@ import {
   splitRows,
   teamName,
   teamScoreCell,
+  unscoredTeamIds,
   weekBadge,
 } from './matchup-view-ops'
 import { PlayoffBracket } from './playoff-bracket'
@@ -149,8 +150,9 @@ export function SeasonHero({
   // standings page's "Playoffs" tab mounts; fetched only in that state.
   const bracket = usePlayoffBracketLive(leagueId, state === 'playoffs', { fallbackPoll: true })
   const managers = useMemo(() => managersByTeam(data.members), [data.members])
-  // Q108: a team with no score in a live week shows its projected total.
-  const weekTeamIds = useMemo(() => (matchups.data?.teams ?? []).map((t) => t.id), [matchups.data?.teams])
+  // Q108 / D845: a team with no score in a started week shows its projected
+  // total — read only for the teams with no score (R1807).
+  const weekTeamIds = useMemo(() => unscoredTeamIds(matchups.data), [matchups.data])
   const projectedOf = useTeamWeekProjections({
     leagueId,
     season: matchups.data?.season,
@@ -582,6 +584,7 @@ function BracketCard({
             myRole={data.my_role}
             myTeamId={myTeamId}
             finalStandings={finalStandings}
+            irSlots={data.settings.roster_settings.ir_slots}
             compact
           />
         ) : null}
@@ -592,7 +595,7 @@ function BracketCard({
 
 /** §16.5.3: a `total_points` league's hero is "your week so far vs the
  *  field" — the week leaderboard's top rows (stored `team_week_results`,
- *  ranked by the ops; absence is `pending`, never 0) with the viewer's own
+ *  ranked by the ops; absence is never 0) with the viewer's own
  *  row when it sits below. */
 function WeekSoFar({
   leagueId,
@@ -654,8 +657,9 @@ function WeekSoFar({
   )
 }
 
-/** A leaderboard row with no results row: its projection in a live week
- *  (Q108, the projected-points blue), else `pending` / the dash. */
+/** A leaderboard row with no results row: its projection once the week's
+ *  games have started (Q108 / D845, the projected-points blue), else the
+ *  dash — never the word "pending". */
 function PendingRowCell({ cell }: { cell: ReturnType<typeof leaderboardPendingCell> }) {
   return (
     <span

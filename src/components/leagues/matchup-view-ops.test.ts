@@ -28,6 +28,8 @@ import {
   PENDING_SCORE_TITLE,
   PLAYING_NO_LINE_TITLE,
   PLAYOFF_ROUND_PENDING_COPY,
+  STATS_NOT_IN_TITLE,
+  TEAM_STATS_NOT_IN_TITLE,
   WEEK_NOT_STARTED_TITLE,
   YET_TO_PLAY_TITLE,
   ZERO_BY_NAME_TITLE,
@@ -49,12 +51,12 @@ import {
   weekBadge,
   weekFromParam,
   weekNav,
-  LEADERBOARD_PENDING_TITLE,
   NO_PROJECTION_TITLE,
   PROJECTED_SCORE_TITLE,
   leaderboardPendingCell,
   projectedScoreText,
   teamScoreCell,
+  unscoredTeamIds,
 } from './matchup-view-ops'
 import { lineupProjectedTotal } from './my-team-ops'
 import { liveWeekOf, weekStatusBadge } from './schedule-view-ops'
@@ -65,7 +67,7 @@ import { liveWeekOf, weekStatusBadge } from './schedule-view-ops'
 // projections change"
 // ---------------------------------------------------------------------------
 
-describe('teamScoreCell — Q108: a team with no score in a live week shows its projected total', () => {
+describe('teamScoreCell — Q108 / D845: a team with no score in a started week shows its projected total', () => {
   it('a stored score always wins, in every week state', () => {
     for (const week of ['upcoming', 'live', 'correction_window', 'final']) {
       expect(teamScoreCell(71.5, 'live', week, 120)).toEqual({ text: '71.50', title: null, pending: false })
@@ -85,18 +87,23 @@ describe('teamScoreCell — Q108: a team with no score in a live week shows its 
     expect(teamScoreCell(null, 'live', 'live', undefined).text).toBe('—')
   })
 
-  it('a finished week (the correction window — incl. a held week) keeps `pending`; an upcoming week keeps its dash', () => {
-    expect(teamScoreCell(null, 'live', 'correction_window', 98.4)).toEqual(scoreCell(null, 'live'))
-    expect(teamScoreCell(null, 'live', 'correction_window', 98.4).text).toBe('pending')
+  it('D845: a week whose games are over (the correction window — incl. a held week — or final) shows the projection too; an upcoming week keeps its dash', () => {
+    const proj = { text: 'Proj 98.4', title: PROJECTED_SCORE_TITLE, pending: false, projected: true }
+    expect(teamScoreCell(null, 'live', 'correction_window', 98.4)).toEqual(proj)
+    expect(teamScoreCell(null, 'final', 'final', 98.4)).toEqual(proj)
+    expect(teamScoreCell(null, 'final', 'correction_window', null)).toEqual({ text: '—', title: NO_PROJECTION_TITLE, pending: false })
     expect(teamScoreCell(null, 'scheduled', 'upcoming', 98.4)).toEqual({ text: '—', title: WEEK_NOT_STARTED_TITLE, pending: false })
-    expect(teamScoreCell(null, 'final', 'final', 98.4).text).toBe('pending')
-    expect(teamScoreCell(null, 'live', null, 98.4).text).toBe('pending')
+    // No week status on hand: the matchup row's own status says whether the games started.
+    expect(teamScoreCell(null, 'live', null, 98.4)).toEqual(proj)
+    expect(teamScoreCell(null, 'scheduled', null, 98.4)).toEqual({ text: '—', title: WEEK_NOT_STARTED_TITLE, pending: false })
   })
 
-  it('leaderboardPendingCell: the projection as text in a live week, else pending — the row stays unranked either way', () => {
+  it('leaderboardPendingCell: the projection as text once the week started, else the dash — the row stays unranked either way', () => {
     expect(leaderboardPendingCell('live', 77.77)).toMatchObject({ text: 'Proj 77.8', projected: true })
     expect(leaderboardPendingCell('live', null)).toMatchObject({ text: '—', pending: false })
-    expect(leaderboardPendingCell('correction_window', 77.77)).toEqual({ text: 'pending', title: LEADERBOARD_PENDING_TITLE, pending: true })
+    expect(leaderboardPendingCell('correction_window', 77.77)).toMatchObject({ text: 'Proj 77.8', projected: true })
+    expect(leaderboardPendingCell('final', null)).toEqual({ text: '—', title: NO_PROJECTION_TITLE, pending: false })
+    expect(leaderboardPendingCell('upcoming', 77.77)).toEqual({ text: '—', title: WEEK_NOT_STARTED_TITLE, pending: false })
   })
 
   it('lineupProjectedTotal: the starters (IR seats excluded) by the whole-total rule; no row / no starter / a missing projection → null', () => {
@@ -181,6 +188,23 @@ function doc(over: Partial<WeekMatchups> = {}): WeekMatchups {
   }
 }
 
+describe('unscoredTeamIds — the only teams a projection is read for (R1807)', () => {
+  it('a fully scored h2h week lists nobody, so it reads nothing', () => {
+    const scored = doc({ matchups: [row({ id: 'm1', home_team_id: T1, away_team_id: T2, home_score: 10, away_score: 0 }), row({ id: 'm2', home_team_id: T3, away_team_id: T4, home_score: 5, away_score: 7 })] })
+    expect(unscoredTeamIds(scored)).toEqual([])
+  })
+  it('a NULL side is listed (a real 0 is a score, not listed); a bye row has no away side', () => {
+    const d = doc({ matchups: [row({ id: 'm1', home_team_id: T1, away_team_id: T2, home_score: null, away_score: 0 }), row({ id: 'm2', home_team_id: T3, away_team_id: null, home_score: 5 })] })
+    // T4 is on no row and has no results row — listed (the leaderboard's absence rule); T5 is retired.
+    expect(unscoredTeamIds(d)).toEqual([T1, T4].sort())
+  })
+  it('a total_points week (no rows): the seated teams with no results row, never a retired one', () => {
+    const d = doc({ schedule_mode: 'total_points', results: [result({ team_id: T1, points: 70 }), result({ team_id: T3, points: 0 })] })
+    expect(unscoredTeamIds(d)).toEqual([T2, T4].sort())
+    expect(unscoredTeamIds(undefined)).toEqual([])
+  })
+})
+
 function starter(over: Partial<BoxStarter> = {}): BoxStarter {
   return {
     slot: 'qb:0',
@@ -201,17 +225,21 @@ function starter(over: Partial<BoxStarter> = {}): BoxStarter {
 // §16.5.4 — the badge lifecycle
 // ---------------------------------------------------------------------------
 
-describe('weekBadge — `Final (pending corrections)` → `Final`, driven by league_weeks.status (D295)', () => {
+describe('weekBadge — the correction window → final, driven by league_weeks.status (D295); both read "Final" (D845)', () => {
   it('upcoming → Upcoming (stroke)', () => {
     expect(weekBadge('upcoming')).toMatchObject({ state: 'upcoming', label: 'Upcoming', variant: 'stroke' })
   })
   it('live → Live', () => {
     expect(weekBadge('live')).toMatchObject({ state: 'live', label: 'Live' })
   })
-  it('correction_window → the PENDING badge, with the §23.4 title — the window is open, corrections still recompute', () => {
+  it('correction_window → its own state, labelled plain "Final" (D845), the title saying a late correction can still move it', () => {
     const badge = weekBadge('correction_window')
-    expect(badge).toMatchObject({ state: 'pending_corrections', label: 'Final (pending corrections)', variant: 'yellow' })
-    expect(badge.title).toContain('stat correction')
+    expect(badge).toEqual({
+      state: 'pending_corrections',
+      label: 'Final',
+      variant: 'yellow',
+      title: 'Final. A late official stat correction can still change it this week.',
+    })
     expect(badge.title).not.toContain('§') // League UX batch 4: no spec citations on screen
   })
   it('final → Final (black), and ONLY final is the final state', () => {
@@ -232,7 +260,7 @@ describe('weekBadge — `Final (pending corrections)` → `Final`, driven by lea
 // Scores and results
 // ---------------------------------------------------------------------------
 
-describe('scoreCell — the door’s NULL is pending, never 0.00 (E61 / R788)', () => {
+describe('scoreCell — the door’s NULL is the dash, never 0.00 (E61 / R788) and never the word pending (D845)', () => {
   it('a number renders to two decimals', () => {
     expect(scoreCell(71.5, 'live')).toEqual({ text: '71.50', title: null, pending: false })
     expect(scoreCell(0, 'live')).toEqual({ text: '0.00', title: null, pending: false })
@@ -240,11 +268,12 @@ describe('scoreCell — the door’s NULL is pending, never 0.00 (E61 / R788)', 
   it('NULL on a scheduled row is a dash — no score yet', () => {
     expect(scoreCell(null, 'scheduled')).toEqual({ text: '—', title: WEEK_NOT_STARTED_TITLE, pending: false })
   })
-  it('NULL on a live or final row is the word pending, with the E61 title', () => {
+  it('NULL on a live or final row is the dash, with a plain-words title', () => {
     for (const status of ['live', 'final']) {
-      expect(scoreCell(null, status)).toEqual({ text: PENDING_SCORE_COPY, title: PENDING_SCORE_TITLE, pending: true })
+      expect(scoreCell(null, status)).toEqual({ text: '—', title: PENDING_SCORE_TITLE, pending: true })
     }
-    expect(PENDING_SCORE_TITLE).toContain('never shown as 0.00')
+    expect(PENDING_SCORE_COPY).toBe('—')
+    expect(PENDING_SCORE_TITLE).toBe('No score yet — some of this team’s stats aren’t in yet.')
   })
 })
 
@@ -279,11 +308,12 @@ describe('resultChip / sideResult — the stored result, never a client comparis
 // The box — the worker's three starter states (D321(4)), rendered
 // ---------------------------------------------------------------------------
 
-describe('starterCell — PENDING is the word, never a number (E61)', () => {
-  it('a pending starter renders `pending` naming the keys — with points 0 AND with points > 0 alike', () => {
+describe('starterCell — stats still to come in (E61) is the dash, never a number, never the word pending (D845)', () => {
+  it('a starter with stats still to come in renders the dash with a plain title — with points 0 AND with points > 0 alike', () => {
     const a = starterCell(starter({ pending: ['charted_placeholder'], points: 0, phase: 'done' }))
-    expect(a).toMatchObject({ text: PENDING_SCORE_COPY, tone: 'pending' })
-    expect(a.title).toContain('charted_placeholder')
+    expect(a).toEqual({ text: '—', title: STATS_NOT_IN_TITLE, tone: 'pending' })
+    expect(STATS_NOT_IN_TITLE).toBe('Some of his stats aren’t in yet.')
+    expect(a.title).not.toContain('charted_placeholder')
     const b = starterCell(starter({ pending: ['x'], points: 12.3, phase: 'now_playing' }))
     expect(b.text).toBe(PENDING_SCORE_COPY)
     expect(b.text).not.toContain('12.3')
@@ -319,12 +349,11 @@ describe('starterCell — NO STAT LINE is the worker’s 0 by name (Q42), said i
   })
 })
 
-describe('boxSumCell — the worker’s NULL (any starter pending) is pending', () => {
-  it('a number renders; NULL names the pending keys', () => {
-    expect(boxSumCell({ points: 101.02, pending: [] })).toEqual({ text: '101.02', title: null, pending: false })
-    const cell = boxSumCell({ points: null, pending: [{ player_id: 'p1', keys: ['k1', 'k2'] }] })
-    expect(cell.text).toBe(PENDING_SCORE_COPY)
-    expect(cell.title).toContain('k1, k2')
+describe('boxSumCell — the worker’s NULL (a starter’s stats still to come in) is the dash', () => {
+  it('a number renders; NULL is the dash with a plain title', () => {
+    expect(boxSumCell({ points: 101.02 })).toEqual({ text: '101.02', title: null, pending: false })
+    expect(boxSumCell({ points: null })).toEqual({ text: '—', title: TEAM_STATS_NOT_IN_TITLE, pending: true })
+    expect(TEAM_STATS_NOT_IN_TITLE).toBe('Some of this team’s stats aren’t in yet.')
   })
 })
 

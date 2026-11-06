@@ -15,6 +15,7 @@ import {
   leaderboardRows,
   teamName,
   teamScoreCell,
+  unscoredTeamIds,
 } from '@/components/leagues/matchup-view-ops'
 import { formatRecord } from '@/components/leagues/standings-table-ops'
 import { LIVE_STATS_DELAYED_COPY, STALE_SCORES_COPY } from '@/components/leagues/status-banners'
@@ -111,13 +112,15 @@ function SeasonMatchups({
   const av = (id: string | null) => teamAvatarClass(id, teamIds, myTeamId)
   // Who's online (gap list §3 #25): a team's avatar lights up with its manager.
   const online = useTeamOnline(detail.members)
-  // Q108: a team with no score in a live week shows its projected total.
+  // Q108 / D845: a team with no score in a started week shows its projected
+  // total — read only for the teams with no score (R1807).
+  const unscored = useMemo(() => unscoredTeamIds(matchups.data), [matchups.data])
   const projectedOf = useTeamWeekProjections({
     leagueId,
     season: matchups.data?.season,
     week: matchups.data?.week,
     weekStatus: matchups.data?.league_week.status,
-    teamIds,
+    teamIds: unscored,
     irSlots: detail.settings.roster_settings.ir_slots,
   })
 
@@ -145,6 +148,7 @@ function SeasonMatchups({
             teamNames={teamNames}
             teamIds={teamIds}
             myTeamId={myTeamId}
+            irSlots={detail.settings.roster_settings.ir_slots}
           />
         </section>
       )}
@@ -461,7 +465,7 @@ function Side({
 }
 
 /** A total-points league's week: the stored leaderboard, ranked by the ops
- *  (absence is pending, never 0). Your own row is drawn like the rest, as
+ *  (absence is never 0). Your own row is drawn like the rest, as
  *  the handoff draws your matchup card (m-league §2.2) — your blue avatar
  *  marks you. */
 function Leaderboard({
@@ -509,8 +513,9 @@ function Leaderboard({
   )
 }
 
-/** A leaderboard row with no results row: its projection in a live week
- *  (Q108, the projected-points blue), else `pending` / the dash. */
+/** A leaderboard row with no results row: its projection once the week's
+ *  games have started (Q108 / D845, the projected-points blue), else the
+ *  dash — never the word "pending". */
 function PendingRowCell({ cell }: { cell: ReturnType<typeof leaderboardPendingCell> }) {
   return (
     <span

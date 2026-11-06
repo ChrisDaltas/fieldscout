@@ -35,8 +35,10 @@ import {
   reasonHint,
   remixWindowCopy,
   scheduleGrid,
+  scheduleProjectionWeeks,
   sideBySide,
   systemPostPreview,
+  weekGamesStarted,
   weekKind,
   weekStatusBadge,
 } from './schedule-view-ops'
@@ -90,17 +92,40 @@ describe('the week grid', () => {
     expect(weekKind(14, 10, 4)).toBe('playoff')
   })
 
-  it('§16.5.4 badges per status; scores dash when scheduled and say pending when live-but-unscored (E61)', () => {
+  it('§16.5.4 badges per status (the correction window reads plain "Final" — D845); a NULL score is the dash, never "pending" (E61)', () => {
     expect(weekStatusBadge('upcoming')).toEqual({ label: 'Upcoming', variant: 'stroke' })
     expect(weekStatusBadge('live')).toEqual({ label: 'Live', variant: 'green' })
-    expect(weekStatusBadge('correction_window')).toEqual({
-      label: 'Final (pending corrections)',
-      variant: 'yellow',
-    })
+    expect(weekStatusBadge('correction_window')).toEqual({ label: 'Final', variant: 'yellow' })
     expect(weekStatusBadge('final')).toEqual({ label: 'Final', variant: 'black' })
     expect(formatScore(null, 'scheduled')).toBe('—')
-    expect(formatScore(null, 'live')).toBe('pending')
+    expect(formatScore(null, 'live')).toBe('—')
+    expect(formatScore(null, 'final')).toBe('—')
     expect(formatScore(40.25, 'live')).toBe('40.25')
+  })
+
+  it('weekGamesStarted: live, the correction window and final have started; upcoming has not; no week status ⇒ the row’s own', () => {
+    for (const w of ['live', 'correction_window', 'final']) expect(weekGamesStarted(w)).toBe(true)
+    expect(weekGamesStarted('upcoming', 'live')).toBe(false)
+    expect(weekGamesStarted(null, 'live')).toBe(true)
+    expect(weekGamesStarted(undefined, 'final')).toBe(true)
+    expect(weekGamesStarted(null, 'scheduled')).toBe(false)
+    expect(weekGamesStarted(null)).toBe(false)
+  })
+
+  it('scheduleProjectionWeeks: the started weeks that still have an unscored side, with exactly those teams (D845)', () => {
+    const t = (id: string) => ({ id, name: id })
+    const r = (home: string, away: string | null, hs: number | null, as: number | null) => ({ home: t(home), away: away ? t(away) : null, home_score: hs, away_score: as })
+    expect(
+      scheduleProjectionWeeks([
+        { week: 1, status: 'final', rows: [r('a', 'b', 90, 80)] },
+        { week: 2, status: 'correction_window', rows: [r('a', 'b', null, 80), r('c', 'd', 70, null)] },
+        { week: 3, status: 'live', rows: [r('a', 'b', null, null), r('c', null, null, null)] },
+        { week: 4, status: 'upcoming', rows: [r('a', 'b', null, null)] },
+      ]),
+    ).toEqual([
+      { week: 2, status: 'correction_window', teamIds: ['a', 'd'] },
+      { week: 3, status: 'live', teamIds: ['a', 'b', 'c'] },
+    ])
   })
 })
 

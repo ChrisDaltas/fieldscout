@@ -3,7 +3,7 @@
  * `matchup-view.render.test.ts` rig: `renderToStaticMarkup` with the React
  * Query cache pre-seeded — fetches are effects, so the cache IS the data).
  * Pins the handoff's structure (m-match.md §2.1–§2.2) and the app's
- * honesty rules on mobile: stored scores, pending as a word, no invented
+ * honesty rules on mobile: stored scores, never "pending" (D845), no invented
  * win probability or live-play row.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -429,10 +429,11 @@ describe('mobile Match — starters', () => {
     expect(html).toContain('A.J. Brown')
   })
 
-  it('not played yet is "-", an empty seat is "Empty", and PENDING stays the word — never 0.00', () => {
+  it('not played yet is "-", an empty seat is "Empty", and stats still to come in is "-" with a plain title — never 0.00, never the word pending (D845)', () => {
     expect(html).toMatch(/data-starter-cell="yet_to_play">-</)
     expect(html).toContain('>Empty<')
-    expect(html).toMatch(/data-starter-cell="pending">pending</)
+    expect(html).toMatch(/title="Some of his stats aren’t in yet\." data-starter-cell="pending">-</)
+    expect(html).not.toMatch(/>pending</i)
   })
 
   it('player halves are buttons that open the profile', () => {
@@ -512,11 +513,13 @@ describe('mobile Match — other states', () => {
     expect(html).toContain('data-score="12.25"')
   })
 
-  it('Q108: a finished week (correction window) keeps `pending` — no projection after the games', () => {
+  it('D845: a week whose games are over (correction window, or final) shows the projection too — never "pending"', () => {
     const doc = weekDoc()
-    const html = render({ matchupId: 'mA', boxes: {}, lineups: { [T3]: { 'qb:0': 'p-qb' } }, week: { ...doc, league_week: { ...doc.league_week, status: 'correction_window' } } })
-    expect(html).toContain('data-score="pending"')
-    expect(html).not.toContain('Proj 19.7')
+    for (const status of ['correction_window', 'final']) {
+      const html = render({ matchupId: 'mA', boxes: {}, lineups: { [T3]: { 'qb:0': 'p-qb' } }, week: { ...doc, league_week: { ...doc.league_week, status } } })
+      expect(html, status).toContain('data-score="Proj 19.7" data-projected="true"')
+      expect(html, status).not.toContain('data-score="pending"')
+    }
   })
 
   it('a bye side says so', () => {
@@ -567,13 +570,13 @@ describe('mobile Match — other states', () => {
 })
 
 describe('mobile Match — app-only content kept in the mobile language', () => {
-  it('ends the starters with each side’s own box Total — pending stays the word', () => {
+  it('ends the starters with each side’s own box Total — the dash while stats are still to come in', () => {
     const html = render()
     const total = html.match(/data-total-row[\s\S]*?<\/div>/)?.[0] ?? ''
     expect(total).toContain('>Total<')
     expect(html).toMatch(new RegExp(`data-box-total="${ME}"`))
     expect(html).toMatch(new RegExp(`data-box-total="${OPP}"`))
-    expect(html.match(/data-box-sum="pending"/g)?.length).toBe(2)
+    expect(html.match(/data-box-sum="pending">—</g)?.length).toBe(2)
     expect(html).not.toContain('data-box-sum="0.00"')
   })
 

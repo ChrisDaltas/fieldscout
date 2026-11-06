@@ -134,10 +134,10 @@ describe('one correction’s card', () => {
     })
   })
 
-  it('a pending score (E61) reads "pending", never 0.00', () => {
+  it('no score yet (E61) reads as the dash — never 0.00, never the word pending (D845)', () => {
     const card = correctionCard(correctionItem({ team_score: { before: null, after: 100.6 }, player_points: { before: null, after: 9.4 } }))
-    expect(card.teamScore).toBe('Team score pending → 100.60')
-    expect(card.playerPoints).toBe('His points pending → 9.40')
+    expect(card.teamScore).toBe('Team score — → 100.60')
+    expect(card.playerPoints).toBe('His points — → 9.40')
   })
 
   it('a result change is listed in the record’s words; while the games were still on, says so', () => {

@@ -14,7 +14,7 @@ import { PROJ_TEXT } from '@/components/players/projected-points'
 import { useAuth } from '@/hooks/use-auth'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useEditMatchup, useScheduleLive, type EditMatchupResult } from '@/hooks/use-schedule'
-import { useTeamWeekProjections } from '@/hooks/use-team-week-projections'
+import { useTeamProjectionsByWeek } from '@/hooks/use-team-week-projections'
 import { cn } from '@/lib/utils'
 
 import { commishMatchupHref } from './activity-page-ops'
@@ -25,10 +25,10 @@ import {
   NO_SCHEDULE_COPY,
   SCHEDULE_COMMISH_HINT_COPY,
   editFormProblem,
-  liveWeekOf,
   reasonHint,
   scheduleConsoleHref,
   scheduleGrid,
+  scheduleProjectionWeeks,
   weekStatusBadge,
   type MatchupCell,
   type TeamRef,
@@ -120,15 +120,13 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
     [schedule.data, teamNames, detail.settings.regular_season_weeks, detail.settings.schedule_mode],
   )
   const currentWeek = useMemo(() => currentWeekOf(schedule.data?.weeks ?? []), [schedule.data])
-  // Q108: in the live week, a team with no score shows its projected total.
-  const liveWeek = liveWeekOf(schedule.data?.weeks)
-  const teamIds = useMemo(() => detail.teams.map((t) => t.id), [detail.teams])
-  const projectedOf = useTeamWeekProjections({
+  // Q108 / D845: in a week whose games have started, a team with no score
+  // shows its projected total for that week.
+  const projectionWeeks = useMemo(() => scheduleProjectionWeeks(grid), [grid])
+  const projectedOf = useTeamProjectionsByWeek({
     leagueId,
-    season: liveWeek?.season,
-    week: liveWeek?.week,
-    weekStatus: liveWeek?.status,
-    teamIds,
+    season: schedule.data?.weeks[0]?.season,
+    weeks: projectionWeeks,
     irSlots: detail.settings.roster_settings.ir_slots,
   })
   const hint = isCommish ? reasonHint(schedule.data?.weeks ?? []) : null
@@ -214,10 +212,11 @@ function WeekCard({
   week: WeekCell
   isCurrent: boolean
   myTeamId: string | null
-  /** Q108: a team's projected total in the live week. */
-  projectedOf: (teamId: string) => number | null
+  /** Q108 / D845: a team's projected total for a started week. */
+  projectedOf: (week: number, teamId: string) => number | null
 }) {
   const badge = weekStatusBadge(week.status)
+  const projectedThisWeek = (teamId: string) => projectedOf(week.week, teamId)
   return (
     <Card data-week={week.week} data-week-kind={week.kind} className={cn('overflow-hidden', isCurrent && 'border-accent')}>
       <CardHeader className="min-h-0 flex-wrap px-[15px] py-2.5">
@@ -241,7 +240,7 @@ function WeekCard({
             {week.note}
           </p>
         ) : (
-          week.rows.map((row) => <MatchupRowView key={row.id} leagueId={leagueId} week={week.week} weekStatus={week.status} row={row} myTeamId={myTeamId} projectedOf={projectedOf} />)
+          week.rows.map((row) => <MatchupRowView key={row.id} leagueId={leagueId} week={week.week} weekStatus={week.status} row={row} myTeamId={myTeamId} projectedOf={projectedThisWeek} />)
         )}
       </CardContent>
     </Card>
@@ -305,9 +304,9 @@ function MatchupRowView({
   )
 }
 
-/** A side's score as written (`teamScoreCell`): the stored number, the dash,
- *  `pending`, or — Q108 — the live week's projected total in the projected
- *  blue. */
+/** A side's score as written (`teamScoreCell`): the stored number, the
+ *  dash, or — Q108 / D845 — a started week's projected total in the
+ *  projected blue. Never the word "pending". */
 function ScoreText({ cell, lost }: { cell: ReturnType<typeof teamScoreCell>; lost: boolean }) {
   return (
     <span
