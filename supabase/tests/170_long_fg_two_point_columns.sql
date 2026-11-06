@@ -49,7 +49,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(61);
+select plan(63);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM
@@ -284,7 +284,13 @@ insert into scoring_systems (id, name, description, owner_id, is_template, rules
 select pg_temp.fk(f.n), 'P170 fork ' || f.n, 'pgTAP 170', 'f1700000-0000-4000-8000-000000000001', false, pg_temp.fork(f.tpl, f.pos::jsonb)
 from (values (2, 'ESPN Full PPR', '{}'), (3, 'ESPN Standard', '{"K": {"fg_50_plus": 6}}'), (4, 'ESPN Standard', '{}'),
              (6, 'Scout PPR', '{}'), (7, 'Scout Standard', '{}'), (9, 'Sleeper Standard', '{}'),
-             (15, 'ESPN Standard', '{}')) f(n, tpl, pos);
+             (15, 'ESPN Standard', '{}'), (18, 'Scout Standard', '{"K": {"fg_50_plus": 5}}')) f(n, tpl, pos);
+-- F17: an ESPN fork that ALREADY holds both keys at its commissioner's own
+-- values (base def_2pt_return 3, K's 60+ top-up 2) — possible only once 218's
+-- validator accepts them; 218 must never overwrite either.
+insert into scoring_systems (id, name, description, owner_id, is_template, rules)
+values (pg_temp.fk(17), 'P170 fork 17', 'pgTAP 170', 'f1700000-0000-4000-8000-000000000001', false,
+        jsonb_set(pg_temp.fork('ESPN Standard', '{"K": {"fg_60_plus": 2}}'), '{base}', pg_temp.pre('ESPN Standard') || '{"def_2pt_return": 3}'));
 
 -- The leagues. Week 3 is the NFL week being played.
 --   1 ESPN Standard template, in season: weeks 1 final, 2 correction window, 3 live, 4 upcoming
@@ -302,6 +308,8 @@ from (values (2, 'ESPN Full PPR', '{}'), (3, 'ESPN Standard', '{"K": {"fg_50_plu
 --  13 ESPN Standard template now, in season — its live week 3 opened on Scout Standard (switched, re-score off); 4 upcoming
 --  15 fork F15, in season (F15 is shared with 16)
 --  16 fork F15, complete
+--  17 fork F17 (already holds both keys), in season
+--  18 fork F18 (Scout by receipt, its commissioner set K's 50+ to 5), in season
 insert into leagues (id, owner_id, name, season, status, team_count, regular_season_weeks,
                      playoff_teams, playoff_start_week, faab_budget, scoring_system_id, scoring_rules_snapshot,
                      lineup_lock, settings, roster_settings, deleted_at, created_at, updated_at)
@@ -324,7 +332,9 @@ from (values
   (12, 2025, 'in_season', pg_temp.tpl('ESPN Standard'),    pg_temp.pre('ESPN Standard'),    null),
   (13, 2026, 'in_season', pg_temp.tpl('Scout Standard'),   pg_temp.pre('Scout Standard'),   null),
   (15, 2026, 'in_season', pg_temp.fk(15),                  pg_temp.fork('ESPN Standard', '{}'), null),
-  (16, 2026, 'complete',  pg_temp.fk(15),                  pg_temp.fork('ESPN Standard', '{}'), null)
+  (16, 2026, 'complete',  pg_temp.fk(15),                  pg_temp.fork('ESPN Standard', '{}'), null),
+  (17, 2026, 'in_season', pg_temp.fk(17),                  (select rules from scoring_systems where id = pg_temp.fk(17)), null),
+  (18, 2026, 'in_season', pg_temp.fk(18),                  pg_temp.fork('Scout Standard', '{"K": {"fg_50_plus": 5}}'), null)
 ) l(n, season, status, sys, doc, archived);
 
 -- The fork receipts (169's fork_scoring shape: after.scoring_system_id, metadata.template_id).
@@ -333,7 +343,7 @@ select pg_temp.lg(r.n), 'f1700000-0000-4000-8000-000000000001', 'fork_scoring', 
        jsonb_build_object('scoring_system_id', pg_temp.tpl(r.tpl)), jsonb_build_object('scoring_system_id', pg_temp.fk(r.f)),
        jsonb_build_object('verb', 'scoring_fork_template', 'bypassed', '[]'::jsonb, 'template_id', pg_temp.tpl(r.tpl), 'scoring_system_name', r.tpl || ' Custom'),
        '2026-08-20 12:00:00+00'
-from (values (2, 2, 'ESPN Full PPR'), (3, 3, 'ESPN Standard'), (6, 6, 'Scout PPR'), (9, 9, 'Sleeper Standard'), (15, 15, 'ESPN Standard')) r(n, f, tpl);
+from (values (2, 2, 'ESPN Full PPR'), (3, 3, 'ESPN Standard'), (6, 6, 'Scout PPR'), (9, 9, 'Sleeper Standard'), (15, 15, 'ESPN Standard'), (17, 17, 'ESPN Standard'), (18, 18, 'Scout Standard')) r(n, f, tpl);
 
 -- The weeks, walked one legal step at a time (110), each stamped at open
 -- with its league's snapshot (144).
@@ -379,11 +389,11 @@ select is(
   '13:3:live:Scout Standard,13:4:upcoming:-',
   'F0 PREMISE BY VALUE: the weeks as described, each opened week stamped with its league''s system at open (league 13''s live week on Scout, its league now ESPN)');
 select is(
-  (select count(*)::int from (select scoring_rules_snapshot d from leagues where name like 'pgtap-170-L%'
+  (select count(*)::int from (select scoring_rules_snapshot d from leagues where name like 'pgtap-170-L%' and id <> pg_temp.lg(17)
                               union all select scoring_rules_snapshot from league_weeks where league_id in (select id from leagues where name like 'pgtap-170-L%')
-                              union all select rules from scoring_systems where name like 'P170 fork %') x
+                              union all select rules from scoring_systems where name like 'P170 fork %' and id <> pg_temp.fk(17)) x
     where d::text ~ 'fg_60_plus|def_2pt_return'),
-  0, 'F0b PREMISE: no fixture document holds either key yet (every one is pre-218 shaped)');
+  0, 'F0b PREMISE: no fixture document holds either key yet (every one is pre-218 shaped), league 17 and its fork aside');
 
 create temp table r170 on commit drop as select public.long_fg_two_point_rules_add_internal() as v;
 
@@ -445,6 +455,10 @@ select is(
   jsonb_set(pg_temp.fork('Scout Standard', '{}'), '{base}', pg_temp.pre('Scout Standard') || '{"def_2pt_return": 2}'),
   'F9 a fork with NO receipt whose D/ST is Scout''s by value (its kicking is not ESPN''s): def_2pt_return only');
 select is(
+  (select l.scoring_rules_snapshot from leagues l where l.id = pg_temp.lg(18)),
+  jsonb_set(pg_temp.fork('Scout Standard', '{"K": {"fg_50_plus": 5}}'), '{base}', pg_temp.pre('Scout Standard') || '{"def_2pt_return": 2}'),
+  'F9b a Scout fork whose commissioner set K''s 50+ to 5 still gets NO fg_60_plus — the 60+ top-up is ESPN''s alone; def_2pt_return only');
+select is(
   (select count(*)::int from (
      select 1 from leagues l join pre170 p on p.kind = 'league' and p.id = l.id::text
       where l.id in (pg_temp.lg(8), pg_temp.lg(9), pg_temp.lg(10), pg_temp.lg(11), pg_temp.lg(12), pg_temp.lg(16)) and to_jsonb(l) = p.row
@@ -477,7 +491,8 @@ select is(
   || ' | 06 Scoring update from Week 1 on: a D/ST two-point return pays 2 points. Finished weeks keep their scoring.'
   || ' | 07 Scoring update from Week 3 on: a D/ST two-point return pays 2 points. Finished weeks keep their scoring.'
   || ' | 13 Scoring update from Week 4 on: a field goal of 60+ yards pays 1 more point (6 in all), and a D/ST two-point return pays 2, matching ESPN. Finished weeks keep their scoring.'
-  || ' | 15 Scoring update from the next week on: a field goal of 60+ yards pays 1 more point (6 in all), and a D/ST two-point return pays 2, matching ESPN. Finished weeks keep their scoring.',
+  || ' | 15 Scoring update from the next week on: a field goal of 60+ yards pays 1 more point (6 in all), and a D/ST two-point return pays 2, matching ESPN. Finished weeks keep their scoring.'
+  || ' | 18 Scoring update from the next week on: a D/ST two-point return pays 2 points. Finished weeks keep their scoring.',
   'F12 EXACTLY ONE post per rewritten league, in plain words naming the week the rule starts (the live week when it took the same keys; else the next to open — league 2 on a Tuesday, league 13 whose live week is on Scout; a drafting league Week 1) — and NONE in the Yahoo, Sleeper, archived, complete or 2025 leagues');
 select is(
   (select count(*)::int from league_chat c where c.league_id in (select id from leagues where name like 'pgtap-170-L%')
@@ -493,8 +508,17 @@ select is(
      'archived',  (select jsonb_agg(right(x #>> '{}', 2)) from jsonb_array_elements(v -> 'archived_untouched') x where x #>> '{}' like 'e1700000-%'),
      'outside',   (v -> 'outside_the_change') @> '{"complete": 2, "season 2025": 1}')
    from r170),
-  '{"rewritten": ["01", "02", "03", "04", "05", "06", "07", "13", "15"], "kept": ["08:other", "09:other"], "archived": ["10"], "outside": true}'::jsonb,
-  'F15 the NOTICE''s record: the leagues rewritten, the leagues kept (Yahoo and Sleeper descent: other), the archived league named untouched, and the complete / 2025 leagues counted outside the change');
+  '{"rewritten": ["01", "02", "03", "04", "05", "06", "07", "13", "15", "18"], "kept": ["08:other", "09:other", "17:espn"], "archived": ["10"], "outside": true}'::jsonb,
+  'F15 the NOTICE''s record: the leagues rewritten, the leagues kept (Yahoo and Sleeper descent: other; league 17, ESPN, already holding both keys), the archived league named untouched, and the complete / 2025 leagues counted outside the change');
+select is(
+  (select count(*)::int from (
+     select 1 from leagues l join pre170 p on p.kind = 'league' and p.id = l.id::text where l.id = pg_temp.lg(17) and to_jsonb(l) = p.row
+     union all
+     select 1 from scoring_systems s join pre170 p on p.kind = 'fork' and p.id = s.id::text where s.id = pg_temp.fk(17) and to_jsonb(s) = p.row) x)
+  || ':' || (select count(*) from league_chat where league_id = pg_temp.lg(17))
+  || ':' || (select (scoring_rules_snapshot #>> '{base,def_2pt_return}') || '/' || (scoring_rules_snapshot #>> '{positions,K,fg_60_plus}') from leagues where id = pg_temp.lg(17)),
+  '2:0:3/2',
+  'F16 NEVER OVERWRITE: a document already holding either key at its commissioner''s own value (base def_2pt_return 3, K''s 60+ top-up 2) is left byte-identical — league and fork — and gets no post');
 
 -- ---------------------------------------------------------------------------
 -- G. 218 (e) THE RE-QUEUE, AND A SECOND RUN
@@ -511,7 +535,7 @@ select is(
   0, 'G3 a SECOND run rewrites nothing (only absent keys are ever added)…');
 select is(
   (select count(*)::int from league_chat c where c.league_id in (select id from leagues where name like 'pgtap-170-L%')),
-  9, 'G4 …and posts nothing more: still the nine posts');
+  10, 'G4 …and posts nothing more: still the ten posts');
 
 select * from finish();
 rollback;
