@@ -68,8 +68,8 @@ describe('K0 goldens: real stored lines against ESPN table, the same under all f
     ['Chris Boswell 2026 wk8: two short 6 − 1 miss + 3 PAT', 'K', BOSWELL_2026_WK8, 8],
     ['Jason Myers 2025 wk18: 3 + 4 − 2 misses + 1 PAT', 'K', MYERS_2025_WK18, 6],
     ['Brandon McManus 2025 wk2: 3 + 5 − 1 miss + 3 PAT', 'K', MCMANUS_2025_WK2, 10],
-    // The 60+ point is F871's next step (PR 4 moves this pin to 15).
-    ['Chris Boswell 2025 wk1: 50–59 5 + 60+ 5 + 4 PAT (ESPN 15: the 60+ tier is a named gap)', 'K', BOSWELL_2025_WK1, 14],
+    // Migration 218 (F871): the 60+ make pays 5 + the 1 top-up, = ESPN.
+    ['Chris Boswell 2025 wk1: 50–59 5 + 60+ 5 + the 60+ top-up 1 + 4 PAT (= ESPN 15)', 'K', BOSWELL_2025_WK1, 15],
     ['Seattle 2026 wk1: 3 sacks + 6 INT + PA 10 3 + YA 277 2', 'DEF', SEA_2026_WK1, 14],
     ['Tampa Bay 2026 wk8: 8 INT + shutout by omission 5 + YA 224 2', 'DEF', TB_2026_WK8, 15],
     ['Kansas City 2025 wk7: 1 sack + 2 FR + shutout by omission 5 + YA 95 5', 'DEF', KC_2025_WK7, 13],

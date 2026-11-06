@@ -13,9 +13,20 @@
  * 2025 lines pin the map, not production: production's 2025 rows don't move without
  * F872, and these only read the map through the fixtures.
  *
- * Three ESPN values move again in PR 4 of this work, which adds F871's 60+ and
- * two-point keys: Aubrey 2026 wk2 16 → 17, Boswell 2025 wk1 14 → 15, Tampa Bay 2026
- * wk7 26 → 28. Yahoo, Sleeper and Scout don't move.
+ * PR 4 of this work (migration 218, F871) added the 60+ and two-point keys, and
+ * these values are worked out by hand from each raw line and each document:
+ *   - Aubrey 2026 wk2 (fgm_20_29, fgm_40_49, fgm_50p 1 with fgm_60p 1, 4 PATs):
+ *     ESPN 3 + 4 + 5 + 1 + 4 = 17, Scout 3 + 3 + 3 + 4 = 13, Yahoo and Sleeper
+ *     3 + 4 + 5 + 4 = 16.
+ *   - Boswell 2025 wk1 (fgm_50p 2, one of them fgm_60p, 4 PATs): ESPN 5 + 5 + 1
+ *     + 4 = 15, Scout 3 + 3 + 4 = 10, Yahoo and Sleeper 5 + 5 + 4 = 14.
+ *   - Tampa Bay 2026 wk7 (5 sacks, 2 INT, fum_rec 1 + def_st_fum_rec 1, a D/ST
+ *     TD, a block, def_2pt 1, 13 allowed, 266 yards): ESPN and Scout (Q2,
+ *     Chris 2026-11-05: "yes") 5 + 4 + 4 + 6 + 2 + 2 + 3 + 2 = 28; Yahoo and
+ *     Sleeper, no two-point return and the shared PA table, 5 + 4 + 4 + 6 + 2 + 4
+ *     = 25.
+ * A week whose stored document predates 218 doesn't name the keys and pays as
+ * before (Aubrey ESPN 16; Tampa Bay ESPN and Scout 26): pinned below.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -67,9 +78,9 @@ const GOLDENS: readonly Golden[] = [
   // Kickers
   G('bass_2026_wk1', 'K', [12, 13, 13, 13], 13, 'two short FGs, the 7 → 13 of F870'),
   G('boswell_2026_wk8', 'K', [8, 8, 9, 8], 8, 'a miss; Yahoo charges none'),
-  G('aubrey_2026_wk2', 'K', [13, 16, 16, 16], 17, 'a 60-yarder pays 5 until F871 adds the key'),
+  G('aubrey_2026_wk2', 'K', [13, 17, 16, 16], 17, 'a 60-yarder: ESPN pays the 50+ 5 plus the 60+ 1 (218); Scout a flat 3; Yahoo and Sleeper 5'),
   G('aubrey_2025_wk15', 'K', [12.6, 14.6, 16.6, 14.6], 14.6, 'the 6 rushing yards pay 0.6'),
-  G('boswell_2025_wk1', 'K', [10, 14, 14, 14], 15, 'a 60-yarder pays 5 until F871 adds the key'),
+  G('boswell_2025_wk1', 'K', [10, 15, 14, 14], 15, 'a 50-59 and a 60-yarder: only ESPN pays the 60+ 1 on top'),
   G('lutz_2026_wk5', 'K', [10, 10, 11, 10], 10, 'fgm_0_19 is part of the short-FG sum'),
   G('santos_2026_wk2', 'K', [2, 4, 5, 4], 4, 'K fg_blkd is already inside fgmiss'),
   G('shrader_2026_wk1', 'K', [5, 7, 7, 6], 7, 'xpmiss with no fgmiss: not an FG miss; Sleeper alone charges it'),
@@ -80,7 +91,7 @@ const GOLDENS: readonly Golden[] = [
   G('chi_2026_wk6', 'DEF', [13, 13, 11, 11], 13, 'two special-teams recoveries; def_st_ff pays nothing'),
   G('ari_2026_wk1', 'DEF', [12, 12, 10, 10], 12, 'a blocked kick'),
   G('min_2026_wk3', 'DEF', [19, 19, 17, 17], 19, 'a D/ST return TD'),
-  G('tb_2026_wk7', 'DEF', [26, 26, 25, 25], 28, 'a two-point return pays nothing until F871 adds the key'),
+  G('tb_2026_wk7', 'DEF', [28, 28, 25, 25], 28, 'a two-point return pays 2 under ESPN and Scout (Q2), nothing under Yahoo or Sleeper'),
   G('ari_2026_wk6', 'DEF', [8, 8, 6, 6], 7, 'the standing difference: the sack ESPN does not count (F893)'),
   G('ten_2026_wk6', 'DEF', [19, 19, 21, 21], 19, 'misc_td + blk_kick + def_st_td: a blocked-kick return TD pays block + TD, once'),
   G('sf_2026_wk5', 'DEF', [20, 20, 18, 18], 20, 'fum_rec_ez_tds, the defense scoring: already inside def_td'),
@@ -95,8 +106,8 @@ const GOLDENS: readonly Golden[] = [
   G('delp_2026_wk6', 'TE', [1, 1, 1, 1], 1, 'st_fum_rec on an offensive player pays nothing'),
 ]
 
-/** Where ESPN's own total still differs, each one named. */
-const NAMED_GAPS = new Set(['aubrey_2026_wk2', 'boswell_2025_wk1', 'tb_2026_wk7', 'ari_2026_wk6'])
+/** Where ESPN's own total still differs, each one named: since 218, only the sack ESPN doesn't count. */
+const NAMED_GAPS = new Set(['ari_2026_wk6'])
 
 const line = (g: Golden) => storedLine(recordedActual(g.key).stats)
 const points = (doc: ScoringRulesDoc, g: Golden) => {
@@ -115,9 +126,17 @@ describe('real lines through the real pipeline, four rules sets', () => {
     expect(scoreStarter(ESPN, 'chi', 'DST', storedLine({ ...row, xp_blkd: 1 })).points).toBe(8)
   })
 
-  it('under ESPN rules every line equals ESPN\'s own total, except the four named', () => {
+  it('under ESPN rules every line equals ESPN\'s own total, except the one named (the Arizona sack, F893)', () => {
     const off = GOLDENS.filter((g) => g.espn !== g.espnOwn).map((g) => g.key)
     expect(new Set(off)).toEqual(NAMED_GAPS)
+  })
+
+  it('a week whose stored document predates migration 218 pays as before: the keys are absent, so the plays pay nothing extra (Q64: finished weeks keep their scoring)', () => {
+    const before218 = (doc: ScoringRulesDoc) =>
+      Object.fromEntries(Object.entries(doc as unknown as Record<string, number>).filter(([key]) => key !== 'fg_60_plus' && key !== 'def_2pt_return')) as unknown as ScoringRulesDoc
+    const aubrey = GOLDENS.find((g) => g.key === 'aubrey_2026_wk2')!
+    const tb = GOLDENS.find((g) => g.key === 'tb_2026_wk7')!
+    expect([points(before218(ESPN), aubrey), points(before218(ESPN), tb), points(before218(SCOUT), tb)]).toEqual([16, 26, 26])
   })
 
   it('a PPR sibling differs from its standard template by exactly its catches', () => {
@@ -185,9 +204,10 @@ describe('projected lines: what each feed\'s spellings pay', () => {
     // def_kr_td 0.06 × 6 = 0.36 of it, on an offense row.
     ['brown_2026_wk9', 'WR', 1.68, 1.68, 1.68, 1.68, ['fumble_recovery_td']],
     // fgm_0_19 0.05 is part of the 0.79 short makes; misses 0.04 + 0.08 + 0.12.
-    ['borregales_2026_wk9', 'K', 6.57, 7.41, 7.65, 7.29, []],
+    // Under ESPN, `fg_60_plus` (218) is NAMED: projections never send a 60+ make.
+    ['borregales_2026_wk9', 'K', 6.57, 7.41, 7.65, 7.29, ['fg_60_plus']],
     // fgmiss_20_29 0.06 is part of the 0.36 misses, the 2025 shape.
-    ['szmyt_2025_wk1', 'K', 6.16, 7.09, 7.45, 7.03, []],
+    ['szmyt_2025_wk1', 'K', 6.16, 7.09, 7.45, 7.03, ['fg_60_plus']],
   ]
 
   it.each(ROWS)('%s', (key, position, scout, espn, yahoo, sleeper, unscored) => {
@@ -195,7 +215,7 @@ describe('projected lines: what each feed\'s spellings pay', () => {
     expect(scoreRow(ESPN, key, position).unscored).toEqual(unscored)
   })
 
-  it('the buckets fill the keys, and K\'s rushing yards are no gap: nothing projected for a K is named, and a preseason K names nothing new', () => {
+  it('the buckets fill the keys, and K\'s rushing yards are no gap: the one K key projections can\'t send is ESPN\'s 60+ top-up (218), and a preseason K names nothing new', () => {
     expect(mapToCanonicalKeys(recordedProjection('borregales_2026_wk9').stats, { feed: 'projections', position: 'K' })).toMatchObject({ fg_0_39: 0.79, fg_missed: 0.24 })
     expect(mapToCanonicalKeys(recordedProjection('szmyt_2025_wk1').stats, { feed: 'projections', position: 'K' })).toMatchObject({ fg_0_39: 0.86, fg_missed: 0.36 })
     expect(scorePreseasonLine(ESPN, 'K', { fg_made_40_plus: 10, fg_made_50_plus: 4, xp_made: 30 }).unscored).not.toContain('rush_yards')
@@ -205,7 +225,7 @@ describe('projected lines: what each feed\'s spellings pay', () => {
   it('K\'s rushing yards also PAY on a projected line, as on an actual one: never a silent drop', () => {
     // One 30-39 make + 6 rushing yards: 3 + 0.6 = 3.6, projected (weekly feed) and actual alike.
     const raw = { fgm_30_39: 1, fga: 1, fgm: 1, rush_yd: 6 }
-    expect(scoreWeeklyProjection(ESPN, 'K', mapToCanonicalKeys(raw, { feed: 'projections', position: 'K' }))).toEqual({ points: 3.6, unscored: [] })
+    expect(scoreWeeklyProjection(ESPN, 'K', mapToCanonicalKeys(raw, { feed: 'projections', position: 'K' }))).toEqual({ points: 3.6, unscored: ['fg_60_plus'] })
     expect(scoreStarter(ESPN, 'k', 'K', storedLine(raw)).points).toBe(3.6)
     // Preseason: a 40-49 make 4 + 1 PAT + 10 rushing yards 1 = 6.
     const preseason = scorePreseasonLine(ESPN, 'K', { fg_made_40_plus: 1, xp_made: 1, rush_yards: 10 })

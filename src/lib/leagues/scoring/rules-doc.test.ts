@@ -99,6 +99,7 @@ const K_WEEK: Record<string, number> = {
   fg_0_39: 1,
   fg_40_49: 1,
   fg_50_plus: 1,
+  fg_60_plus: 0, // migration 218 (F871): delivered as 0, as ingest stores it
   fg_missed: 1,
   pat_made: 3,
   pat_missed: 1,
@@ -115,6 +116,7 @@ const DST_WEEK: Record<string, number> = {
   def_safety: 0,
   def_block: 0,
   def_return_td: 0,
+  def_2pt_return: 0, // migration 218 (F871): delivered as 0, as ingest stores it
 }
 const PARITY_LINES: ReadonlyArray<[string, Record<string, number>]> = [
   ['qb', QB_WEEK],

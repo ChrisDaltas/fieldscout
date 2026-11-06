@@ -205,11 +205,14 @@ describe('league-player-values — the service-role job over the stack', () => {
     // 7.66 → 9.66, and the yards family is no longer named unscored. F870: the
     // map fills blocks and return TDs (PIT 9.66 + block 0.14 = 9.8) and short FGs
     // and misses (K 5.56 + 0.91 × 3 − 0.4 = 7.89); only fumble_recovery_td stays named.
+    // F871 / 218: Scout (this fork's template) pays a D/ST two-point return (Q2),
+    // which projections never send, so PIT names it; Scout has no 60+ key, so K
+    // names nothing.
     const at = '2099-09-24T12:50:00+00:00'
     expect(await valuesFor(L1.id, 3)).toEqual([
       { player_id: 'lpv-gibbs', projected_points: 23.17, projected_missing: null, projected_unscored: ['fumble_recovery_td'], projection_fetched_at: FRESH, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },
       { player_id: 'lpv-k', projected_points: 7.89, projected_missing: null, projected_unscored: [], projection_fetched_at: FRESH, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },
-      { player_id: 'lpv-pit', projected_points: 9.8, projected_missing: null, projected_unscored: [], projection_fetched_at: FRESH, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },
+      { player_id: 'lpv-pit', projected_points: 9.8, projected_missing: null, projected_unscored: ['def_2pt_return'], projection_fetched_at: FRESH, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },
       { player_id: 'lpv-rookie', projected_points: null, projected_missing: 'no_line', projected_unscored: null, projection_fetched_at: null, season_points: null, season_games: 0, preseason_points: 110, preseason_missing: null, preseason_unscored: ['fumble_recovery_td', 'pass_2pt', 'rec_2pt', 'return_td', 'rush_2pt'], computed_at: at },
       { player_id: 'lpv-taylor', projected_points: 22.05, projected_missing: null, projected_unscored: ['fumble_recovery_td'], projection_fetched_at: FRESH, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },
       { player_id: 'lpv-te-stale', projected_points: null, projected_missing: 'stale_line', projected_unscored: null, projection_fetched_at: STALE, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },

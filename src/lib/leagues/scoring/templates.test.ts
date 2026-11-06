@@ -10,9 +10,10 @@
  * - Counter-pins that encode the specific wrong implementations:
  *   dst_model membership (ESPN split vs shared single), ESPN-vs-shared PA
  *   bucket families, PPR variants differing in exactly `receptions`,
- *   cross-platform INT delta, no 60+/PAT-micro keys (the Q9 exceptions are
- *   documented, never half-implemented), and the Q9 user-visibility
- *   condition on the ESPN descriptions.
+ *   cross-platform INT delta, the 60+ top-up and the two-point return
+ *   exactly where migration 218 put them (F871), no PAT-safety key (Q9's one
+ *   remaining exception is documented, never half-implemented), and the Q9
+ *   user-visibility condition on the ESPN descriptions.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -118,6 +119,7 @@ describe('golden pins — complete template contents as ordered literals', () =>
       def_safety: 2,
       def_block: 2,
       def_return_td: 6,
+      def_2pt_return: 2, // migration 218 (F871; Q2, Chris 2026-11-05: "yes")
       def_pa_0: 5,
       def_pa_1_6: 4,
       def_pa_7_13: 3,
@@ -166,6 +168,7 @@ describe('golden pins — complete template contents as ordered literals', () =>
       def_safety: 2,
       def_block: 2,
       def_return_td: 6,
+      def_2pt_return: 2, // migration 218 (F871; Q2, Chris 2026-11-05: "yes")
       def_pa_0: 5,
       def_pa_1_6: 4,
       def_pa_7_13: 3,
@@ -205,6 +208,7 @@ describe('golden pins — complete template contents as ordered literals', () =>
       fg_0_39: 3,
       fg_40_49: 4,
       fg_50_plus: 5,
+      fg_60_plus: 1, // migration 218 (F871): the 60+ top-up, 5 + 1 = 6
       pat_made: 1,
       fg_missed: -1,
       def_sack: 1,
@@ -214,6 +218,7 @@ describe('golden pins — complete template contents as ordered literals', () =>
       def_safety: 2,
       def_block: 2,
       def_return_td: 6,
+      def_2pt_return: 2, // migration 218 (F871)
       def_pa_0: 5,
       def_pa_1_6: 4,
       def_pa_7_13: 3,
@@ -253,6 +258,7 @@ describe('golden pins — complete template contents as ordered literals', () =>
       fg_0_39: 3,
       fg_40_49: 4,
       fg_50_plus: 5,
+      fg_60_plus: 1, // migration 218 (F871): the 60+ top-up, 5 + 1 = 6
       pat_made: 1,
       fg_missed: -1,
       def_sack: 1,
@@ -262,6 +268,7 @@ describe('golden pins — complete template contents as ordered literals', () =>
       def_safety: 2,
       def_block: 2,
       def_return_td: 6,
+      def_2pt_return: 2, // migration 218 (F871)
       def_pa_0: 5,
       def_pa_1_6: 4,
       def_pa_7_13: 3,
@@ -527,29 +534,35 @@ describe('counter-pins', () => {
     }
   })
 
-  it('Q9 exceptions are documented, never half-implemented: no 60+/PAT-micro keys anywhere', () => {
+  it('Q9 AS RULED AT 218 (F871; Chris 2026-11-05 "go on league kickers and the other plays", Q2 "yes"): the 60+ top-up on the ESPN rows only, the two-point return on the ESPN and Scout rows, neither on Yahoo or Sleeper; PAT-safety stays a named exception, never a key', () => {
     for (const t of SCORING_TEMPLATES) {
+      const espn = t.name.startsWith('ESPN')
+      const scout = SCOUT_PAIR_NAMES.has(t.name)
+      expect(t.rules.fg_60_plus, `${t.name}.fg_60_plus`).toBe(espn ? 1 : undefined)
+      expect(t.rules.def_2pt_return, `${t.name}.def_2pt_return`).toBe(espn || scout ? 2 : undefined)
+      // A 60+ make is counted in BOTH fg_50_plus and fg_60_plus (a top-up, not
+      // a split), so it pays their sum: ESPN 5 + 1 = 6 (ESPN's own default),
+      // Yahoo and Sleeper 5 (no finer tier), Scout a flat 3 (B.5).
+      expect(t.rules.fg_50_plus + (t.rules.fg_60_plus ?? 0), `${t.name}: a 60+ make`).toBe(espn ? 6 : scout ? 3 : 5)
       for (const key of Object.keys(t.rules)) {
-        expect(key.includes('60'), `${t.name}: ${key}`).toBe(false)
-        expect(/fg_50_59/.test(key), `${t.name}: ${key}`).toBe(false)
-        expect(/pat_(safety|return)/.test(key), `${t.name}: ${key}`).toBe(false)
+        expect(/fg_50_59/.test(key), `${t.name}: ${key} (a split would pay a 60+ make 0 wherever the new key is absent)`).toBe(false)
+        expect(/pat_(safety|return)|safety_pat/.test(key), `${t.name}: ${key}`).toBe(false)
       }
-      // Platform rows carry 5 (the 50–59 value — the Q9 exception encoding);
-      // the Scout pair's flat-FG 3 is RULED in B.5 (shared body, B.5.1) and
-      // has no exception to encode.
-      expect(t.rules.fg_50_plus, `${t.name}.fg_50_plus`).toBe(
-        SCOUT_PAIR_NAMES.has(t.name) ? 3 : 5,
-      )
     }
   })
 
-  it('Q9 visibility condition: both ESPN descriptions carry the exception line verbatim', () => {
+  it('Q9 visibility condition: both ESPN descriptions carry the exception line verbatim — the one gap left is the PAT-try safety, and it no longer claims a cent-for-cent match', () => {
     for (const name of ['ESPN Standard', 'ESPN Full PPR']) {
       const t = byName(name)
       expect(t.description, name).toContain(ESPN_PARITY_EXCEPTION_NOTE)
-      expect(t.description, name).toContain('60+ yard field goal')
-      expect(t.description, name).toContain('PAT')
+      expect(t.description, name).toContain('safety on a PAT try')
+      expect(t.description, name).not.toContain('60+ yard field goal')
+      expect(t.description, name).not.toContain('to the cent')
     }
+    expect(ESPN_PARITY_EXCEPTION_NOTE).toBe(
+      'Heads up on one tiny gap our stat feed cannot see: ESPN awards 1 point when a D/ST scores a safety on a PAT try (not scored here). ' +
+        "Our stats come from one feed, so on a rare play our count can differ from ESPN's.",
+    )
   })
 
   it('every template has a non-empty commissioner-readable description', () => {

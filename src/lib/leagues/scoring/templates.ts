@@ -4,8 +4,14 @@
  * Scout PAIR — Scout Standard (FieldScout's house template and the system
  * default for new leagues; App B.5, marked up 2026-08-31; SC.1/F186/D279 —
  * seeded as "Scout Scoring", renamed by migration 108 per the 2026-09-01
- * markup) and Scout PPR (the same 43-key body, ONE value apart:
- * `receptions: 0.2`; App B.5.1, marked up 2026-09-01; SC.4/F203/D285).
+ * markup) and Scout PPR (the same body — 43 keys, 44 since migration 218's
+ * `def_2pt_return` — ONE value apart: `receptions: 0.2`; App B.5.1, marked
+ * up 2026-09-01; SC.4/F203/D285).
+ *
+ * Migration 218 (F871, D835; Chris 2026-11-05: "go on league kickers and the
+ * other plays", and Q2 "yes") wrote the keys below into the DB rows:
+ * ESPN Standard / Full PPR gained `fg_60_plus: 1` and `def_2pt_return: 2`,
+ * the Scout pair `def_2pt_return: 2`. Yahoo and Sleeper are unchanged.
  *
  * This module is the AUTHORED source of truth for the template rules objects.
  * Migrations 058 (the parity six), 106 (the Scout row, seed-time name
@@ -44,18 +50,19 @@
  *    Sleeper VALUES ship as App B best-known, FLAGGED unverified (house
  *    rule; PROGRESS ledger F24 — September raw-feed/product verification).
  *
- * ── Named parity exceptions (Q9 ruling, 2026-07-22 — spec v2.8.5) ─────────
- * ESPN's verified defaults score three categories no rules document here has
- * a key for:
- *  1. FG made 60+ = 6 (we score it as `fg_50_plus` = 5, because Sleeper's
- *     `fgm_50p` includes it) — −1 pt vs ESPN per make.
- *  2. D/ST safety on a PAT try = +1 (unscored).
- *  3. D/ST return score on a PAT try = +2 (unscored).
- * Order ~5–15 plays league-wide per NFL season, combined. These are NAMED
- * EXCEPTIONS, not pending categories, and MUST stay user-visible in the ESPN
- * templates' `description` (enforced by test). Q9's reason, no provider signal,
- * is out of date for 1 and 3: the feed sends `fgm_60p` and `def_2pt`, measured
- * 2026-11-05, and F871 keeps them open. 2 still has no signal.
+ * ── Named parity exceptions (Q9 ruling, 2026-07-22 — spec v2.8.5; two of the
+ *    three closed by migration 218, F871 — spec v2.16.115) ────────────────
+ * ESPN's verified defaults score three categories the rules documents had no
+ * key for until 218:
+ *  1. FG made 60+ = 6. CLOSED at 218: `fg_60_plus: 1` is a TOP-UP on
+ *     `fg_50_plus: 5` (the feed's `fgm_50p` includes the 60+ make, so the 50+
+ *     count stays inclusive and the new one, from `fgm_60p`, counts the 60+
+ *     makes again): 5 + 1 = 6.
+ *  2. D/ST safety on a PAT try = +1. STILL OPEN: no feed signal in 26 weeks.
+ *  3. D/ST two-point return (a return score on a PAT try) = +2. CLOSED at 218:
+ *     `def_2pt_return: 2`, from the feed's `def_2pt`.
+ * The one left is a NAMED EXCEPTION, not a pending category, and MUST stay
+ * user-visible in the ESPN templates' `description` (enforced by test).
  */
 
 /** One v1 template: the row seeded by migration 058. */
@@ -84,13 +91,14 @@ export interface ScoringTemplateDef {
 /** The plain-language ESPN parity-exception sentence (Q9 ruling: must be a
  *  line a commissioner can read, in the template's own description — not
  *  only in migration banners). Shared verbatim by both ESPN templates and
- *  pinned by test + pgTAP. */
+ *  pinned by test + pgTAP. Migration 218 (F871) rewrote it: the 60+ field
+ *  goal and the two-point return now pay, so one gap is left, and it no
+ *  longer claims a cent-for-cent match (one feed can differ from ESPN's on a
+ *  rare play — the Arizona 2026 wk6 sack, F893). */
 export const ESPN_PARITY_EXCEPTION_NOTE =
-  'Heads up on two tiny gaps our stat feed cannot see: ESPN awards 6 points ' +
-  'for a 60+ yard field goal (scored here as a 50+ make, 5 points), and 1–2 ' +
-  'points when a D/ST scores a safety or return on a PAT try (not scored ' +
-  'here). Combined, that is roughly 5–15 plays across the entire NFL per ' +
-  'season. Every other category matches ESPN to the cent.'
+  'Heads up on one tiny gap our stat feed cannot see: ESPN awards 1 point ' +
+  'when a D/ST scores a safety on a PAT try (not scored here). Our stats ' +
+  "come from one feed, so on a rare play our count can differ from ESPN's."
 
 /* ── Shared building blocks (spelled out per template below via spreads so
  *    each template's full object is still reviewable in one place; the
@@ -164,12 +172,14 @@ const SHARED_DEF_PA = {
   def_pa_35_plus: -4,
 } as const
 
-/** ESPN kicking (Q9-verified; the 60+ = 6 tier is the named exception —
- *  `fg_50_plus` carries the 50–59 value 5). ESPN has no PAT-miss penalty. */
+/** ESPN kicking (Q9-verified). ESPN pays 60+ yards 6: `fg_50_plus` pays every
+ *  50+ make 5 (the column includes 60+), and `fg_60_plus` adds the 1 on top
+ *  (migration 218, F871). ESPN has no PAT-miss penalty. */
 const ESPN_KICKING = {
   fg_0_39: 3,
   fg_40_49: 4,
   fg_50_plus: 5,
+  fg_60_plus: 1,
   pat_made: 1,
   fg_missed: -1,
 } as const
@@ -200,6 +210,9 @@ const ESPN_STANDARD_RULES: Record<string, number> = {
   receptions: 0,
   ...ESPN_KICKING,
   ...DST_EVENTS,
+  // ESPN's D/ST two-point return (a return score on a PAT try), Q9-verified;
+  // paid from migration 218 (F871). Yahoo and Sleeper don't pay it.
+  def_2pt_return: 2,
   ...ESPN_DEF_PA,
   ...ESPN_DEF_YA,
 }
@@ -260,13 +273,17 @@ const SCOUT_STANDARD_RULES: Record<string, number> = {
   // D/ST — events by unanimity inherit; PA + YA are the RULED ESPN split
   // model on the shipped Q9-verified values (dst_model 'split').
   ...DST_EVENTS,
+  // RULED 2026-11-05 (Chris, asked "In a Scout-rules league, does a D/ST
+  // two-point return pay 2?": "yes"; migration 218, F871). Scout PPR inherits
+  // it through its spread. No `fg_60_plus`: every Scout field goal pays 3.
+  def_2pt_return: 2,
   ...ESPN_DEF_PA,
   ...ESPN_DEF_YA,
 }
 
 /** Scout PPR — the PPR half of the Scout pair (spec App B.5.1, marked up by
  *  Chris 2026-09-01; SC.4). Authored as a ONE-KEY SPREAD of Scout
- *  Standard's body so "the same 43 keys, one value apart" is structural,
+ *  Standard's body so "the same keys (43; 44 since 218), one value apart" is structural,
  *  not a claim — the golden-pin tests still store the full literal
  *  independently (D284(4)). 0.2 is a 2dp value; §7.3.3.1 guardrail 5 holds
  *  untouched. */

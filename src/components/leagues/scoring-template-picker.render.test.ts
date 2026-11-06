@@ -50,10 +50,12 @@ import { SCORING_TEMPLATES } from '@/lib/leagues/scoring/templates'
 
 import { scoringEditorAccess } from './scoring-editor-ops'
 import {
+  COMPARE_ROWS,
   ScoringTemplatePicker,
   type ScoringTemplatePickerProps,
 } from './scoring-template-picker'
 import {
+  buildTemplateCards,
   canCustomize,
   type ScoringCustomizeContext,
   type ScoringTemplateRow,
@@ -357,6 +359,24 @@ describe('SC.3 — preselection renders through `value` (the picker stays contro
     expect(noPpr.match(/FieldScout(&#x27;|')s default/g)?.length).toBe(1)
     expect(noPpr).toContain('Scout Standard')
     expect(noPpr).not.toContain('Scout PPR')
+  })
+})
+
+describe('F871 / 218 — the compare table\'s FG rows', () => {
+  it('"FG made 60+" sits right after "FG made 50+" and shows what a 60+ make pays in all: ESPN 6 (5 + the 1 top-up), Yahoo and Sleeper 5, Scout 3', () => {
+    const labels = COMPARE_ROWS.map((row) => row.label)
+    expect(labels.slice(labels.indexOf('FG made 50+'), labels.indexOf('FG made 50+') + 2)).toEqual(['FG made 50+', 'FG made 60+'])
+    const row = COMPARE_ROWS.find((r) => r.label === 'FG made 60+')!
+    expect(Object.fromEntries(buildTemplateCards(FIXTURE_ROWS).map((card) => [card.name, row.value(card)]))).toEqual({
+      'Scout Standard': '3',
+      'Scout PPR': '3',
+      'ESPN Standard': '6',
+      'ESPN Full PPR': '6',
+      'Yahoo Standard': '5',
+      'Yahoo Half PPR': '5',
+      'Sleeper Standard': '5',
+      'Sleeper Full PPR': '5',
+    })
   })
 })
 

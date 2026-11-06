@@ -1300,12 +1300,14 @@ describe('R589 — "multiples of 0.01" is the DECIMAL rule, not a float toleranc
     expect(rejected).toBe(0)
   })
 
-  it('ZERO false rejections on the shipped templates: all 304 coefficients pass', () => {
+  it('ZERO false rejections on the shipped templates: all 310 coefficients pass', () => {
     // 218 across the parity six + the Scout pair's 43 × 2 (B.5's recount
     // 14 + 5 + 7 + 8 + 9 per Scout row — SC.1/SC.4; the census counts
     // keys, not non-zeros, so the pair adds exactly 43: 261 + 43 = 304).
+    // Migration 218 (F871) adds 6: fg_60_plus and def_2pt_return on both
+    // ESPN rows, def_2pt_return on both Scout rows (Q2): 304 + 6 = 310.
     const total = SCORING_TEMPLATES.reduce((n, t) => n + Object.keys(t.rules).length, 0)
-    expect(total).toBe(304)
+    expect(total).toBe(310)
     for (const t of SCORING_TEMPLATES) expectAccepted(t.rules)
   })
 
