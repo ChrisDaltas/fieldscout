@@ -43,16 +43,19 @@ export const leaguePlayerValueKeys = {
  */
 export const LEAGUE_PLAYER_VALUES_REFETCH_MS = 5 * 60_000
 
-export function useLeaguePlayerValues(
+/** The one query (key, gate, read) behind `useLeaguePlayerValues` — also
+ *  run over several weeks at once by `useTeamProjectionsByWeek` (the
+ *  `lineupQueryOptions` pattern), so both share one cache entry per week. */
+export function leaguePlayerValuesQueryOptions(
   leagueId: string | undefined,
   season: number | undefined,
   week: number | undefined,
   opts: { live?: boolean } = {},
 ) {
-  const query = useQuery({
+  return {
     queryKey: leaguePlayerValueKeys.week(leagueId ?? 'none', season ?? 0, week ?? 0),
     enabled: Boolean(leagueId) && season !== undefined && week !== undefined,
-    refetchInterval: opts.live ? LEAGUE_PLAYER_VALUES_REFETCH_MS : false,
+    refetchInterval: opts.live ? LEAGUE_PLAYER_VALUES_REFETCH_MS : (false as const),
     refetchOnWindowFocus: opts.live === true,
     queryFn: async (): Promise<LeaguePlayerValue[]> => {
       const supabase = createBrowserClient()
@@ -71,7 +74,16 @@ export function useLeaguePlayerValues(
         season_points: r.season_points === null ? null : Number(r.season_points),
       }))
     },
-  })
+  }
+}
+
+export function useLeaguePlayerValues(
+  leagueId: string | undefined,
+  season: number | undefined,
+  week: number | undefined,
+  opts: { live?: boolean } = {},
+) {
+  const query = useQuery(leaguePlayerValuesQueryOptions(leagueId, season, week, opts))
   const byPlayer = useMemo(() => new Map((query.data ?? []).map((v) => [v.player_id, v])), [query.data])
   return { ...query, byPlayer }
 }

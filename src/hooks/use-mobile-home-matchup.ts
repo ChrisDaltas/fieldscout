@@ -22,7 +22,8 @@ import type { TeamBoxScore } from '@/lib/leagues/api/box-score-service'
  *  - the week: the league's current week off its ladder (`currentWeekOf`,
  *    the matchup page's rule);
  *  - the pairing and both scores: that week's matchups read (`scoreCell` —
- *    "—" before kickoff, "pending" while a starter is unscored, never 0);
+ *    "—" before kickoff, the projected total once the games have started and
+ *    no score is in yet — Q108 / D845 — never 0, never "pending");
  *  - the records: the final standings;
  *  - "Proj": each side's starters' stored projections, shown only when every
  *    starter has one (the matchup page's `TotalCell` rule).

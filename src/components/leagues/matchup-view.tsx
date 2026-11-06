@@ -110,7 +110,7 @@ import { ProblemCard, problemCopy } from './team-page'
  * through the worker's own pipeline (`box-score-service.ts`).
  *
  * **The client computes nothing.** Every number on this page is a stored
- * cell; the `Final (pending corrections)` → `Final` badge is
+ * cell; the correction-window → final badge (both "Final" — D845) is
  * `league_weeks.status` as the server holds it (D295) — no client clock
  * decides it, and none is read here (§23.3 / the F226 posture). Instants
  * (kickoffs) are stored values formatted viewer-local with the league zone
@@ -450,7 +450,7 @@ function HeadToHeadWeek({
 /**
  * The head-to-head scoreboard — the prototype's MatchupTab header: each side
  * a crest, the team (a door to its page), its manager, and a big mono score;
- * the week and "vs" between them. A score is muted only while it is pending
+ * the week and "vs" between them. A score is muted only while it is a dash
  * or once the STORED result says that side lost (the client never compares
  * scores). Each side carries its current W/L streak (F566); the win-chance
  * meter sits under the card (`WinChanceMeter`).
@@ -820,8 +820,9 @@ function TotalPointsWeek({
   )
 }
 
-/** A leaderboard row with no results row: its projection in a live week
- *  (Q108, the projected-points blue), else `pending` / the dash. */
+/** A leaderboard row with no results row: its projection once the week's
+ *  games have started (Q108 / D845, the projected-points blue), else the
+ *  dash — never the word "pending". */
 function PendingRowCell({ cell }: { cell: ReturnType<typeof leaderboardPendingCell> }) {
   return (
     <span
@@ -1100,7 +1101,8 @@ function WinChanceMeter({
   )
 }
 
-/** The worker's total for one side (pending stays the word — E61), the
+/** The worker's total for one side (stats still to come in ⇒ the dash —
+ *  E61, D845; never 0), the
  *  projected total when every starter has a stored projection, and how many
  *  starters' games have not kicked off (from each game's stored status). */
 function TotalCell({
@@ -1119,7 +1121,7 @@ function TotalCell({
   hideProj?: boolean
   mirror?: boolean
 }) {
-  // No lineup ⇒ no sum to speak of (the side's state says why), not `pending`.
+  // No lineup ⇒ no sum to speak of (the side's state says why), not a dash.
   if (!data || !data.lineup) return <span data-box-total={teamId} />
   const sum = boxSumCell(data)
   const ids = data.starters.map((s) => s.player?.id ?? null)

@@ -1,21 +1,28 @@
 'use client'
 
 import Link from 'next/link'
+import { useMemo } from 'react'
 
 import { teamPageHref } from '@/components/leagues/league-cells'
+import type { ScoreCell } from '@/components/leagues/matchup-view-ops'
 import {
   AWAITING_BUILD_COPY,
   PROJECTED_TITLE,
   TBD_LABEL,
+  bracketProjectionWeeks,
   bracketShape,
-  formatBracketScore,
-  bracketTotalText,
+  bracketTotalCell,
   gamePlayed,
   pointsRaceCopy,
   projectionBasisCopy,
   roundLabel,
+  roundWeekStatus,
   tbdSlots,
+  type BracketProjectedOf,
+  type WeekStatusOf,
 } from '@/components/leagues/playoff-bracket-ops'
+import { M_PROJ_TEXT } from '@/components/players/projected-points'
+import { useTeamProjectionsByWeek } from '@/hooks/use-team-week-projections'
 import type { BracketGame, PlayoffBracket, ProjectedPair } from '@/lib/leagues/api/playoffs-service'
 import { cn } from '@/lib/utils'
 
@@ -39,6 +46,7 @@ export function MobileBracket({
   teamNames,
   teamIds,
   myTeamId,
+  irSlots,
 }: {
   doc: PlayoffBracket | undefined
   pending: boolean
@@ -47,7 +55,14 @@ export function MobileBracket({
   teamNames: ReadonlyMap<string, string>
   teamIds: readonly string[]
   myTeamId: string | null
+  /** `settings.roster_settings.ir_slots` — an IR spot is not a starter in a
+   *  team's projected total (D845 / F907). */
+  irSlots: ReadonlyArray<{ key: string }>
 }) {
+  // D845 / F907: a side with no score in a started week shows its projected
+  // total — the scoreboard's own rule and projections (`teamScoreCell`).
+  const projectionWeeks = useMemo(() => (doc ? bracketProjectionWeeks(doc) : []), [doc])
+  const projectedOf = useTeamProjectionsByWeek({ leagueId: doc?.league_id, season: doc?.season, weeks: projectionWeeks, irSlots })
   if (pending && !doc) return <SkeletonBlocks count={2} className="h-[88px]" />
   if (!doc) {
     return problem ? <CenteredNote role="alert" message="Couldn’t load the bracket." action="Try again" onAction={onRetry} className="py-6" /> : null
@@ -82,7 +97,9 @@ export function MobileBracket({
             <ProjectedCard key={g} pair={pair} name={name} av={av} champ={champ} leagueId={doc.league_id} />
           ))
         } else if (shape === 'bracket' && stored?.built) {
-          games = stored.games.map((game, g) => <GameCard key={g} game={game} name={name} av={av} champ={champ} leagueId={doc.league_id} />)
+          games = stored.games.map((game, g) => (
+            <GameCard key={g} game={game} name={name} av={av} champ={champ} leagueId={doc.league_id} weekStatusOf={roundWeekStatus(stored)} projectedOf={projectedOf} />
+          ))
         } else {
           const slots = stored ? tbdSlots(stored) : doc.bracket_size / 2 ** round
           games = Array.from({ length: slots }, (_, g) => <TbdCard key={g} champ={champ} />)
@@ -123,7 +140,7 @@ function Slot({
   seed: number | null
   label: string
   avClass: string
-  pts: string | null
+  pts: ScoreCell | null
   kind: 'team' | 'tbd' | 'bye'
   first: boolean
   dim?: boolean
@@ -146,7 +163,15 @@ function Slot({
       >
         {label}
       </span>
-      {pts !== null && <span className={cn('text-[13px] font-semibold tabular-nums', dim ? 'text-m-t3' : 'text-m-t1')}>{pts}</span>}
+      {pts !== null && (
+        <span
+          className={cn('text-[13px] font-semibold tabular-nums', pts.projected ? M_PROJ_TEXT : dim ? 'text-m-t3' : 'text-m-t1')}
+          title={pts.title ?? undefined}
+          data-projected={pts.projected || undefined}
+        >
+          {pts.text}
+        </span>
+      )}
     </>
   )
   const cls = cn('flex h-11 items-center gap-2.5 px-3', first && 'border-b border-m-b3')
@@ -159,11 +184,25 @@ function Slot({
   )
 }
 
-function GameCard({ game, name, av, champ, leagueId }: { game: BracketGame; name: Name; av: Av; champ: boolean; leagueId: string }) {
+function GameCard({
+  game,
+  name,
+  av,
+  champ,
+  leagueId,
+  weekStatusOf,
+  projectedOf,
+}: {
+  game: BracketGame
+  name: Name
+  av: Av
+  champ: boolean
+  leagueId: string
+  weekStatusOf: WeekStatusOf
+  projectedOf: BracketProjectedOf
+}) {
   const played = gamePlayed(game)
-  const status = game.weeks[0]?.status ?? 'scheduled'
-  const pts = (side: 'home' | 'away', score: number | null | undefined) =>
-    !played ? null : game.weeks.length > 1 ? bracketTotalText(game, side) : formatBracketScore(score ?? null, status)
+  const pts = (side: 'home' | 'away') => (!played ? null : bracketTotalCell(game, side, weekStatusOf, projectedOf))
   const decided = game.final && game.decided_by !== 'bye'
   return (
     <Card champ={champ}>
@@ -171,7 +210,7 @@ function GameCard({ game, name, av, champ, leagueId }: { game: BracketGame; name
         seed={game.home_seed}
         label={name(game.home_team_id)}
         avClass={av(game.home_team_id)}
-        pts={pts('home', game.weeks[0]?.home_score)}
+        pts={pts('home')}
         kind="team"
         first
         dim={decided && game.winner_team_id !== game.home_team_id}
@@ -182,7 +221,7 @@ function GameCard({ game, name, av, champ, leagueId }: { game: BracketGame; name
           seed={game.away_seed}
           label={name(game.away_team_id)}
           avClass={av(game.away_team_id)}
-          pts={pts('away', game.weeks[0]?.away_score)}
+          pts={pts('away')}
           kind="team"
           first={false}
           dim={decided && game.winner_team_id !== game.away_team_id}

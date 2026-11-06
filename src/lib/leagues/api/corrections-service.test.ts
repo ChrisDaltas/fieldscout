@@ -77,8 +77,8 @@ describe('each correction in plain words (tasks-M6 §4 rule 10 — never a stat 
     })
   })
 
-  it('a pending team score reads "pending", never "null" or 0 (E61)', () => {
-    expect(toCorrectionItem(row({ team_score_before: null })).summary).toBe("Lou Receiver's receiving yards 100 → 94 — Team One pending → 9.40")
+  it('no team score yet reads as the dash, never "null", 0 or the word pending (E61, D845)', () => {
+    expect(toCorrectionItem(row({ team_score_before: null })).summary).toBe("Lou Receiver's receiving yards 100 → 94 — Team One — → 9.40")
   })
 
   it('the result change names only the games that moved — the matchup, the second game, the median game', () => {

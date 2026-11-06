@@ -81,9 +81,10 @@ function sentenceStart(text: string): string {
   return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1)
 }
 
-/** A score / points value as the league shows it (two decimals); NULL = pending (E61). */
+/** A score / points value as the league shows it (two decimals); NULL (no
+ *  score yet — E61) is the dash, never the word "pending" (D845). */
 export function pointsWords(value: number | null): string {
-  return value === null ? 'pending' : value.toFixed(2)
+  return value === null ? '—' : value.toFixed(2)
 }
 
 function statValueWords(value: number | null): string {

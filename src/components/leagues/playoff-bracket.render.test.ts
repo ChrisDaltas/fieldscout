@@ -28,6 +28,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
 import { leagueActivityKeys } from '@/hooks/use-league-activity'
+import { leaguePlayerValueKeys, type LeaguePlayerValue } from '@/hooks/use-league-player-values'
+import { teamLineupKeys, type TeamLineupRow } from '@/hooks/use-lineup'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { leaguesKeys } from '@/hooks/use-leagues'
 import { leagueMatchupKeys } from '@/hooks/use-matchups'
@@ -47,6 +49,7 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 import { HAND_PICKED_BADGE, HAND_PICK_NO_CHANGES_COPY, STOOD_DOWN_COPY } from './bracket-hand-pick-ops'
 import { BracketHandPickPanelView } from './bracket-hand-pick-panel'
 import { SeasonHero } from './league-home-season'
+import { NO_PROJECTION_TITLE } from './matchup-view-ops'
 import {
   AWAITING_BUILD_COPY,
   EDIT_RESULT_LABEL,
@@ -154,9 +157,20 @@ interface Seed {
   bracket?: PlayoffBracket | 'error' | 'degraded' | 'missing'
   standings?: LeagueStandings | 'missing'
   projected?: LeagueStandings
+  /** D845 / F907: stored lineups (team → slot map) and projections for one week. */
+  projections?: { week: number; lineups: Record<string, Record<string, string>>; values: Record<string, number | null> }
 }
 
 function seedBracket(qc: QueryClient, seed: Seed) {
+  if (seed.projections) {
+    const { week, lineups, values } = seed.projections
+    for (const [teamId, slot_map] of Object.entries(lineups)) {
+      const row: TeamLineupRow = { id: `l-${teamId}`, team_id: teamId, season: 2099, week, slot_map, starters: [], bench: [], locked_at: null, edited_by_commish: false, set_at: null }
+      qc.setQueryData(teamLineupKeys.week(teamId, week), row)
+    }
+    const rows: LeaguePlayerValue[] = Object.entries(values).map(([player_id, projected_points]) => ({ player_id, projected_points, projected_missing: null, season_points: null, season_games: 0 }))
+    qc.setQueryData(leaguePlayerValueKeys.week(LEAGUE, 2099, week), rows)
+  }
   qc.setQueryData(leaguesKeys.detail(LEAGUE), seed.detail ?? detailWith())
   const s = seed.standings ?? FINAL_STANDINGS
   if (s !== 'missing') qc.setQueryData(leagueStandingsKeys.all(LEAGUE), s)
@@ -192,6 +206,14 @@ function elementOf(html: string, marker: string, close: string): string {
 }
 
 /** The team line (`data-team-line`) that names `team`, within `scope`. */
+/** From the team's name to the end of its line (the score cell sits after the name). */
+function lineAfter(scope: string, team: string): string {
+  const at = scope.indexOf(team)
+  expect(at, team).toBeGreaterThan(-1)
+  const end = scope.indexOf('data-team-line', at)
+  return scope.slice(at, end === -1 ? undefined : end)
+}
+
 function teamLine(scope: string, team: string): string {
   const at = scope.indexOf(team)
   expect(at, team).toBeGreaterThan(-1)
@@ -331,11 +353,12 @@ describe('once built: the stored rounds — seeds, byes, per-week rows, the two-
     expect(teamLine(tie, 'Echo')).not.toContain('data-winner')
   })
 
-  it('round 2 LIVE: a pending score is the door’s word (E61), never 0.00; the ✸ commissioner-adjusted row is said; the correction close is a viewer-local instant', () => {
+  it('round 2 LIVE: an unscored side (E61’s NULL) with nothing to project is the dash — never 0.00, never "pending" (D845); the ✸ commissioner-adjusted row is said; the correction close is a viewer-local instant', () => {
     const html = renderTab({ bracket: BUILT_DOC })
     const r2 = between(html, 'data-round="2"', 'data-round="3"')
     expect(r2).toContain('data-round-badge="live"')
-    expect(r2).toContain('>pending<')
+    expect(lineAfter(r2, 'Delta')).toContain(`title="${NO_PROJECTION_TITLE}">—<`)
+    expect(r2).not.toMatch(/>pending</i)
     expect(r2).toContain('Leads on points')
     expect(r2).toContain('✸ commissioner-adjusted')
     // L.E1.34 (F233(d)): the badge lands on the log — the adjusted week, this game's teams.
@@ -345,6 +368,17 @@ describe('once built: the stored rounds — seeds, byes, per-week rows, the two-
     // season's (a past instant) and must NOT render under a final bracket; each round's badge
     // carries its own close.
     expect(html).not.toContain('data-rollover-line="corrections-close"')
+  })
+
+  it('F907 / D845: the bracket reads the scoreboard’s projections — an unscored side in a started week shows "Proj N" in the projected blue, the same number the scoreboard shows', () => {
+    const html = renderTab({
+      bracket: BUILT_DOC,
+      projections: { week: 16, lineups: { [T.delta]: { 'qb:0': 'p-dqb', 'rb:0': 'p-drb', ir1: 'p-dir' } }, values: { 'p-dqb': 21.3, 'p-drb': 9.95, 'p-dir': 99 } },
+    })
+    const delta = lineAfter(between(html, 'data-round="2"', 'data-round="3"'), 'Delta')
+    expect(delta).toMatch(/text-fs-blue-deep" title="Projected — this team hasn’t scored yet this week\." data-projected="true">Proj 31\.3</)
+    expect(delta).not.toMatch(/>pending</i)
+    expect(delta).not.toContain('0.00')
   })
 
   it('R911: while the seeds are PROVISIONAL (regular_season_final false) the regular season’s close renders as the seeds-final instant, viewer-local, league zone on hover', () => {

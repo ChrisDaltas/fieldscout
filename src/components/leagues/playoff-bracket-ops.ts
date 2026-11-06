@@ -8,7 +8,17 @@ import type {
 } from '@/lib/leagues/api/playoffs-service'
 
 import { formatInstantInZone } from './league-home-states-ops'
-import { weekBadge, type WeekBadge } from './matchup-view-ops'
+import {
+  NO_PROJECTION_TITLE,
+  PROJECTED_SCORE_TITLE,
+  WEEK_NOT_STARTED_TITLE,
+  projectedScoreText,
+  teamScoreCell,
+  weekBadge,
+  type ScoreCell,
+  type WeekBadge,
+} from './matchup-view-ops'
+import { weekGamesStarted, type ProjectionWeek } from './schedule-view-ops'
 
 /**
  * Pure decisions for `playoff-bracket.tsx` (spec §16.2 `playoff-bracket`,
@@ -186,25 +196,98 @@ export function gamePlayed(game: Pick<BracketGame, 'weeks'>): boolean {
   return game.weeks.some((w) => w.status !== 'scheduled')
 }
 
-/** A stored score as text: NULL is the door's pending word (E61), never
- *  0.00; a `scheduled` row's cell is a dash (the schedule grid's spelling —
- *  nothing has been scored yet). */
-export function formatBracketScore(score: number | null, status = 'live'): string {
-  if (status === 'scheduled') return '—'
-  return score === null ? 'pending' : score.toFixed(2)
-}
-
 export function formatTotal(total: number): string {
   return total.toFixed(2)
 }
 
-/** A multi-week round's running total as text. 118's sum reads a blank as 0, so
- *  a round nobody has been scored in yet would say 0.00; it says what a single
- *  week's cell says instead (F273, migration 216). */
-export function bracketTotalText(game: Pick<BracketGame, 'weeks' | 'home_total' | 'away_total'>, side: 'home' | 'away'): string {
-  const anyScored = game.weeks.some((w) => (side === 'home' ? w.home_score : w.away_score) !== null)
-  if (!anyScored) return formatBracketScore(null, game.weeks.some((w) => w.status !== 'scheduled') ? 'live' : 'scheduled')
-  return formatTotal(side === 'home' ? game.home_total : game.away_total)
+/** A team's projected total for one week (`useTeamProjectionsByWeek`). */
+export type BracketProjectedOf = (week: number, teamId: string) => number | null
+/** A week's `league_weeks.status`, read off its round. */
+export type WeekStatusOf = (week: number) => string | undefined
+
+const NO_PROJECTIONS: BracketProjectedOf = () => null
+
+/** The round's own week statuses, by week (each `BracketGameWeek` row is a
+ *  matchup; its week's status is the round's). */
+export function roundWeekStatus(round: Pick<BracketRound, 'weeks'> | null | undefined): WeekStatusOf {
+  const byWeek = new Map((round?.weeks ?? []).map((w) => [w.week, w.status]))
+  return (week) => byWeek.get(week)
+}
+
+function sideScore(w: BracketGame['weeks'][number], side: 'home' | 'away'): number | null {
+  return side === 'home' ? w.home_score : w.away_score
+}
+
+/**
+ * One cell per stored week row of a game, for one side — the scoreboard's
+ * own rule (`teamScoreCell`, D845 / F907): the stored score; else, once the
+ * week's games have started, the team's projected total for that week in
+ * the projected blue ("Proj N"); else the dash. Never the word "pending",
+ * never 0.00 for a NULL. Display only — 118's verdict and totals stand.
+ */
+export function bracketWeekCells(
+  game: Pick<BracketGame, 'weeks' | 'home_team_id' | 'away_team_id'>,
+  side: 'home' | 'away',
+  weekStatusOf: WeekStatusOf,
+  projectedOf: BracketProjectedOf = NO_PROJECTIONS,
+): ScoreCell[] {
+  const team = side === 'home' ? game.home_team_id : game.away_team_id
+  return game.weeks.map((w) => teamScoreCell(sideScore(w, side), w.status, weekStatusOf(w.week), team ? projectedOf(w.week, team) : null))
+}
+
+/**
+ * A side's cell for the whole game. One week: that week's cell. A two-week
+ * round with a stored score in either week: 118's running total. With no
+ * score in any week yet (118's sum would read the blanks as 0.00 — F273,
+ * migration 216): the projected totals of the weeks that have started,
+ * added — "Proj N" — when every one of them has a projection, else the
+ * dash; before any week starts, the dash.
+ */
+export function bracketTotalCell(
+  game: Pick<BracketGame, 'weeks' | 'home_team_id' | 'away_team_id' | 'home_total' | 'away_total'>,
+  side: 'home' | 'away',
+  weekStatusOf: WeekStatusOf,
+  projectedOf: BracketProjectedOf = NO_PROJECTIONS,
+): ScoreCell {
+  if (game.weeks.length <= 1) {
+    return bracketWeekCells(game, side, weekStatusOf, projectedOf)[0] ?? { text: '—', title: WEEK_NOT_STARTED_TITLE, pending: false }
+  }
+  if (game.weeks.some((w) => sideScore(w, side) !== null)) {
+    return { text: formatTotal(side === 'home' ? game.home_total : game.away_total), title: null, pending: false }
+  }
+  const started = game.weeks.filter((w) => weekGamesStarted(weekStatusOf(w.week), w.status))
+  if (started.length === 0) return { text: '—', title: WEEK_NOT_STARTED_TITLE, pending: false }
+  const team = side === 'home' ? game.home_team_id : game.away_team_id
+  const projections = started.map((w) => (team ? projectedOf(w.week, team) : null))
+  if (projections.some((p) => p === null)) return { text: '—', title: NO_PROJECTION_TITLE, pending: false }
+  const sum = projections.reduce<number>((a, p) => a + (p ?? 0), 0)
+  return { text: projectedScoreText(sum), title: PROJECTED_SCORE_TITLE, pending: false, projected: true }
+}
+
+/** The built rounds' started weeks with a side that has no score yet — the
+ *  weeks (and teams) the bracket reads projections for (D845 / F907; the
+ *  schedule grid's `scheduleProjectionWeeks` twin). */
+export function bracketProjectionWeeks(doc: PlayoffBracket): ProjectionWeek[] {
+  if (doc.kind !== 'bracket') return []
+  const byWeek = new Map<number, ProjectionWeek>()
+  for (const round of doc.round_list) {
+    if (!round.built) continue
+    const statusOf = roundWeekStatus(round)
+    for (const game of round.games) {
+      for (const w of game.weeks) {
+        const status = statusOf(w.week)
+        if (status === undefined || !weekGamesStarted(status)) continue
+        const ids: string[] = []
+        if (w.home_score === null) ids.push(game.home_team_id)
+        if (game.away_team_id && w.away_score === null) ids.push(game.away_team_id)
+        if (ids.length === 0) continue
+        const entry = byWeek.get(w.week) ?? { week: w.week, status, teamIds: [] }
+        entry.teamIds = [...new Set([...entry.teamIds, ...ids])]
+        byWeek.set(w.week, entry)
+      }
+    }
+  }
+  return [...byWeek.values()].sort((a, b) => a.week - b.week)
 }
 
 // ---------------------------------------------------------------------------

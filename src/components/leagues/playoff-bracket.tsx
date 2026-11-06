@@ -1,10 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useTeamProjectionsByWeek } from '@/hooks/use-team-week-projections'
 import type { StandingsRow } from '@/lib/leagues/api/standings-service'
 import type { BracketGame, BracketRound, PlayoffBracket as PlayoffBracketDoc, ProjectedPair } from '@/lib/leagues/api/playoffs-service'
 import { cn } from '@/lib/utils'
@@ -27,21 +29,26 @@ import {
   correctionsCloseDisplay,
   foreignRowsCopy,
   foreignRowsOf,
-  formatBracketScore,
-  bracketTotalText,
+  bracketProjectionWeeks,
+  bracketTotalCell,
+  bracketWeekCells,
   gamePlayed,
   pointsRaceCopy,
   projectionBasisCopy,
   rolloverDisplay,
   roundBadge,
   roundLabel,
+  roundWeekStatus,
   seededBeforeCorrection,
   sourceLabel,
   tbdSlots,
   teamName,
   verdictCopy,
+  type BracketProjectedOf,
   type ResultLink,
+  type WeekStatusOf,
 } from './playoff-bracket-ops'
+import type { ScoreCell } from './matchup-view-ops'
 
 /**
  * PlayoffBracket (§16.2 `playoff-bracket`: "seeds, byes, reseed; commish
@@ -94,6 +101,7 @@ export function PlayoffBracket({
   myRole,
   myTeamId,
   finalStandings,
+  irSlots,
   compact = false,
 }: {
   doc: PlayoffBracketDoc
@@ -105,6 +113,9 @@ export function PlayoffBracket({
   myTeamId: string | null
   /** The FINAL standings (117's document), for R846's label; null = not loaded. */
   finalStandings: readonly Pick<StandingsRow, 'rank' | 'team_id'>[] | null
+  /** `settings.roster_settings.ir_slots` — an IR spot is not a starter in a
+   *  team's projected total (D845 / F907: an unscored side shows "Proj N"). */
+  irSlots: ReadonlyArray<{ key: string }>
   /** The hero's trim: no commissioner links, no correction-close line. */
   compact?: boolean
 }) {
@@ -114,6 +125,10 @@ export function PlayoffBracket({
   const foreign = foreignRowsCopy(foreignRowsOf(doc))
   const handPick = !compact && myRole === 'commissioner' && doc.kind === 'bracket'
   const overrideMode = useOverrideMode(doc.league_id)
+  // D845 / F907: a side with no score in a started week shows its projected
+  // total — the scoreboard's own rule and projections (`teamScoreCell`).
+  const projectionWeeks = useMemo(() => bracketProjectionWeeks(doc), [doc])
+  const projectedOf = useTeamProjectionsByWeek({ leagueId: doc.league_id, season: doc.season, weeks: projectionWeeks, irSlots })
   // The game whose panel is open, by its first row's id — the document is
   // re-read after a save, so the game is looked up fresh on every render.
   const [pickingId, setPickingId] = useState<string | null>(null)
@@ -221,6 +236,8 @@ export function PlayoffBracket({
                           onPick={handPick && overrideMode && gameHandPickable(game) ? () => setPickingId(game.weeks[0]?.matchup_id ?? null) : null}
                           resultLinks={compact || !overrideMode ? [] : commishResultLinks(myRole, doc.league_id, game)}
                           picking={picking?.game === game}
+                          weekStatusOf={roundWeekStatus(round)}
+                          projectedOf={projectedOf}
                         />
                       ))
                     : Array.from({ length: tbdSlots(round) }, (_, i) => <TbdGame key={i} />)}
@@ -322,7 +339,7 @@ function TeamLine({
   /** The game has a stored winner — the other side reads as the trailer. */
   decided?: boolean
   cells?: string[]
-  total?: string
+  total?: ScoreCell
 }) {
   const trailing = decided && !winner
   return (
@@ -344,7 +361,13 @@ function TeamLine({
       )}
       {total !== undefined && (
         <span className="flex shrink-0 flex-col items-end">
-          <span className={cn('fs-num text-[13px] font-bold tracking-[-0.01em]', trailing ? 'text-n-3' : 'text-ink')}>{total}</span>
+          <span
+            className={cn('fs-num text-[13px] font-bold tracking-[-0.01em]', total.projected ? PROJ_TEXT : trailing ? 'text-n-3' : 'text-ink')}
+            title={total.title ?? undefined}
+            data-projected={total.projected || undefined}
+          >
+            {total.text}
+          </span>
           {cells && cells.length > 1 && (
             <span className="fs-num text-[9px] font-medium text-n-6" data-week-cells>
               {cells.join(' + ')}
@@ -379,6 +402,8 @@ function BuiltGame({
   onPick = null,
   resultLinks = [],
   picking = false,
+  weekStatusOf,
+  projectedOf,
 }: {
   leagueId: string
   game: BracketGame
@@ -392,13 +417,18 @@ function BuiltGame({
   resultLinks?: ResultLink[]
   /** This game's panel is the open one — a resting state, carried by fill. */
   picking?: boolean
+  /** The round's week statuses (`roundWeekStatus`). */
+  weekStatusOf: WeekStatusOf
+  /** D845 / F907: each team's projected total per week. */
+  projectedOf: BracketProjectedOf
 }) {
   const verdict = verdictCopy(game)
   const played = gamePlayed(game)
-  const homeCells = game.weeks.map((w) => formatBracketScore(w.home_score, w.status))
-  const awayCells = game.weeks.map((w) => formatBracketScore(w.away_score, w.status))
+  const homeCells = bracketWeekCells(game, 'home', weekStatusOf, projectedOf).map((c) => c.text)
+  const awayCells = bracketWeekCells(game, 'away', weekStatusOf, projectedOf).map((c) => c.text)
   const bye = game.away_team_id === null
-  const total = (side: 'home' | 'away', cells: string[]) => (played ? (game.weeks.length > 1 ? bracketTotalText(game, side) : cells[0]) : '—')
+  const total = (side: 'home' | 'away'): ScoreCell =>
+    played ? bracketTotalCell(game, side, weekStatusOf, projectedOf) : { text: '—', title: null, pending: false }
   const decided = !bye && played && game.winner_team_id != null
   return (
     <div
@@ -419,7 +449,7 @@ function BuiltGame({
           winner={!bye && played && game.winner_team_id === game.home_team_id}
           decided={decided}
           cells={bye ? undefined : homeCells}
-          total={bye ? undefined : total('home', homeCells)}
+          total={bye ? undefined : total('home')}
         />
         {bye ? (
           <p className="flex min-h-[34px] items-center px-3 py-1.5 text-[11px] font-medium text-n-6" data-bye>
@@ -435,7 +465,7 @@ function BuiltGame({
             winner={played && game.winner_team_id === game.away_team_id}
             decided={decided}
             cells={awayCells}
-            total={total('away', awayCells)}
+            total={total('away')}
           />
         )}
       </div>

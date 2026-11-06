@@ -145,6 +145,7 @@ function SeasonMatchups({
             teamNames={teamNames}
             teamIds={teamIds}
             myTeamId={myTeamId}
+            irSlots={detail.settings.roster_settings.ir_slots}
           />
         </section>
       )}
@@ -461,7 +462,7 @@ function Side({
 }
 
 /** A total-points league's week: the stored leaderboard, ranked by the ops
- *  (absence is pending, never 0). Your own row is drawn like the rest, as
+ *  (absence is never 0). Your own row is drawn like the rest, as
  *  the handoff draws your matchup card (m-league §2.2) — your blue avatar
  *  marks you. */
 function Leaderboard({
@@ -509,8 +510,9 @@ function Leaderboard({
   )
 }
 
-/** A leaderboard row with no results row: its projection in a live week
- *  (Q108, the projected-points blue), else `pending` / the dash. */
+/** A leaderboard row with no results row: its projection once the week's
+ *  games have started (Q108 / D845, the projected-points blue), else the
+ *  dash — never the word "pending". */
 function PendingRowCell({ cell }: { cell: ReturnType<typeof leaderboardPendingCell> }) {
   return (
     <span

@@ -21,7 +21,7 @@ import type { ScheduleWeek } from '@/hooks/use-schedule'
 
 import { currentWeekOf } from './lineup-editor-ops'
 import { wholeProjectedTotal, type ProjectedTotal } from './my-team-ops'
-import { formatScore, weekKind, weekStatusBadge } from './schedule-view-ops'
+import { formatScore, weekGamesStarted, weekKind, weekStatusBadge } from './schedule-view-ops'
 import { formatPoints } from './standings-table-ops'
 
 export { formatPoints }
@@ -38,10 +38,13 @@ export const NO_LEADERBOARD_ROWS_COPY = 'No scores yet this week — the field f
 export const NO_LINEUP_COPY = 'No lineup on record for this week.'
 export const NO_STARTERS_COPY = 'Every starting slot is empty.'
 export const NO_WEEK_COPY = 'No schedule yet — it is generated the moment the draft completes.'
-export const PENDING_SCORE_COPY = 'pending'
+/** What a points cell with no number shows: the dash. Chris 2026-11-06
+ *  (D845): "i've never heard of this pending thing before" — the word is spec
+ *  vocabulary (E61), never manager copy. The constant keeps its name; a NULL
+ *  is still never shown as 0.00. */
+export const PENDING_SCORE_COPY = '—'
 export const WEEK_NOT_STARTED_TITLE = 'No score yet — the week has not started.'
-export const PENDING_SCORE_TITLE =
-  'Pending — a starter has an undelivered stat, or no scoring batch has reached this team yet; never shown as 0.00.'
+export const PENDING_SCORE_TITLE = 'No score yet — some of this team’s stats aren’t in yet.'
 export const BOX_SUM_LABEL = 'Total'
 export const LEADERBOARD_TITLE = 'Week leaderboard'
 export const MEDIAN_ROW_LABEL = 'vs League Median'
@@ -49,7 +52,8 @@ export const MEDIAN_PENDING_TITLE = 'The median line renders once every score of
 export const SECOND_CHIP_LABEL = '2nd opponent'
 
 // ---------------------------------------------------------------------------
-// The week badge — §16.5.4 `final (pending corrections)` → `final`
+// The week badge — §16.5.4's correction window → final (both read "Final"
+// to a manager — D845)
 // ---------------------------------------------------------------------------
 
 export type WeekBadgeState = 'upcoming' | 'live' | 'pending_corrections' | 'final'
@@ -64,13 +68,14 @@ export interface WeekBadge {
 const WEEK_BADGE_TITLES: Record<WeekBadgeState, string> = {
   upcoming: 'The week has not started.',
   live: 'Scores update as the pipeline writes them.',
-  pending_corrections: 'Every game is over; an official stat correction inside the window still recomputes this matchup.',
+  pending_corrections: 'Final. A late official stat correction can still change it this week.',
   final: 'Finalized — only a commissioner override changes it now.',
 }
 
 /**
  * THE badge lifecycle, driven by `league_weeks.status` as the server holds
- * it (D295: `correction_window` IS "final (pending corrections)"; 116's
+ * it (D295: `correction_window` is §16.5.4's "final (pending corrections)",
+ * labelled plain "Final" for managers since D845; 116's
  * `finalize_matchups` flips the week to `final` after the window closes and
  * every game is final — the client never decides that). `upcoming` and
  * `live` are the two states before it. The LABEL and VARIANT are the
@@ -98,15 +103,15 @@ export interface ScoreCell {
   pending: boolean
   /** Q108 (Chris 2026-11-06): the text is the team's PROJECTED total, not a
    *  score — render it in the projected-points blue (`PROJ_TEXT` /
-   *  `M_PROJ_TEXT`). Absent = a real score, a dash or `pending`. */
+   *  `M_PROJ_TEXT`). Absent = a real score or a dash. */
   projected?: boolean
 }
 
-/** A team score as the door wrote it: a number, or NULL — the write door's
- *  word for pending (E61 / F241(a); the R788 posture: never 0.00). The TEXT
- *  is the schedule grid's `formatScore` (one spelling: a `scheduled` row's
- *  NULL is a dash — "no score yet" — and an open row's NULL is `pending`);
- *  this adds the hover title. */
+/** A team score as the door wrote it: a number, or NULL — no score yet
+ *  (E61 / F241(a); the R788 posture: never 0.00). The TEXT is the schedule
+ *  grid's `formatScore` (a NULL is a dash, never the word "pending" — D845);
+ *  this adds the hover title. With no projection to offer — callers that
+ *  have one use `teamScoreCell`. */
 export function scoreCell(score: number | null, matchupStatus: string): ScoreCell {
   const text = formatScore(score, matchupStatus)
   if (score !== null) return { text, title: null, pending: false }
@@ -126,32 +131,31 @@ export function projectedScoreText(projected: number): string {
 }
 
 /**
- * A team's score cell, Q108's rule (Chris 2026-11-06: "a Team with no score
+ * A team's score cell — Q108's rule (Chris 2026-11-06: "a Team with no score
  * should show the projected total for the week, and that projection should
- * keep updating as projections change"). A stored score always wins. In a
- * LIVE week (`league_weeks.status = 'live'`) a team with no score shows its
- * projected total for the week (`wholeProjectedTotal`'s number — the caller
- * passes null when it can't be stated truthfully, and the cell is then the
- * dash, never "Proj 0.0"). Every other week is `scoreCell` unchanged: an
- * upcoming week's dash, and a week whose games are over (the correction
- * window, or a held week) keeps `pending` — a projection after the games is
- * meaningless. Display only: the projection never feeds a result, the
- * median, the standings or a sort.
+ * keep updating as projections change"), widened by D845 (Chris 2026-11-06:
+ * "i've never heard of this pending thing before") to every week whose games
+ * have started. A stored score always wins. A team with no score in a
+ * started week (`weekGamesStarted` — live, the correction window or final)
+ * shows its projected total for the week (`wholeProjectedTotal`'s number —
+ * the caller passes null when it can't be stated truthfully, and the cell is
+ * then the dash, never "Proj 0.0"). A week that has not started is the dash.
+ * Never the word "pending". Display only: the projection never feeds a
+ * result, the median, the win chance, the standings or a sort.
  */
 export function teamScoreCell(score: number | null, matchupStatus: string, weekStatus: string | null | undefined, projected: number | null | undefined): ScoreCell {
-  if (score !== null || weekStatus !== 'live') return scoreCell(score, matchupStatus)
+  if (score !== null) return scoreCell(score, matchupStatus)
+  if (!weekGamesStarted(weekStatus, matchupStatus)) return { text: '—', title: WEEK_NOT_STARTED_TITLE, pending: false }
   if (projected === null || projected === undefined) return { text: '—', title: NO_PROJECTION_TITLE, pending: false }
   return { text: projectedScoreText(projected), title: PROJECTED_SCORE_TITLE, pending: false, projected: true }
 }
 
-export const LEADERBOARD_PENDING_TITLE = 'No scoring batch has reached this team yet — an absent row is not a score.'
-
-/** A `total_points` leaderboard row with no results row yet: its projected
- *  total in a live week (Q108 — shown as text; the row stays unranked at the
- *  bottom), else `pending`. */
+/** A `total_points` leaderboard row with no results row yet: the same cell
+ *  as any unscored team (`teamScoreCell` — its projected total once the
+ *  week's games have started, else the dash). Shown as text only; the row
+ *  stays unranked at the bottom. */
 export function leaderboardPendingCell(weekStatus: string | null | undefined, projected: number | null | undefined): ScoreCell {
-  if (weekStatus === 'live') return teamScoreCell(null, 'live', weekStatus, projected)
-  return { text: PENDING_SCORE_COPY, title: LEADERBOARD_PENDING_TITLE, pending: true }
+  return teamScoreCell(null, 'live', weekStatus, projected)
 }
 
 export type ResultVariant = 'green' | 'pink' | 'stroke'
@@ -193,7 +197,11 @@ export interface StarterCell {
   tone: StarterCellTone
 }
 
-export const PENDING_STARTER_TITLE_PREFIX = 'Pending — not delivered yet: '
+/** A starter (or bench player) with a stat still to come in — E61's
+ *  pending keys, said in plain words (D845); the cell is the dash. */
+export const STATS_NOT_IN_TITLE = 'Some of his stats aren’t in yet.'
+/** The box total while a starter's stats are still to come in (D845). */
+export const TEAM_STATS_NOT_IN_TITLE = 'Some of this team’s stats aren’t in yet.'
 export const ZERO_BY_NAME_TITLE = 'No stat line on record for this game — scored 0 by name.'
 export const PLAYING_NO_LINE_TITLE = 'Playing — no stat line yet; counts as 0 until one lands.'
 export const YET_TO_PLAY_TITLE = 'Yet to play — counts as 0 until a stat line lands.'
@@ -202,9 +210,9 @@ export const EMPTY_SEAT_TITLE = 'Empty slot.'
 export const UNKNOWN_PLAYER_TITLE = 'Player not found — not scored.'
 
 /**
- * One starter's points cell. PENDING (E61) renders as the word, NEVER a
- * number — a starter with an undelivered applicable key holds his team at
- * NULL and the cell says so. NO STAT LINE is the worker's "0 by name"
+ * One starter's points cell. PENDING (E61) renders as the dash with a plain
+ * title (D845 — never the word "pending"), NEVER a number — a starter with
+ * an undelivered applicable key holds his team at NULL. NO STAT LINE is the worker's "0 by name"
  * (Q42): in a game that is DONE the cell shows the 0.00 the worker scored
  * with the reason in its title; before or during his game the cell shows a
  * dash with the same reason (the number is 0 either way — the dash is a
@@ -215,7 +223,7 @@ export function starterCell(starter: Pick<BoxStarter, 'points' | 'pending' | 're
   if (starter.reason === 'empty') return { text: '—', title: EMPTY_SEAT_TITLE, tone: 'empty' }
   if (starter.reason === 'unknown_player') return { text: '—', title: UNKNOWN_PLAYER_TITLE, tone: 'unknown' }
   if (starter.pending.length > 0) {
-    return { text: PENDING_SCORE_COPY, title: `${PENDING_STARTER_TITLE_PREFIX}${starter.pending.join(', ')} — never shown as 0.`, tone: 'pending' }
+    return { text: PENDING_SCORE_COPY, title: STATS_NOT_IN_TITLE, tone: 'pending' }
   }
   if (starter.reason === 'no_stat_row') {
     if (starter.phase === 'bye') return { text: formatPoints(0), title: BYE_TITLE, tone: 'bye' }
@@ -226,15 +234,11 @@ export function starterCell(starter: Pick<BoxStarter, 'points' | 'pending' | 're
   return { text: formatPoints(starter.points), title: null, tone: 'scored' }
 }
 
-/** The box's own sum, or pending: the worker's `computeTeamWeek` NULL (any
- *  starter pending — E61). */
-export function boxSumCell(box: Pick<TeamBoxScore, 'points' | 'pending'>): ScoreCell {
+/** The box's own sum, or the dash: the worker's `computeTeamWeek` NULL (a
+ *  starter's stats still to come in — E61; D845's plain title). */
+export function boxSumCell(box: Pick<TeamBoxScore, 'points'>): ScoreCell {
   if (box.points !== null) return { text: formatPoints(box.points), title: null, pending: false }
-  return {
-    text: PENDING_SCORE_COPY,
-    title: `${PENDING_STARTER_TITLE_PREFIX}${box.pending.map((p) => p.keys.join(', ')).join('; ')} — never shown as 0.`,
-    pending: true,
-  }
+  return { text: PENDING_SCORE_COPY, title: TEAM_STATS_NOT_IN_TITLE, pending: true }
 }
 
 /** Live Mode's three groups (§11.4) — in this order; a bye is its own

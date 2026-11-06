@@ -161,7 +161,10 @@ export function weekStatusBadge(status: string): { label: string; variant: 'stro
     case 'live':
       return { label: 'Live', variant: 'green' }
     case 'correction_window':
-      return { label: 'Final (pending corrections)', variant: 'yellow' }
+      // Chris 2026-11-06 (D845): managers see "Final" — "pending corrections"
+      // is spec vocabulary, not a fantasy word. The yellow variant (and the
+      // badge's hover title) still tell the correction window apart.
+      return { label: 'Final', variant: 'yellow' }
     case 'final':
       return { label: 'Final', variant: 'black' }
     default:
@@ -170,16 +173,54 @@ export function weekStatusBadge(status: string): { label: string; variant: 'stro
 }
 
 /** The ladder's LIVE week (`league_weeks.status = 'live'` — at most one), or
- *  null: the one week whose unscored teams show a projection (Q108). */
+ *  null. */
 export function liveWeekOf<W extends { season: number; week: number; status: string }>(weeks: readonly W[] | undefined): W | null {
   return weeks?.find((w) => w.status === 'live') ?? null
 }
 
-/** A score cell: pending is a dash, never `0.00` by coercion (E61). */
+/** A score cell: no score yet is a dash, never `0.00` by coercion (E61's
+ *  NULL) and never the word "pending" (Chris 2026-11-06, D845). */
 export function formatScore(score: number | null, status: string): string {
-  if (status === 'scheduled') return '—'
-  if (score === null) return 'pending'
+  if (status === 'scheduled' || score === null) return '—'
   return score.toFixed(2)
+}
+
+/** Have a week's games started — the weeks whose unscored teams show their
+ *  projected total (Q108, widened by D845 to every started week: live, the
+ *  correction window and final). Read from `league_weeks.status`; when the
+ *  caller has no week status, from the matchup row's own (`scheduled` = not
+ *  started). */
+export function weekGamesStarted(weekStatus: string | null | undefined, matchupStatus?: string | null): boolean {
+  if (weekStatus === 'live' || weekStatus === 'correction_window' || weekStatus === 'final') return true
+  if (weekStatus === 'upcoming') return false
+  return matchupStatus !== undefined && matchupStatus !== null && matchupStatus !== 'scheduled'
+}
+
+export interface ProjectionWeek {
+  week: number
+  status: string
+  /** The teams with no score yet in that week — the only ones a projection
+   *  is shown for. */
+  teamIds: string[]
+}
+
+/** The schedule grid's weeks whose games have started and that still have a
+ *  side with no score — the weeks (and teams) `useTeamProjectionsByWeek`
+ *  reads projections for. A week with every side scored reads nothing. */
+export function scheduleProjectionWeeks(
+  grid: ReadonlyArray<{ week: number; status: string; rows: ReadonlyArray<Pick<MatchupCell, 'home' | 'away' | 'home_score' | 'away_score'>> }>,
+): ProjectionWeek[] {
+  const out: ProjectionWeek[] = []
+  for (const w of grid) {
+    if (!weekGamesStarted(w.status)) continue
+    const teamIds: string[] = []
+    for (const r of w.rows) {
+      if (r.home_score === null) teamIds.push(r.home.id)
+      if (r.away && r.away_score === null) teamIds.push(r.away.id)
+    }
+    if (teamIds.length > 0) out.push({ week: w.week, status: w.status, teamIds: [...new Set(teamIds)] })
+  }
+  return out
 }
 
 /** The ladder-derived HINT that a reason will be asked for: the league's

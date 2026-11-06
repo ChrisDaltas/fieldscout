@@ -478,8 +478,9 @@ function usePrefetchNeighbours(leagueId: string, week: number, ordered: readonly
   }, [queryClient, leagueId, week, key])
 }
 
-/** A leaderboard row with no results row: its projection in a live week
- *  (Q108, the projected-points blue), else `pending` / the dash. */
+/** A leaderboard row with no results row: its projection once the week's
+ *  games have started (Q108 / D845, the projected-points blue), else the
+ *  dash — never the word "pending". */
 function LeaderboardPending({ cell }: { cell: ReturnType<typeof leaderboardPendingCell> }) {
   return (
     <span className={cn('flex-none text-[11px] font-semibold', cell.projected ? M_PROJ_TEXT : 'text-m-t3')} title={cell.title ?? undefined} data-projected={cell.projected || undefined}>
@@ -1019,7 +1020,7 @@ function Board({
                 )
               })}
               {/* App-only Total row (desktop's box sum): each side's own sum,
-                  or pending as the word — it can differ from the stored score
+                  or the dash while stats are still to come in — it can differ from the stored score
                   on the card while live scoring catches up. */}
               <div className={cn(grid, 'px-1 py-2.5')} data-total-row>
                 {!two && <TotalLabel />}
@@ -1116,14 +1117,14 @@ function TotalLabel() {
 }
 
 /** One side's box sum, at the points column's edge. No lineup ⇒ nothing
- *  (the side's note says why), never a pending sum. */
+ *  (the side's note says why); stats still to come in ⇒ the dash (D845). */
 function TotalHalf({ data, mirror = false }: { data: TeamBoxScore | undefined; mirror?: boolean }) {
   if (!data?.lineup) return <span />
   const sum = boxSumCell(data)
   return (
     <span className={cn('flex min-w-0', mirror ? 'justify-start' : 'justify-end')} data-box-total={data.team_id}>
       <span
-        className={cn('font-semibold', sum.pending ? 'text-[11px] text-m-t3' : 'text-[16px] text-m-t1')}
+        className={cn('text-[16px] font-semibold', sum.pending ? 'text-m-t3' : 'text-m-t1')}
         title={sum.title ?? undefined}
         data-box-sum={sum.pending ? 'pending' : sum.text}
       >
@@ -1191,8 +1192,7 @@ function PlayerHalf({
     <span className={cn('flex flex-none flex-col gap-px', mirror ? 'items-start' : 'items-end')}>
       <span
         className={cn(
-          'font-semibold',
-          pts.tone === 'word' ? 'pt-1 text-[11px] text-m-t3' : 'text-[16px]',
+          'font-semibold text-[16px]',
           pts.tone === 'dim' && 'text-m-t5',
         )}
         title={player.cell.title ?? undefined}

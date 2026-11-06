@@ -31,6 +31,7 @@ const SURFACES = [
   'src/components/home/trending-players-card.tsx',
   'src/components/leagues/league-home-season.tsx', // Q108: League Home — an unscored team's projected total, the leaderboard's
   'src/components/leagues/schedule-view.tsx', // Q108: the schedule's live week — an unscored team's projected total
+  'src/components/leagues/playoff-bracket.tsx', // D845 / F907: the bracket — an unscored side's projected total
 ]
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -97,6 +98,7 @@ const PHONE_SURFACES = [
   'src/components/mobile/league/schedule/schedule-screen.tsx', // Schedule rows
   'src/components/mobile/league/game/nfl-game-screen.tsx', // the NFL game's matchup strip
   'src/components/mobile/home/home-matchups.tsx', // Home's league card
+  'src/components/mobile/league/league/mobile-bracket.tsx', // D845 / F907: the bracket — an unscored side's projected total
 ]
 
 const ROOT = process.cwd()

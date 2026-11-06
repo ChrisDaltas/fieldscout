@@ -137,6 +137,7 @@ export function StandingsSegment({
             teamNames={teamNames}
             teamIds={teamIds}
             myTeamId={myTeamId}
+            irSlots={detail.settings.roster_settings.ir_slots}
           />
         </div>
       )}
