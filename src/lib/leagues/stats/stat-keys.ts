@@ -244,6 +244,20 @@ export const STAT_KEYS: readonly StatKeyDef[] = [
 ]
 
 /**
+ * The ONE key whose words as a scoring RULE are not its registry label (F871,
+ * migration 218). `fg_60_plus` is paid ON TOP of `fg_50_plus` (a 60-yarder
+ * under ESPN's rules pays 5 + 1 = 6), so "FG Made (60+)" beside a 1 would read
+ * as the whole value of the kick. Read wherever a rule's VALUE is shown: the
+ * scoring editor's row (`scoring-editor-ops.ts`) and the commissioner log's
+ * `edit_scoring` sentence (`commish-log-copy.ts`). A stat correction names a
+ * COUNT of 60+ makes, so it keeps the registry label
+ * (`stat-correction-labels.ts`, 218's `stat_key_label_internal`).
+ */
+export const RULE_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
+  fg_60_plus: 'FG 60+ extra (on top of FG 50+)',
+}
+
+/**
  * L.E1.26 / F390 — the canonical keys whose stored NULL means NOT DELIVERED
  * (see `StatKeyDef.null_is_pending`). Exactly `def_yards_allowed` today
  * (pinned by test). The ingest (`ingest-week.ts`) writes NULL for these when

@@ -22,7 +22,7 @@ import {
   type EnvelopeTierCuts,
 } from '@/lib/leagues/scoring/tier-cuts'
 import { POSITION_SCORABLE_KEYS } from '@/lib/leagues/scoring/validate-rules-doc'
-import { STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
+import { RULE_LABEL_OVERRIDES, STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
 import { LeaguePatchError } from '@/hooks/use-league'
 
 /**
@@ -116,21 +116,15 @@ const registryLabel = (key: string): string => {
 }
 
 /**
- * The ONE row whose words are the editor's own rather than the registry's
- * (F871, migration 218). `fg_60_plus` is paid ON TOP of the FG 50+ row (a
- * 60-yarder under ESPN's rules pays 5 + 1 = 6), so the registry's
- * "FG Made (60+)" beside a 1 would read as the whole value of the kick. Every
- * other row is its registry label (pinned by test, with this map as the only
- * named exception).
+ * A row's label: the registry's (which must exist), unless `RULE_LABEL_OVERRIDES`
+ * (beside the registry, F871 / 218) names the key. That map's one row is
+ * `fg_60_plus`, a top-up on the FG 50+ row, so its words say so. Every other
+ * row is its registry label (pinned by test, with that map as the only named
+ * exception); the commissioner log reads the same map for the same rule.
  */
-export const EDITOR_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
-  fg_60_plus: 'FG 60+ extra (on top of FG 50+)',
-}
-
-/** A row's label: the registry's (which must exist), unless named above. */
 const editorLabel = (key: string): string => {
   const registry = registryLabel(key)
-  return EDITOR_LABEL_OVERRIDES[key] ?? registry
+  return RULE_LABEL_OVERRIDES[key] ?? registry
 }
 
 const OFFENSE_POSITIONS: readonly ScoringPosition[] = ['QB', 'RB', 'WR', 'TE']
