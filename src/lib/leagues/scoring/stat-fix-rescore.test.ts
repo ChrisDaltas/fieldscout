@@ -30,7 +30,7 @@ import { recordedActual, storedLine } from '@/lib/players/preset-scoring.fixture
 
 import type { ScoringRulesDoc } from './rules-doc'
 import { type StatLineRow } from './score-week-worker'
-import { doorTeams, lineAt, type PlanTeamIn, planWeekFix, plannedRowWrites, type StatFixLine, starterFixDelta, type StoredRowIn, type WeekFixPlan } from './stat-fix-rescore'
+import { doorTeams, lineAt, type PlanTeamIn, planLeagueWeekFix, planWeekFix, plannedRowWrites, type StatFixLine, starterFixDelta, type StoredRowIn, type WeekFixPlan } from './stat-fix-rescore'
 import { SCORING_TEMPLATES } from './templates'
 
 const template = (name: string) => {
@@ -215,3 +215,36 @@ describe('planWeekFix — the week at stored + our change, from the STORED rows'
     ])
   })
 })
+
+describe('planLeagueWeekFix — the door’s order of refusals, read before anything is planned', () => {
+  /** A read-only fake: each table answers its rows; every filter is accepted. */
+  function db(tables: Record<string, unknown[]>) {
+    return {
+      from: (table: string) => {
+        const rows = tables[table] ?? []
+        const builder = {
+          select: () => builder,
+          eq: () => builder,
+          in: () => builder,
+          order: () => builder,
+          limit: () => builder,
+          range: () => builder,
+          maybeSingle: async () => ({ data: rows[0] ?? null, error: null }),
+          then: (resolve: (v: unknown) => unknown) => resolve({ data: rows, error: null, count: rows.length }),
+        }
+        return builder
+      },
+    } as never
+  }
+  const league = (over: Record<string, unknown> = {}) => ({ id: 'L', name: 'L', season: 2026, status: 'in_season', deleted_at: null, settings: {}, scoring_rules_snapshot: ESPN, ...over })
+
+  it('archived, not in season, a built bracket, a week not final: each named, nothing planned (the CLI plan says "not eligible")', async () => {
+    expect((await planLeagueWeekFix(db({ leagues: [league({ deleted_at: '2026-11-01T00:00:00Z' })] }), 'L', 1, AUBREY_FIX)).ineligible).toBe('league_archived')
+    expect((await planLeagueWeekFix(db({ leagues: [league({ status: 'playoffs' })] }), 'L', 1, AUBREY_FIX)).ineligible).toBe('league_not_in_season (playoffs)')
+    expect((await planLeagueWeekFix(db({ leagues: [league()], matchups: [{ id: 'm-playoff' }] }), 'L', 1, AUBREY_FIX)).ineligible).toBe('bracket_built')
+    expect((await planLeagueWeekFix(db({ leagues: [league()], league_weeks: [{ week: 1, status: 'correction_window', scoring_rules_snapshot: ESPN }] }), 'L', 1, AUBREY_FIX)).ineligible).toBe(
+      'week_not_final (correction_window)',
+    )
+  })
+})
+

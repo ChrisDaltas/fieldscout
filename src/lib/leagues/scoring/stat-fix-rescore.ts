@@ -300,6 +300,12 @@ export async function planLeagueWeekFix(
   const plan: WeekFixPlan = { league_id: league.id, league_name: league.name, season: league.season, week, schedule_mode: mode, ineligible: null, teams: [], problems: [] }
   if (league.deleted_at !== null) return { ...plan, ineligible: 'league_archived' }
   if (league.status !== 'in_season') return { ...plan, ineligible: `league_not_in_season (${league.status})` }
+  // The door's order: a built bracket was seeded from the standings a fix would move.
+  const bracket = must(
+    await db.from('matchups').select('id').eq('league_id', leagueId).eq('season', league.season).in('round_type', ['playoff', 'consolation', 'third_place']).limit(1),
+    'bracket read',
+  )
+  if (bracket.length > 0) return { ...plan, ineligible: 'bracket_built' }
   const lw = await db.from('league_weeks').select('week, status, scoring_rules_snapshot').eq('league_id', leagueId).eq('season', league.season).eq('week', week).maybeSingle()
   if (lw.error) throw new Error(`league_weeks read: ${lw.error.message}`)
   if (lw.data === null) return { ...plan, ineligible: 'week_not_scheduled' }
