@@ -197,6 +197,12 @@ $o$);
   return s;
 end $un$;
 
+-- pg_temp.un221 — migration 221's one hunk reversed (F911: the blank-score
+-- fallback back from the dash to 177's word; pgTAP 173 pins 221 itself).
+create function pg_temp.un221(s text) returns text language sql as $un221$
+  select replace(s, $r$'FM999999990.00'), '—')$r$, $o$'FM999999990.00'), 'pending')$o$);
+$un221$;
+
 -- ---------------------------------------------------------------------------
 -- A. FORM and D137
 -- ---------------------------------------------------------------------------
@@ -213,12 +219,14 @@ select ok(
           and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
    from pg_proc p where p.oid = 'public.stat_correction_week_state_but_for_internal(uuid,integer,integer,jsonb,jsonb)'::regprocedure),
   'A2 the new helper is plain, STABLE, search_path empty and REVOKEd from anon and authenticated');
+-- RE-CUT BY 221 (F911, D847): A3 / A4 read the live body through pg_temp.un221
+-- INNERMOST (additive — the stored literals unchanged); pgTAP 173 pins 221.
 select is(
-  (select md5(prosrc) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
+  (select md5(pg_temp.un221(prosrc)) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
   '3ea8ee6417852e5d46dc79e8093a1daf',
-  'A3 the live door body is 177 as written (STORED LITERAL md5; derive_177.py: 172:362-967 plus four hunks)');
+  'A3 the live door body is 177 as written (STORED LITERAL md5; derive_177.py: 172:362-967 plus four hunks), read with 221s one hunk reversed (pg_temp.un221; 173 A2 pins 221)');
 select is(
-  (select md5(pg_temp.un177(prosrc)) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
+  (select md5(pg_temp.un177(pg_temp.un221(prosrc))) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
   '7fbb74085768afd0f9d56a235f1ebabb',
   'A4 D137: with the four hunks reversed on the LIVE body it is 172 BYTE FOR BYTE (pgTAP 120 A6 stored literal)');
 

@@ -207,6 +207,12 @@ $o$);
   return s;
 end $un$;
 
+-- pg_temp.un221 — migration 221's one hunk reversed (F911: the blank-score
+-- fallback back from the dash to 177's word; pgTAP 173 pins 221 itself).
+create function pg_temp.un221(s text) returns text language sql as $un221$
+  select replace(s, $r$'FM999999990.00'), '—')$r$, $o$'FM999999990.00'), 'pending')$o$);
+$un221$;
+
 -- 172's five fenced hunks reversed on the live body (D137) — ONE regexp.
 create function pg_temp.un172(p_src text) returns text language sql as $un172$
   select regexp_replace(p_src, E'[ ]*-- @172\\{[^@]*-- @172\\}\\n', '', 'g');
@@ -257,8 +263,9 @@ select is(
   1, 'A5 score_write_week_batch is still ONE overload — the element rides the same signature (074 K3)');
 -- RE-CUT BY 177 (B12 / F557): A6 reads the live body through pg_temp.un177
 -- INNERMOST (additive — the 172 stored literal unchanged); pgTAP 125 A3 pins 177.
+-- RE-CUT BY 221 (F911, D847): pg_temp.un221 is now innermost (additive).
 select is(
-  (select md5(pg_temp.un177(prosrc)) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
+  (select md5(pg_temp.un177(pg_temp.un221(prosrc))) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
   '7fbb74085768afd0f9d56a235f1ebabb',
   'A6 score_write_week_batch is 172''s body — a STORED LITERAL md5 (derive_172.py: 158:409-720 plus five fenced hunks), read with 177''s four hunks reversed (pg_temp.un177; 125 A3 pins 177)');
 select is(
