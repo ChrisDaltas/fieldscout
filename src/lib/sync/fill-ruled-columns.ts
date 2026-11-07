@@ -66,10 +66,14 @@
  *      (`p_supersedes`, one transaction), so every move that landed is paid,
  *      once. A database without 222 refuses `--apply` by name before any
  *      write. The fill itself still writes no league table.
- *   7. NEVER WRITES THE PROVIDER'S LATE CORRECTION AS OURS (round 5, F405 /
- *      Q81). A stored ruled value a WRITTEN stat fix of ours set, that the
- *      feed now reads higher, moved at the provider after our fix: listed by
- *      player, not written, not recorded, not paid. (Lower stays a problem.)
+ *   7. NEVER WRITES THE PROVIDER'S LATE CORRECTION AS OURS (round 6, F405 /
+ *      Q81). A week that holds a line of any WRITTEN stat fix — any fix, any
+ *      column — has had its first fill: it is FILLED. Every ruled difference
+ *      the feed shows there since (a raise, a lower, a new line) is the
+ *      provider's: listed by player, not written, not recorded, not paid, and
+ *      no problem. A fix recorded and never written doesn't fill a week (the
+ *      re-run above finishes it). A later change of OUR map on a filled week
+ *      is recorded with `npm run stat-fix`, never by this tool (F899).
  *
  * Time only via `time`; provider reads only via `provider`; every table read
  * pages past the PostgREST cap. It never touches `nfl_games`, `nfl_weeks` or
@@ -276,8 +280,19 @@ export interface StoredValueMove {
   feed: number
 }
 
+/** A ruled difference in a filled week: the provider's since our fill (round 6). `newLine`: no stored line (`stored` 0). */
+export interface ProviderMove extends StoredValueMove {
+  newLine: boolean
+}
+
 export interface FillWeekPlan {
   week: number
+  /**
+   * Round 6: the week holds a line of a WRITTEN stat fix (222) — its first
+   * fill happened. Nothing is written, recorded or paid in it; every ruled
+   * difference is in `providerMoves`.
+   */
+  filled: boolean
   /** Lines the provider returned. */
   feedLines: number
   /** Lines for a player `players` doesn't know. A problem only if the line carries a ruled value. */
@@ -309,12 +324,12 @@ export interface FillWeekPlan {
   /** Every move whose stored value is not 0, by player: the ones a count alone can't explain. A lowered one is also a problem. */
   fromStoredValue: StoredValueMove[]
   /**
-   * Round 5 (F405 / Q81): a stored value a WRITTEN stat fix of ours set that
-   * the feed now reads higher — the provider's late correction, after our fix.
-   * Listed by player; not written, not a move, not recorded, not paid. (Lower
-   * is a problem, as for any stored value.)
+   * Round 6 (F405 / Q81): in a FILLED week, every ruled difference — up or
+   * down, a stored line's or a new line's — is the provider's late correction
+   * since our fill. Listed by player; not written, not a move, not recorded,
+   * not paid, not a problem. Empty in a week that isn't filled.
    */
-  providerMoves: StoredValueMove[]
+  providerMoves: ProviderMove[]
   /** Every move on a `SUMMED_RULED_COLUMNS` column, 0 → n and new lines included, by column then player id. */
   summedMoves: StoredValueMove[]
   otherDifferences: OtherDifference[]
@@ -386,15 +401,17 @@ export interface PlanInput {
   unsendable?: ReadonlyMap<string, string>
   /** `players.full_name` by id, for the problem text only. */
   names?: ReadonlyMap<string, string>
-  /** This week's values our WRITTEN stat fixes set, `${player_id}|${column}` → after (round 5: what moved from one since is the provider's). */
-  ours?: ReadonlyMap<string, number>
+  /** Round 6: the week holds a line of a WRITTEN stat fix — its first fill happened, so every ruled difference is the provider's. */
+  filled?: boolean
 }
 
 export function planFillWeek(input: PlanInput): FillWeekPlan {
   const { week, lines, stored, positions, ctx, unsendable } = input
+  const filled = input.filled ?? false
   const label = (id: string) => who(input.names ?? NO_NAMES, id)
   const plan: FillWeekPlan = {
     week,
+    filled,
     feedLines: lines.length,
     unknownPlayers: 0,
     empty: 0,
@@ -498,6 +515,12 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
         // Nothing to fill. Other data on it is a provider line never stored (F895): listed, not this fill's to write or block (D833).
         if (others.length > 0) plan.lateLines.push(id)
         else plan.zeroNewLines += 1
+      } else if (filled) {
+        // Round 6: ruled values on a line we never stored, in a week our fill already filled, came from the provider since.
+        for (const column of RULED_COLUMNS) {
+          const now = row.columns[column] ?? 0
+          if (now !== 0) plan.providerMoves.push({ player_id: id, column, stored: 0, feed: now, newLine: true })
+        }
       } else if (others.length > 0) {
         plan.problems.push(`week ${week}: new line for ${label(id)} also carries ${others.map((o) => `${o.key}=${o.feed}`).join(', ')} — a late provider line, not written`)
       } else {
@@ -521,16 +544,13 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
       plan.unchanged += 1
       continue
     }
-    // Round 5 (F405 / Q81): a stored value a WRITTEN fix of ours set, that the feed now reads HIGHER, moved at the
-    // PROVIDER after our fix — its late correction. Never this fill's to write, record or pay; listed by player. (A
-    // lower reading stays the problem below: a late provider fix or a map that reads less, either way loud.)
-    const theirs = new Set(
-      differ.filter((column) => input.ours?.get(`${id}|${column}`) === (prior.columns[column] ?? 0) && (row.columns[column] ?? 0) > (prior.columns[column] ?? 0)),
-    )
-    for (const column of theirs) plan.providerMoves.push({ player_id: id, column, stored: prior.columns[column] ?? 0, feed: row.columns[column] ?? 0 })
-    const moved = differ.filter((column) => !theirs.has(column))
-    if (moved.length === 0) continue
-    for (const column of moved) {
+    // Round 6 (F405 / Q81): once a week has been filled, every ruled value the feed reads differently moved at the
+    // PROVIDER after our fill — up or down, on any player. Never this fill's to write, record or pay; listed by player.
+    if (filled) {
+      for (const column of differ) plan.providerMoves.push({ player_id: id, column, stored: prior.columns[column] ?? 0, feed: row.columns[column] ?? 0, newLine: false })
+      continue
+    }
+    for (const column of differ) {
       plan.moves[column] += 1
       const was = prior.columns[column] ?? 0
       const now = row.columns[column] ?? 0
@@ -540,7 +560,7 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
       // A fill only adds plays the old map dropped. A lower reading is a provider fix or a map that reads less.
       if (now < was) plan.problems.push(`week ${week}: ${label(id)} ${column} would go down from ${was} to ${now} — lowering a stored value is not a fill (a late provider fix, or a map that reads less)`)
     }
-    const ruled = Object.fromEntries(RULED_COLUMNS.map((column) => [column, theirs.has(column) ? (prior.columns[column] ?? 0) : (row.columns[column] ?? 0)]))
+    const ruled = Object.fromEntries(RULED_COLUMNS.map((column) => [column, row.columns[column] ?? 0]))
     // `team` stays off the line: the door leaves a column it isn't sent alone.
     plan.updates.push({ player_id: id, game_id: prior.game_id, is_live: prior.is_live, source: prior.source, advanced: prior.advanced, columns: ruled })
     wouldBe.set(id, { ...prior.columns, ...ruled })
@@ -699,21 +719,21 @@ export const FILL_FIX_REASON =
 /** How a fix the fill recorded is told from any other (the reason's head, whatever words follow it in a later checkout). */
 const FILL_FIX_PREFIX = 'sync:fill-ruled:'
 
-/** 222: our stat fixes of one season, as the fill reads them (round 5). */
+/** 222: our stat fixes of one season, as the fill reads them (rounds 5 and 6). */
 export interface OurFixes {
-  /** `${week}|${player_id}|${column}` → the after value of the newest WRITTEN fix line on it: a value our change set. */
-  written: ReadonlyMap<string, number>
-  /** Fixes a fill recorded and never wrote (a run whose write or checks failed), oldest first: the re-run finishes them. */
+  /** Round 6: every week holding a line of any WRITTEN fix (any fix, any column) — a FILLED week: nothing is written, recorded or paid in it. */
+  filledWeeks: ReadonlySet<number>
+  /** Fixes a fill recorded and never wrote (a run whose write or checks failed), oldest first: the re-run finishes them. They fill no week. */
   pending: Array<{ id: string; landed_at: string; lines: StatFixLine[] }>
 }
 
 /**
- * Round 5: our stat fixes of the season (222's tables, the service role's
- * read). A database without 222 has none: the plan reads as before, and
- * `--apply` refuses by name at the record.
+ * Rounds 5 and 6: our stat fixes of the season (222's tables, the service
+ * role's read). A database without 222 has none: no week reads as filled, the
+ * plan reads as before, and `--apply` refuses by name at the record.
  */
 export async function readOurFixes(db: SyncClient, season: number): Promise<OurFixes> {
-  const none: OurFixes = { written: new Map(), pending: [] }
+  const none: OurFixes = { filledWeeks: new Set(), pending: [] }
   const probe = await db.from('stat_fixes').select('id').eq('season', season).range(0, 0)
   if (probe.error) {
     if (isMissingSchemaObject(probe.error, ['stat_fixes'])) return none
@@ -738,21 +758,14 @@ export async function readOurFixes(db: SyncClient, season: number): Promise<OurF
   for (const r of rows) {
     byFix.set(r.fix_id, [...(byFix.get(r.fix_id) ?? []), { week: r.week, player_id: r.player_id, stat_key: r.stat_key, before: Number(r.before_value), after: Number(r.after_value) }])
   }
-  const written = new Map<string, number>()
+  const filledWeeks = new Set<number>()
   const pending: OurFixes['pending'] = []
-  // Oldest first: a newer written fix's value on the same key wins.
   for (const fix of fixes) {
     const lines = byFix.get(fix.id) ?? []
-    if (fix.written_at !== null) for (const line of lines) written.set(`${line.week}|${line.player_id}|${line.stat_key}`, line.after)
+    if (fix.written_at !== null) for (const line of lines) filledWeeks.add(line.week)
     else if (fix.reason.startsWith(FILL_FIX_PREFIX)) pending.push({ id: fix.id, landed_at: fix.landed_at, lines })
   }
-  return { written, pending }
-}
-
-/** One week's slice of `OurFixes.written`, keyed `${player_id}|${column}` (planFillWeek's `ours`). */
-function oursFor(fixes: OurFixes, week: number): Map<string, number> {
-  const head = `${week}|`
-  return new Map([...fixes.written].filter(([key]) => key.startsWith(head)).map(([key, after]) => [key.slice(head.length), after]))
+  return { filledWeeks, pending }
 }
 
 /**
@@ -864,7 +877,8 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
   const teamColumn = await statTeamColumn(db)
   const games = await readGames(db, season)
   const gameStatus = new Map([...games.values()].map((game) => [game.id, game.status]))
-  // Round 5: our written fixes (what moved from a value one of them set is the provider's) and a fix a failed run left unwritten.
+  // Rounds 5 and 6: the weeks our written fixes filled (every ruled difference there is the provider's since) and a fix a
+  // failed run left unwritten.
   const ours = await readOurFixes(db, season)
   if (ours.pending.length > 0) report.pendingFix = ours.pending.map((fix) => fix.id).join(', ')
 
@@ -892,7 +906,7 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
         positions,
         unsendable,
         names,
-        ours: oursFor(ours, week),
+        filled: ours.filledWeeks.has(week),
         ctx: {
           providerName: provider.name,
           gameStatus,
@@ -1059,10 +1073,13 @@ export function renderFillPlan(report: FillReport): string[] {
         `unknownPlayers=${plan.unknownPlayers} empty=${plan.empty} repeats=${plan.duplicates} zeroNewLines=${plan.zeroNewLines} lateLines=${plan.lateLines.length} storedOnly=${plan.storedOnly}` +
         (byPosition === '' ? '' : ` (${byPosition})`),
     )
+    if (plan.filled) lines.push(`      filled (a written stat fix of ours holds this week): nothing is written, recorded or paid here — every ruled difference is the provider’s since our fill`)
     for (const row of plan.newRows) lines.push(`      new line ${row.player_id}: ${ruledValues(row).join(', ')}`)
     for (const id of plan.lateLines) lines.push(`      late line (not written, F895) ${name(id)}: no ruled value`)
     for (const move of plan.fromStoredValue) lines.push(`      from a stored value ${move.player_id} ${move.column}: stored ${move.stored} → feed ${move.feed}`)
-    for (const move of plan.providerMoves) lines.push(`      the provider’s since our fix (not written, not paid — F405) ${name(move.player_id)} ${move.column}: our fix wrote ${move.stored} → feed ${move.feed}`)
+    for (const move of plan.providerMoves) {
+      lines.push(`      the provider’s since our fill (not written, not paid — F405) ${name(move.player_id)} ${move.column}: ${move.newLine ? 'no stored line' : `stored ${move.stored}`} → feed ${move.feed}`)
+    }
     for (const move of plan.summedMoves) lines.push(`      summed ${move.column} ${name(move.player_id)}: stored ${move.stored} → feed ${move.feed}`)
     for (const other of plan.otherDifferences) lines.push(`      other (not written) ${name(other.player_id)} ${other.key}: stored ${other.stored} → feed ${other.feed}`)
     for (const [key, count] of Object.entries(plan.contextDifferences)) lines.push(`      display-only (not written) ${key}: ${count} lines differ`)
@@ -1072,6 +1089,13 @@ export function renderFillPlan(report: FillReport): string[] {
     `  all weeks: ${updated + inserted} lines (${updated} updated, ${inserted} new), ${sumMoves(totals)} moves: ${movesText(totals)}; ` +
       `${fromStored} from a non-zero stored value; ${others} other-column differences; ${late} late lines (not written)`,
   )
+  const filled = report.weeks.filter((plan) => plan.filled)
+  if (filled.length > 0) {
+    lines.push(
+      `  filled weeks ${filled.map((plan) => plan.week).join(', ')} (a written stat fix holds each): nothing written, recorded or paid there; ` +
+        `${filled.reduce((sum, plan) => sum + plan.providerMoves.length, 0)} ruled differences listed as the provider’s since our fill (F405)`,
+    )
+  }
   if (report.pendingFix !== undefined) {
     lines.push(`  stat fix ${report.pendingFix}: an earlier run’s, recorded and never written — --apply finishes it (every move of it that landed goes into the one fix it records)`)
   }

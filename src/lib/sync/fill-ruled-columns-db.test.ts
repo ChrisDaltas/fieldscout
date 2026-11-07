@@ -15,7 +15,10 @@
  * so the score-week pass re-scores every final league-week it touched. Those
  * are platform tables (`stat_fixes`, `stat_fix_lines`), still no league table:
  * the fill itself never scores. FR5 reads the fix off the database; FR6 records
- * none (nothing to write). Cleanup withdraws the 2095 fixes (applied nowhere).
+ * none (nothing to write). Round 6: FR7 — once FR5's written fix holds week 1,
+ * the week is FILLED, and a block and a new line the provider adds since are
+ * listed as the provider's, never written, recorded or paid. Cleanup withdraws
+ * the 2095 fixes (applied nowhere).
  *
  * Requires the local stack — D59(5); FAILS loudly when it is down. Fixture
  * hygiene (F199): the `vitest-frc` prefix on players / stats / games, the league
@@ -51,11 +54,14 @@ const K = `${PREFIX}-k`
 const DST = `${PREFIX}-dst`
 const WR = `${PREFIX}-wr`
 const RETURNER = `${PREFIX}-ret`
+/** Round 6: no line in FEED; FR7's feed adds one (the provider's, after our fill). */
+const LATE_RETURNER = `${PREFIX}-ret2`
 const PLAYERS = [
   { id: K, full_name: 'FRC Kicker', position: 'K', team: 'FRA', status: 'Active' },
   { id: DST, full_name: 'FRC Defense', position: 'DEF', team: 'FRA', status: 'Active' },
   { id: WR, full_name: 'FRC Receiver', position: 'WR', team: 'FRA', status: 'Active' },
   { id: RETURNER, full_name: 'FRC Returner', position: 'WR', team: 'FRB', status: 'Active' },
+  { id: LATE_RETURNER, full_name: 'FRC Late Returner', position: 'WR', team: 'FRA', status: 'Active' },
 ]
 
 const KICKOFF = '2095-09-13T17:00:00.000Z'
@@ -86,15 +92,16 @@ const FEED: ProviderPlayerWeekStats[] = [
   feedLine(RETURNER, { return_td: 1 }, { off_snaps: 4 }),
 ]
 
-const provider: StatsProvider & { calls: number } = {
+const provider: StatsProvider & { calls: number; week1: ProviderPlayerWeekStats[] } = {
   name: SOURCE,
   capabilities: new Set(['core_box']),
   calls: 0,
+  week1: FEED,
   getSchedule: async () => [],
   getGameStates: async () => [],
   async getWeekStats(_season, week) {
     provider.calls += 1
-    return week === 1 ? FEED : []
+    return week === 1 ? provider.week1 : []
   },
   getInjuries: async () => [],
   getInactives: async () => [],
@@ -269,5 +276,26 @@ describe('the quiet fill over the real door (167)', () => {
     // 222: nothing moved, so no fix is recorded (FR5's stays the only one).
     expect(report.fix).toBeUndefined()
     expect(await must(service.from('stat_fixes').select('id').eq('season', SEASON), 'fixes')).toHaveLength(1)
+  })
+
+  it('FR7 round 6: FR5\'s written fix holds week 1, so it is FILLED — a second block and a new line the provider adds since are listed as its own, never written, recorded or paid', async () => {
+    provider.week1 = FEED.map((l) => (l.playerId === DST ? { ...l, stats: { ...l.stats, def_block: 2 } } : l)).concat(feedLine(LATE_RETURNER, { return_td: 1 }, { off_snaps: 3 }))
+    try {
+      const report = await fill(true)
+      expect(report.ok).toBe(true)
+      expect(report.wrote).toBe(false)
+      expect(report.fix).toBeUndefined()
+      expect(report.weeks[0].filled).toBe(true)
+      expect(report.weeks[0].providerMoves).toEqual([
+        { player_id: DST, column: 'def_block', stored: 1, feed: 2, newLine: false },
+        { player_id: LATE_RETURNER, column: 'return_td', stored: 0, feed: 1, newLine: true },
+      ])
+      expect(await line(DST)).toMatchObject({ def_block: 1 })
+      expect(await line(LATE_RETURNER)).toBeNull()
+      expect(await must(service.from('stat_fixes').select('id').eq('season', SEASON), 'fixes')).toHaveLength(1)
+      expect(await queueAndEvents()).toEqual({ queue: [], events: [] })
+    } finally {
+      provider.week1 = FEED
+    }
   })
 })
