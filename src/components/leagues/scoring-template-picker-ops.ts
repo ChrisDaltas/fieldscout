@@ -44,6 +44,11 @@ export interface KickingSummary {
   fg0_39: number | null
   fg40_49: number | null
   fg50Plus: number | null
+  /** What a 60+ yard make pays in all (F871, migration 218): `fg_50_plus`
+   *  PLUS the `fg_60_plus` top-up (the 50+ count includes 60+ makes, so a
+   *  document without the top-up pays a 60-yarder its 50+ value). ESPN 6,
+   *  Yahoo and Sleeper 5, Scout 3. `null` only when `fg_50_plus` is absent. */
+  fg60Plus: number | null
   patMade: number | null
   fgMissed: number | null
   patMissed: number | null
@@ -254,13 +259,16 @@ const num = (rules: Record<string, number>, key: string): number | null =>
 export function deriveTemplateSummary(
   rules: Record<string, number>,
 ): TemplateSummary {
+  const fg50Plus = num(rules, 'fg_50_plus')
   return {
     ppr: num(rules, 'receptions') ?? 0,
     int: num(rules, 'interceptions') ?? 0,
     kicking: {
       fg0_39: num(rules, 'fg_0_39'),
       fg40_49: num(rules, 'fg_40_49'),
-      fg50Plus: num(rules, 'fg_50_plus'),
+      fg50Plus,
+      // An absent top-up adds nothing: the 60+ make is already a 50+ make.
+      fg60Plus: fg50Plus === null ? null : fg50Plus + (rules.fg_60_plus ?? 0),
       patMade: num(rules, 'pat_made'),
       fgMissed: num(rules, 'fg_missed'),
       patMissed: num(rules, 'pat_missed'),

@@ -273,10 +273,11 @@ describe('guardrail 1 — the scorable allowlist (§7.3.3.1(1) / §23.5 scoring_
     const everyScorableKey: Record<string, number> = {}
     for (const key of SCORABLE_KEYS) everyScorableKey[key] = 1
     const doc = { ...espnFork(), base: everyScorableKey }
-    // 48 keys — the whole scorable surface in one document. It breaks tier
-    // exclusivity (it names BOTH PA families at once), which is the point of
-    // the next describe; the allowlist must contribute nothing.
-    expect(Object.keys(everyScorableKey).length).toBe(48)
+    // 50 keys (48 + F871's two at migration 218) — the whole scorable surface
+    // in one document. It breaks tier exclusivity (it names BOTH PA families at
+    // once), which is the point of the next describe; the allowlist must
+    // contribute nothing.
+    expect(Object.keys(everyScorableKey).length).toBe(50)
     const result = validateScoringRulesDoc(doc)
     expect(codes(result)).toEqual([
       'tier_exclusivity',
@@ -466,7 +467,7 @@ describe('guardrail 2 — tier exclusivity, the F21 double-pay (§7.3.3.1(2))', 
  * ──────────────────────────────────────────────────────────────────────── */
 
 describe('guardrail 3 — position scope (§7.3.3.1(3))', () => {
-  it('the transcribed catalog IS the registry: six disjoint sets whose union is the scorable 48', () => {
+  it('the transcribed catalog IS the registry: six disjoint sets whose union is the scorable 50', () => {
     // Guardrail 3 needs a position→keys map that no registry field carries, so
     // the catalog is transcribed from §7.3.3.1's own sentence. This is the
     // proof that the transcription did not drift from the field that defines
@@ -476,7 +477,7 @@ describe('guardrail 3 — position scope (§7.3.3.1(3))', () => {
       for (const key of POSITION_SCORABLE_KEYS[position]) union.add(key)
     }
     expect([...union].sort()).toEqual([...SCORABLE_KEYS].sort())
-    expect(union.size).toBe(48)
+    expect(union.size).toBe(50)
 
     // Pairwise disjoint EXCEPT the four offense positions, which share one
     // set by design (§7.3.3.1: "every position except K and D/ST carries five
@@ -489,8 +490,8 @@ describe('guardrail 3 — position scope (§7.3.3.1(3))', () => {
     const kicking = new Set(POSITION_SCORABLE_KEYS.K)
     const defense = new Set(POSITION_SCORABLE_KEYS.DST)
     expect(offense.size).toBe(15)
-    expect(kicking.size).toBe(6)
-    expect(defense.size).toBe(27) // 7 events + the 20 generated tier keys
+    expect(kicking.size).toBe(7) // 6 + `fg_60_plus` (F871 / 218)
+    expect(defense.size).toBe(28) // 8 events (`def_2pt_return`, F871 / 218) + the 20 generated tier keys
     for (const [a, b] of [
       [offense, kicking],
       [offense, defense],
@@ -1106,7 +1107,7 @@ describe('POSITION_SCORABLE_KEYS — the map SE.4 mirrors and SE.7 composes (F13
       RB: [],
       WR: [],
       TE: [],
-      K: ['fg_0_39', 'fg_40_49', 'fg_50_plus', 'pat_made', 'fg_missed', 'pat_missed'],
+      K: ['fg_0_39', 'fg_40_49', 'fg_50_plus', 'fg_60_plus', 'pat_made', 'fg_missed', 'pat_missed'],
       DST: [
         'def_sack',
         'def_int',
@@ -1115,6 +1116,7 @@ describe('POSITION_SCORABLE_KEYS — the map SE.4 mirrors and SE.7 composes (F13
         'def_safety',
         'def_block',
         'def_return_td',
+        'def_2pt_return',
         // The 20 generated tier keys, in generation order: shared PA, then
         // ESPN's four divergent names, then YA.
         'def_pa_0',
@@ -1298,12 +1300,14 @@ describe('R589 — "multiples of 0.01" is the DECIMAL rule, not a float toleranc
     expect(rejected).toBe(0)
   })
 
-  it('ZERO false rejections on the shipped templates: all 304 coefficients pass', () => {
+  it('ZERO false rejections on the shipped templates: all 310 coefficients pass', () => {
     // 218 across the parity six + the Scout pair's 43 × 2 (B.5's recount
     // 14 + 5 + 7 + 8 + 9 per Scout row — SC.1/SC.4; the census counts
     // keys, not non-zeros, so the pair adds exactly 43: 261 + 43 = 304).
+    // Migration 218 (F871) adds 6: fg_60_plus and def_2pt_return on both
+    // ESPN rows, def_2pt_return on both Scout rows (Q2): 304 + 6 = 310.
     const total = SCORING_TEMPLATES.reduce((n, t) => n + Object.keys(t.rules).length, 0)
-    expect(total).toBe(304)
+    expect(total).toBe(310)
     for (const t of SCORING_TEMPLATES) expectAccepted(t.rules)
   })
 

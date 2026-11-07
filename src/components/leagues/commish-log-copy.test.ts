@@ -24,6 +24,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
+import { correctionLabel } from '@/lib/leagues/scoring/stat-correction-labels'
 import { RETIRED_WAIVER_KEYS, leagueSettingsSchema } from '@/lib/leagues/settings/league-settings'
 
 import { commishLogLines } from './activity-feed-ops'
@@ -403,6 +404,15 @@ describe('league setup (129 / 169) in words', () => {
     // 212 (F716): leagues are archived and restored, never deleted (older delete receipts still read).
     expect(line({ action_type: 'archive_league', target_type: 'league', before: { archived: false }, after: { archived: true } })).toBe('archived the league')
     expect(line({ action_type: 'restore_league', target_type: 'league', before: { archived: true }, after: { archived: false } })).toBe('restored the league')
+  })
+
+  it('F871 / 218: an edit to the 60+ top-up reads in the editor’s words, never as the whole kick’s value', () => {
+    const text = line({ action_type: 'edit_scoring', target_type: 'league', before: { scoring_rules: { 'base.fg_60_plus': 1 } }, after: { scoring_rules: { 'base.fg_60_plus': 2 } } })
+    expect(text).toBe('changed the scoring — FG 60+ extra (on top of FG 50+): 1 → 2')
+    expect(text).not.toContain('FG made (60+)')
+    expect(scoringRuleWords('positions.K.fg_60_plus')).toBe('K FG 60+ extra (on top of FG 50+)')
+    // A stat correction names a COUNT of 60+ makes: its words stay the registry's.
+    expect(correctionLabel('fg_60_plus')).toBe('FG made (60+)')
   })
 
   it('the bracket (134) and a waiver claim made for a team (145) — blind: no player, no bid', () => {

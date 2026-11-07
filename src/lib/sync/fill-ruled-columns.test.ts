@@ -24,8 +24,10 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
+import { mapToCanonicalKeys, mapUsageKeys, readZeroOmittedYardsAllowed } from '@/lib/leagues/stats/sleeper-stats-provider'
 import type { ProviderPlayerWeekStats, StatsProvider } from '@/lib/leagues/stats/stats-provider'
 import { VirtualClock } from '@/lib/leagues/time/virtual-clock'
+import { recordedActual } from '@/lib/players/preset-scoring.fixtures'
 
 import {
   afterWriteProblems,
@@ -404,8 +406,11 @@ function expectNothingWritten(world: World, before: string): void {
 }
 
 describe('RULED_COLUMNS — the only columns written on a stored line', () => {
-  it('is exactly the seven the ruling covers, each a real stored column', () => {
-    expect([...RULED_COLUMNS]).toEqual(['fg_0_39', 'fg_missed', 'def_block', 'def_return_td', 'def_fumble_recoveries', 'return_td', 'fumble_recovery_td'])
+  it('is exactly the nine the rulings cover (seven, plus migration 218\'s two, D835), each a real stored column', () => {
+    expect([...RULED_COLUMNS]).toEqual([
+      'fg_0_39', 'fg_missed', 'def_block', 'def_return_td', 'def_fumble_recoveries', 'return_td', 'fumble_recovery_td',
+      'fg_60_plus', 'def_2pt_return',
+    ])
     for (const column of RULED_COLUMNS) expect(STAT_COLUMN_SURFACE).toContain(column)
   })
 })
@@ -1007,6 +1012,13 @@ describe('the K identities', () => {
     expect(kIdentityFailures('k', { fg_0_39: 2, fg_made_40_plus: 1, fg_made_50_plus: 0, fg_made: 3, fg_attempted: 3, fg_missed: 0 })).toEqual([])
     expect(kIdentityFailures('k', { fg_0_39: 1, fg_made_40_plus: 1, fg_made_50_plus: 0, fg_made: 3, fg_attempted: 3, fg_missed: 0 })).toEqual(['K k: fg_0_39 1 + fg_made_40_plus 1 + fg_made_50_plus 0 does not equal fg_made 3'])
     expect(kIdentityFailures('k', { fg_0_39: 3, fg_made_40_plus: 0, fg_made_50_plus: 0, fg_made: 3, fg_attempted: 4, fg_missed: 0 })).toEqual(['K k: fg_attempted 4 - fg_made 3 does not equal fg_missed 0'])
+  })
+
+  it('F871 / 218: a 60+ make is also a 50+ make — fg_60_plus above fg_made_50_plus is named; equal or below holds', () => {
+    const fine = { fg_0_39: 1, fg_made_40_plus: 1, fg_made_50_plus: 1, fg_60_plus: 1, fg_made: 3, fg_attempted: 3, fg_missed: 0 }
+    expect(kIdentityFailures('k', fine)).toEqual([])
+    expect(kIdentityFailures('k', { ...fine, fg_60_plus: 0 })).toEqual([])
+    expect(kIdentityFailures('k', { ...fine, fg_60_plus: 2 })).toEqual(['K k: fg_60_plus 2 is more than fg_made_50_plus 1 (a 60+ make is also a 50+ make)'])
   })
 
   it('a stored fg_made the feed has since changed fails the plan before anything is written (it would fail after)', async () => {
@@ -1839,5 +1851,78 @@ describe('the script name', () => {
     expect(script).toContain('runFillCli(process.argv.slice(2), {')
     expect(script).toContain('.then((code) => process.exit(code))')
     expect(script).not.toMatch(/ingest_write_batch|\.rpc\(|\.from\(/)
+  })
+})
+
+// ── F871 / migration 218 (D835): the second run, after the first seven are in ──
+
+/** A real Sleeper line (`sleeper-league-plays.json`) through the actuals map, as the provider hands it over. */
+function realLine(key: string, playerId: string, week: number, team: string, opponent: string): ProviderPlayerWeekStats {
+  const raw = recordedActual(key).stats
+  const stats = readZeroOmittedYardsAllowed(raw, mapToCanonicalKeys(raw, { feed: 'actuals' })) as Record<string, number>
+  return line(playerId, week, stats, mapUsageKeys(raw), team, opponent)
+}
+/** Brandon Aubrey, 2026 week 2: a 60-yard make (fgm_60p 1, inside fgm_50p 1). */
+const AUBREY_2 = realLine('aubrey_2026_wk2', '11533', 2, 'DAL', 'WAS')
+/** Tampa Bay, 2026 week 7: a D/ST two-point return (def_2pt 1), a block, a special-teams recovery. */
+const TB_7 = realLine('tb_2026_wk7', 'TB', 7, 'TB', 'CAR')
+/** Both stored the way production holds them after the first fill: the seven in, the two new columns 0. */
+function storedAfterFirstFill(feedLine: ProviderPlayerWeekStats): Row {
+  const { fg_60_plus: _sixty, def_2pt_return: _twoPoint, ...stats } = feedLine.stats
+  void _sixty
+  void _twoPoint
+  const { row } = toStatRow({ ...feedLine, stats }, CTX)
+  return { player_id: feedLine.playerId, season: SEASON, week: feedLine.week, stat_type: 'weekly', game_id: null, team: feedLine.team ?? null, is_live: false, source: 'sleeper+nflverse', advanced: feedLine.advanced, updated_at: PAST, ...row?.columns }
+}
+
+describe('F871 / 218: a second run on filled weeks moves only fg_60_plus and def_2pt_return (D835)', () => {
+  const lines = [AUBREY_2, TB_7]
+  const secondWorld = () => {
+    const world = worldWith(lines, lines.map(storedAfterFirstFill))
+    world.players.push({ id: '11533', position: 'K' }, { id: 'TB', position: 'DEF' })
+    return world
+  }
+
+  it('the map reads the real lines: Aubrey\'s 60-yarder is fg_50_plus 1 AND fg_60_plus 1; Tampa Bay\'s two-point return is def_2pt_return 1', () => {
+    expect(AUBREY_2.stats).toMatchObject({ fg_made: 3, fg_0_39: 1, fg_40_49: 1, fg_50_plus: 1, fg_60_plus: 1 })
+    expect(TB_7.stats).toMatchObject({ def_2pt_return: 1, def_block: 1, def_fumble_rec: 2 })
+  })
+
+  it('plans one move each — the two new columns, nothing else — and the K identities hold', async () => {
+    const world = secondWorld()
+    const before = snapshot(world)
+    const report = await fillRuledColumns({ db: world.client(), provider: feed(lines), time: new VirtualClock(NOW) }, { season: SEASON, weeks: [2, 7], apply: false })
+    expect(report.refused).toBeUndefined()
+    expect(report.ok).toBe(true)
+    expect(report.weeks.map((w) => [w.week, w.updates.length, w.newRows.length, Object.fromEntries(Object.entries(w.moves).filter(([, n]) => n > 0)), w.problems, w.otherDifferences])).toEqual([
+      [2, 1, 0, { fg_60_plus: 1 }, [], []],
+      [7, 1, 0, { def_2pt_return: 1 }, [], []],
+    ])
+    // The printed plan (the golden the owner's session reads before --apply).
+    expect(renderFill(report).filter((text) => text.startsWith('  all weeks'))).toEqual([
+      '  all weeks: 2 lines (2 updated, 0 new), 2 moves: fg_60_plus=1 def_2pt_return=1; 0 from a non-zero stored value; 0 other-column differences; 0 late lines (not written)',
+      '  all weeks def_fumble_recoveries by player, stored → feed: none',
+    ])
+    expectNothingWritten(world, before)
+  })
+
+  it('--apply writes them through the quiet door (ruled columns only, no queue row, no event), and the K identities hold after', async () => {
+    const world = secondWorld()
+    const report = await fillRuledColumns({ db: world.client(), provider: feed(lines), time: new VirtualClock(NOW) }, { season: SEASON, weeks: [2, 7], apply: true })
+    expect(report.ok).toBe(true)
+    expect(report.afterProblems).toEqual([])
+    expect(world.queue).toEqual([])
+    expect(world.events).toEqual([])
+    for (const call of world.doorCalls) {
+      for (const element of call.p_rows) {
+        expect(Object.keys(element.stat).sort()).toEqual([...META, ...RULED_COLUMNS].sort())
+        expect([element.enqueue, element.corrections]).toEqual([false, []])
+      }
+    }
+    expect([world.stored('11533', 2).fg_60_plus, world.stored('11533', 2).fg_made_50_plus, world.stored('TB', 7).def_2pt_return]).toEqual([1, 1, 1])
+  })
+
+  it('still refuses every season but 2026, by name, before any read', () => {
+    expect(() => parseFillArgs(['--season', '2025', '--weeks', '1-8'])).toThrow(/2025/)
   })
 })

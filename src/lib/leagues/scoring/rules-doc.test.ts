@@ -99,6 +99,7 @@ const K_WEEK: Record<string, number> = {
   fg_0_39: 1,
   fg_40_49: 1,
   fg_50_plus: 1,
+  fg_60_plus: 0, // migration 218 (F871): delivered as 0, as ingest stores it
   fg_missed: 1,
   pat_made: 3,
   pat_missed: 1,
@@ -115,6 +116,7 @@ const DST_WEEK: Record<string, number> = {
   def_safety: 0,
   def_block: 0,
   def_return_td: 0,
+  def_2pt_return: 0, // migration 218 (F871): delivered as 0, as ingest stores it
 }
 const PARITY_LINES: ReadonlyArray<[string, Record<string, number>]> = [
   ['qb', QB_WEEK],
@@ -220,7 +222,7 @@ describe('resolveRules — THE IDENTITY PROPERTY (format 1 ≡ resolved, every p
   it('holds for 200 seeded random flat documents at a random position', () => {
     const rng = mulberry32(0x5e_02_01)
     const keys = STAT_KEYS.filter((k) => k.scoring_surface === 'scorable').map((k) => k.key)
-    expect(keys.length).toBe(48)
+    expect(keys.length).toBe(50) // 48 + F871's fg_60_plus and def_2pt_return (migration 218)
 
     for (let run = 0; run < 200; run++) {
       const doc: FlatScoringRules = {}

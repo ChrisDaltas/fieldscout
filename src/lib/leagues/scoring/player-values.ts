@@ -63,9 +63,11 @@
  * (`SLEEPER_PROJECTIONS_ONLY_MAP`). A KEY THE SOURCE CANNOT SUPPLY still scores
  * as PENDING (contributing nothing) and every value NAMES it (`*_unscored`, the
  * applicable, non-zero rules keys this source can never deliver), never a quiet
- * under-count. Today that is `fumble_recovery_td` on offense: the projections
- * feed never sends it. Keeping that name is why `WEEKLY_SOURCE_KEYS` leaves out
- * the actuals-only spellings.
+ * under-count. Today that is `fumble_recovery_td` on offense and, under a
+ * document that pays them (migration 218), `fg_60_plus` on K and
+ * `def_2pt_return` on D/ST: the projections feed never sends any of the three.
+ * Keeping those names is why `WEEKLY_SOURCE_KEYS` leaves out the actuals-only
+ * spellings.
  *
  * F385 — THE PRESEASON LINE IS IN THE LEGACY NAMESPACE (`xp_made`,
  * `def_sacks`, `fg_made_40_plus`, `two_point_conversions`, …, written by

@@ -487,12 +487,15 @@ interface CompareRow {
   value: (card: TemplateCard) => string
 }
 
-const COMPARE_ROWS: readonly CompareRow[] = [
+/** Exported for the render test's row pins only. */
+export const COMPARE_ROWS: readonly CompareRow[] = [
   { label: 'Points per reception', value: (c) => formatPoints(c.summary.ppr) },
   { label: 'Interception thrown', value: (c) => formatPoints(c.summary.int) },
   { label: 'FG made 0–39', value: (c) => formatPoints(c.summary.kicking.fg0_39) },
   { label: 'FG made 40–49', value: (c) => formatPoints(c.summary.kicking.fg40_49) },
   { label: 'FG made 50+', value: (c) => formatPoints(c.summary.kicking.fg50Plus) },
+  // F871 / 218: what a 60+ make pays in all (50+ plus the top-up).
+  { label: 'FG made 60+', value: (c) => formatPoints(c.summary.kicking.fg60Plus) },
   { label: 'PAT made', value: (c) => formatPoints(c.summary.kicking.patMade) },
   { label: 'FG missed', value: (c) => formatPoints(c.summary.kicking.fgMissed) },
   { label: 'PAT missed', value: (c) => formatPoints(c.summary.kicking.patMissed) },

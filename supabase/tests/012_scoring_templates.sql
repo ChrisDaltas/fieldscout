@@ -29,7 +29,9 @@
 --     CRUD still works (a fix that nukes 001's owner policy fails those).
 --   * ESPN descriptions pinned as exact literals — the Q9 ruling's
 --     user-visibility condition (the parity-exception line a commissioner
---     can read) is enforced here, not just in vitest.
+--     can read) is enforced here, not just in vitest. Migration 218 (F871)
+--     closed two of its three exceptions (60+ FG, PAT return) and rewrote
+--     the line; the ESPN golden pins carry 218's two keys.
 --   * All privileged-context work (fixtures, constraint boundaries) runs
 --     BEFORE any JWT claims are set — set_config persists to txn end
 --     (D49(7) lesson).
@@ -111,15 +113,15 @@ select is(
     "rush_yards": 0.1, "rush_tds": 6, "rush_2pt": 2,
     "receptions": 0, "receiving_yards": 0.1, "receiving_tds": 6, "rec_2pt": 2,
     "fumbles_lost": -2, "fumble_recovery_td": 6, "return_td": 6,
-    "fg_0_39": 3, "fg_40_49": 4, "fg_50_plus": 5, "pat_made": 1, "fg_missed": -1,
+    "fg_0_39": 3, "fg_40_49": 4, "fg_50_plus": 5, "fg_60_plus": 1, "pat_made": 1, "fg_missed": -1,
     "def_sack": 1, "def_int": 2, "def_fumble_rec": 2, "def_td": 6,
-    "def_safety": 2, "def_block": 2, "def_return_td": 6,
+    "def_safety": 2, "def_block": 2, "def_return_td": 6, "def_2pt_return": 2,
     "def_pa_0": 5, "def_pa_1_6": 4, "def_pa_7_13": 3, "def_pa_14_17": 1,
     "def_pa_18_27": 0, "def_pa_28_34": -1, "def_pa_35_45": -3, "def_pa_46_plus": -5,
     "def_ya_0_99": 5, "def_ya_100_199": 3, "def_ya_200_299": 2, "def_ya_300_349": 0,
     "def_ya_350_399": -1, "def_ya_400_449": -3, "def_ya_450_499": -5,
     "def_ya_500_549": -6, "def_ya_550_plus": -7}'::jsonb,
-  'ESPN Standard rules — complete golden pin (Q9 evidence 2026-07-21; 60+ FG + PAT micro-categories are the NAMED exceptions, v2.8.5)');
+  'ESPN Standard rules — complete golden pin (Q9 evidence 2026-07-21; 218 / F871: fg_60_plus 1 on top of fg_50_plus and def_2pt_return 2 — PAT-safety stays the one NAMED exception, v2.16.116)');
 
 select is(
   (select rules from scoring_systems where is_template and name = 'ESPN Full PPR'),
@@ -127,15 +129,15 @@ select is(
     "rush_yards": 0.1, "rush_tds": 6, "rush_2pt": 2,
     "receptions": 1, "receiving_yards": 0.1, "receiving_tds": 6, "rec_2pt": 2,
     "fumbles_lost": -2, "fumble_recovery_td": 6, "return_td": 6,
-    "fg_0_39": 3, "fg_40_49": 4, "fg_50_plus": 5, "pat_made": 1, "fg_missed": -1,
+    "fg_0_39": 3, "fg_40_49": 4, "fg_50_plus": 5, "fg_60_plus": 1, "pat_made": 1, "fg_missed": -1,
     "def_sack": 1, "def_int": 2, "def_fumble_rec": 2, "def_td": 6,
-    "def_safety": 2, "def_block": 2, "def_return_td": 6,
+    "def_safety": 2, "def_block": 2, "def_return_td": 6, "def_2pt_return": 2,
     "def_pa_0": 5, "def_pa_1_6": 4, "def_pa_7_13": 3, "def_pa_14_17": 1,
     "def_pa_18_27": 0, "def_pa_28_34": -1, "def_pa_35_45": -3, "def_pa_46_plus": -5,
     "def_ya_0_99": 5, "def_ya_100_199": 3, "def_ya_200_299": 2, "def_ya_300_349": 0,
     "def_ya_350_399": -1, "def_ya_400_449": -3, "def_ya_450_499": -5,
     "def_ya_500_549": -6, "def_ya_550_plus": -7}'::jsonb,
-  'ESPN Full PPR rules — complete golden pin (differs from Standard by receptions = 1 only)');
+  'ESPN Full PPR rules — complete golden pin (differs from Standard by receptions = 1 only; 218''s two keys too)');
 
 select is(
   (select rules from scoring_systems where is_template and name = 'Yahoo Standard'),
@@ -193,12 +195,12 @@ select is(
 
 select is(
   (select description from scoring_systems where is_template and name = 'ESPN Standard'),
-  'ESPN''s 2026 default scoring, 0 PPR — verified against ESPN''s published defaults (July 2026). Interceptions −2. Heads up on two tiny gaps our stat feed cannot see: ESPN awards 6 points for a 60+ yard field goal (scored here as a 50+ make, 5 points), and 1–2 points when a D/ST scores a safety or return on a PAT try (not scored here). Combined, that is roughly 5–15 plays across the entire NFL per season. Every other category matches ESPN to the cent.',
-  'ESPN Standard description carries the Q9 parity-exception line verbatim (ruling''s user-visibility condition)');
+  'ESPN''s 2026 default scoring, 0 PPR — verified against ESPN''s published defaults (July 2026). Interceptions −2. Heads up on one tiny gap our stat feed cannot see: ESPN awards 1 point when a D/ST scores a safety on a PAT try (not scored here). Our stats come from one feed, so on a rare play our count can differ from ESPN''s.',
+  'ESPN Standard description carries the Q9 parity-exception line verbatim (ruling''s user-visibility condition; 218: one gap left, PAT-safety)');
 
 select is(
   (select description from scoring_systems where is_template and name = 'ESPN Full PPR'),
-  'ESPN''s 2026 default scoring with 1 point per reception — verified against ESPN''s published defaults (July 2026). Interceptions −2. Heads up on two tiny gaps our stat feed cannot see: ESPN awards 6 points for a 60+ yard field goal (scored here as a 50+ make, 5 points), and 1–2 points when a D/ST scores a safety or return on a PAT try (not scored here). Combined, that is roughly 5–15 plays across the entire NFL per season. Every other category matches ESPN to the cent.',
+  'ESPN''s 2026 default scoring with 1 point per reception — verified against ESPN''s published defaults (July 2026). Interceptions −2. Heads up on one tiny gap our stat feed cannot see: ESPN awards 1 point when a D/ST scores a safety on a PAT try (not scored here). Our stats come from one feed, so on a rare play our count can differ from ESPN''s.',
   'ESPN Full PPR description carries the Q9 parity-exception line verbatim');
 
 select is(

@@ -1,11 +1,16 @@
 /**
  * fill-ruled-columns — the quiet fill behind `npm run sync:fill-ruled`
- * (PROGRESS F870, F871, F890, D832, D833). Chris 2026-11-05, on the questions
- * asked 2026-11-04: "go on league kickers and the other plays".
+ * (PROGRESS F870, F871, F890, D832, D833, D835). Chris 2026-11-05, on the
+ * questions asked 2026-11-04: "go on league kickers and the other plays".
  *
  * WHY IT EXISTS. The stat-feed mapping left seven columns empty on past weeks,
  * and every stored rules document already pays them. Filling those columns is
- * the first half of re-scoring weeks that have finished. `sync:reingest` can't
+ * the first half of re-scoring weeks that have finished. Migration 218 (F871,
+ * D835) added two more, `fg_60_plus` and `def_2pt_return` (217's columns, which
+ * the map fills from `fgm_60p` and `def_2pt`): nine in all. A finished week's
+ * stored rules don't name those two (Q64: they pay from the live week on), so
+ * filling them moves stats pages and box-score lines, not a finished week's
+ * score. `sync:reingest` can't
  * do it: it rewrites whole lines, so it would land late provider fixes on any
  * stat (a re-score would then pay them past F405); it would write each moved
  * key as a provider-correction event into the table L.E2.5 measures; and it
@@ -91,6 +96,10 @@ export const RULED_COLUMNS = [
   'def_fumble_recoveries',
   'return_td',
   'fumble_recovery_td',
+  // F871 / migration 218 (D835): the 60+ make's top-up count and the D/ST
+  // two-point return.
+  'fg_60_plus',
+  'def_2pt_return',
 ] as const
 export type RuledColumn = (typeof RULED_COLUMNS)[number]
 const RULED: ReadonlySet<string> = new Set(RULED_COLUMNS)
@@ -308,7 +317,12 @@ function otherColumnDifferences(prior: StatRow | undefined, row: StatRow): Other
   return out
 }
 
-/** `fg_0_39 + fg_made_40_plus + fg_made_50_plus = fg_made` and `fg_attempted - fg_made = fg_missed`. */
+/**
+ * `fg_0_39 + fg_made_40_plus + fg_made_50_plus = fg_made`,
+ * `fg_attempted - fg_made = fg_missed`, and `fg_60_plus <= fg_made_50_plus`: a
+ * 60+ make is also a 50+ make (`fgm_50p` = `fgm_50_59 + fgm_60p` on 954 of 954
+ * saved kicker lines), so more 60+ makes than 50+ makes is a broken line.
+ */
 export function kIdentityFailures(playerId: string, columns: Readonly<Record<string, number | null>>): string[] {
   const read = (column: string): number => columns[column] ?? 0
   const buckets = read('fg_0_39') + read('fg_made_40_plus') + read('fg_made_50_plus')
@@ -318,6 +332,9 @@ export function kIdentityFailures(playerId: string, columns: Readonly<Record<str
   }
   if (read('fg_attempted') - read('fg_made') !== read('fg_missed')) {
     out.push(`K ${playerId}: fg_attempted ${read('fg_attempted')} - fg_made ${read('fg_made')} does not equal fg_missed ${read('fg_missed')}`)
+  }
+  if (read('fg_60_plus') > read('fg_made_50_plus')) {
+    out.push(`K ${playerId}: fg_60_plus ${read('fg_60_plus')} is more than fg_made_50_plus ${read('fg_made_50_plus')} (a 60+ make is also a 50+ make)`)
   }
   return out
 }

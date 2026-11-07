@@ -27,7 +27,7 @@
  * queue's players (TD9 — the receipts never carry them; the words never ask
  * for them).
  */
-import { STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
+import { RULE_LABEL_OVERRIDES, STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
 import { sentenceLabel } from '@/lib/leagues/scoring/stat-correction-labels'
 
 // ---------------------------------------------------------------------------
@@ -257,7 +257,12 @@ export function settingChange(key: string, before: unknown, after: unknown): str
 // "positions.TE.receptions")
 // ---------------------------------------------------------------------------
 
-const STAT_WORDS: ReadonlyMap<string, string> = new Map(STAT_KEYS.map((def) => [def.key, sentenceLabel(def.label)]))
+// A rule's words, not the stat's: the scoring editor's own label where it has
+// one (`RULE_LABEL_OVERRIDES`, F871 / 218), so the 60+ top-up reads as an extra
+// on the 50+ field goal, never as the whole kick's value.
+const STAT_WORDS: ReadonlyMap<string, string> = new Map(
+  STAT_KEYS.map((def) => [def.key, sentenceLabel(RULE_LABEL_OVERRIDES[def.key] ?? def.label)]),
+)
 const POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DST', 'DEF', 'DL', 'LB', 'DB'])
 
 /** One scoring-rule path in words ("TE receptions"), or null when its stat has none. */

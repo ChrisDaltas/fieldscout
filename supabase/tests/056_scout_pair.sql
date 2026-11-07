@@ -10,7 +10,7 @@
 --     ZERO 'Scout Scoring' (the old natural key is gone), 'Scout PPR'
 --     present, and the template census at EIGHT.
 --   §B SCOUT PPR GOLDEN PINS — the COMPLETE seeded row (description, all
---     43 coefficients) as stored literals (R23), the same literals
+--     43 coefficients; 44 since 218's def_2pt_return) as stored literals (R23), the same literals
 --     templates.ts authors and templates-db.test.ts deep-equals; PLUS the
 --     pair pin — Scout PPR's body minus `receptions` byte-equals Scout
 --     Standard's minus `receptions`, proven at the STORED rows (B.5.1:
@@ -90,19 +90,19 @@ select is(
     "fumbles_lost": -2, "fumble_recovery_td": 6, "return_td": 6,
     "fg_0_39": 3, "fg_40_49": 3, "fg_50_plus": 3, "pat_made": 1, "fg_missed": -1,
     "def_sack": 1, "def_int": 2, "def_fumble_rec": 2, "def_td": 6,
-    "def_safety": 2, "def_block": 2, "def_return_td": 6,
+    "def_safety": 2, "def_block": 2, "def_return_td": 6, "def_2pt_return": 2,
     "def_pa_0": 5, "def_pa_1_6": 4, "def_pa_7_13": 3, "def_pa_14_17": 1,
     "def_pa_18_27": 0, "def_pa_28_34": -1, "def_pa_35_45": -3, "def_pa_46_plus": -5,
     "def_ya_0_99": 5, "def_ya_100_199": 3, "def_ya_200_299": 2, "def_ya_300_349": 0,
     "def_ya_350_399": -1, "def_ya_400_449": -3, "def_ya_450_499": -5,
     "def_ya_500_549": -6, "def_ya_550_plus": -7
   }'::jsonb,
-  'B2: the COMPLETE rules object — all 43 B.5.1 coefficients as a stored literal (Scout Standard''s body, receptions 0.2)');
+  'B2: the COMPLETE rules object — all 44 B.5.1 coefficients as a stored literal (Scout Standard''s body, receptions 0.2; def_2pt_return 2 from 218)');
 
 select is(
   (select count(*) from jsonb_object_keys((select rules from scoring_systems where is_template and name = 'Scout PPR')) k),
-  43::bigint,
-  'B3: exactly 43 coefficients — the SAME 43 keys as Scout Standard (B.5.1)');
+  44::bigint,
+  'B3: exactly 44 coefficients — the SAME 44 keys as Scout Standard (B.5.1; 43 until 218''s def_2pt_return)');
 
 select is(
   (select rules ? 'return_yards' from scoring_systems where is_template and name = 'Scout PPR'),

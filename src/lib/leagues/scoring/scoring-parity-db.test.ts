@@ -20,10 +20,10 @@
  * around: a parity fixture written as "one document per family" certifies a
  * checklist of NAMES. So beyond `ONE_FAMILY_EACH` (one document per ARM, both
  * formats) the suite sweeps, through BOTH layers:
- *   • all 66 registry keys (61 + F578's five usage keys, D539), at `base` and in a flat document — so the SQL
+ *   • all 68 registry keys (61 + F578's five usage keys, D539, + F871's two, 218), at `base` and in a flat document — so the SQL
  *     transcription of the scorable allowlist is proved against TS's registry
  *     rather than eyeballed;
- *   • the full 6 × 48 position matrix — same, for the position → legal-keys map;
+ *   • the full 6 × 50 position matrix — same, for the position → legal-keys map;
  *   • coefficient edges at all three layers, the position vocabulary, hostile
  *     key names, every `tier_cuts` residual arm, and every envelope shape.
  *
@@ -483,14 +483,14 @@ describe('SE.4(4) the TS≡SQL parity fixture — the acceptances', () => {
  * ──────────────────────────────────────────────────────────────────────── */
 
 describe('the sweeps — where a transcription could have drifted from the registry', () => {
-  it('all 66 registry keys agree, at `base` and in a flat document (guardrail 1)', async () => {
-    expect(STAT_KEYS).toHaveLength(66)
-    expect(await expectParity(registryCases)).toBe(132)
+  it('all 68 registry keys agree, at `base` and in a flat document (guardrail 1)', async () => {
+    expect(STAT_KEYS).toHaveLength(68) // 66 + F871's fg_60_plus and def_2pt_return (218)
+    expect(await expectParity(registryCases)).toBe(136)
   })
 
-  it('the full 6 × 48 position matrix agrees (guardrail 3)', async () => {
-    expect(scorableKeys).toHaveLength(48)
-    expect(await expectParity(positionMatrixCases)).toBe(288)
+  it('the full 6 × 50 position matrix agrees (guardrail 3)', async () => {
+    expect(scorableKeys).toHaveLength(50) // 48 + F871's two (218)
+    expect(await expectParity(positionMatrixCases)).toBe(300)
   })
 
   it('coefficient edges agree at base, at an override, and flat (guardrail 5)', async () => {
@@ -560,7 +560,7 @@ describe('the one-sided property: SQL is the wall, so it may never be the looser
     // The corpus size is a stored literal for the same reason ONE_FAMILY_EACH's
     // is: a parity suite rots by SHRINKING, quietly, and a count that has to be
     // edited by hand makes that a deliberate act.
-    expect(WHOLE_CORPUS).toHaveLength(682) // 672 + F578's 5 usage keys × 2 (D539)
+    expect(WHOLE_CORPUS).toHaveLength(698) // 672 + F578's 5 usage keys × 2 (D539) + F871's 2 keys × (2 registry + 6 matrix) (218)
     // Non-vacuity: the corpus contains both verdicts in quantity, so "no
     // looser case" cannot mean "nothing was accepted" (CLAUDE.md: never let
     // "nothing happened" mean "it worked").
@@ -655,7 +655,7 @@ describe('the number-model edges — measured over RAW BYTES, because the client
    * **This block exists because the rest of the suite has exactly one
    * transport, and that transport is `JSON.stringify` (R599/R601).**
    *
-   * Anything that literal cannot render faithfully is invisible to all 682
+   * Anything that literal cannot render faithfully is invisible to all 698
    * corpus documents, to the 80,000-document fuzz, and to all 31 break probes:
    *
    *   JSON.stringify([0, 1e400])              → "[0,null]"

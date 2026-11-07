@@ -22,7 +22,7 @@ import {
   type EnvelopeTierCuts,
 } from '@/lib/leagues/scoring/tier-cuts'
 import { POSITION_SCORABLE_KEYS } from '@/lib/leagues/scoring/validate-rules-doc'
-import { STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
+import { RULE_LABEL_OVERRIDES, STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
 import { LeaguePatchError } from '@/hooks/use-league'
 
 /**
@@ -113,6 +113,18 @@ const registryLabel = (key: string): string => {
     )
   }
   return def.label
+}
+
+/**
+ * A row's label: the registry's (which must exist), unless `RULE_LABEL_OVERRIDES`
+ * (beside the registry, F871 / 218) names the key. That map's one row is
+ * `fg_60_plus`, a top-up on the FG 50+ row, so its words say so. Every other
+ * row is its registry label (pinned by test, with that map as the only named
+ * exception); the commissioner log reads the same map for the same rule.
+ */
+const editorLabel = (key: string): string => {
+  const registry = registryLabel(key)
+  return RULE_LABEL_OVERRIDES[key] ?? registry
 }
 
 const OFFENSE_POSITIONS: readonly ScoringPosition[] = ['QB', 'RB', 'WR', 'TE']
@@ -230,6 +242,8 @@ export const SCORING_EDITOR_SECTIONS: readonly ScoringSectionDef[] = composeCata
       { key: 'fg_0_39', label: registryLabel('fg_0_39') },
       { key: 'fg_40_49', label: registryLabel('fg_40_49') },
       { key: 'fg_50_plus', label: registryLabel('fg_50_plus') },
+      // F871 / 218: the 60+ make's top-up, read with the row above it.
+      { key: 'fg_60_plus', label: editorLabel('fg_60_plus') },
       { key: 'pat_made', label: registryLabel('pat_made') },
       { key: 'fg_missed', label: registryLabel('fg_missed') },
       { key: 'pat_missed', label: registryLabel('pat_missed') },
@@ -247,6 +261,7 @@ export const SCORING_EDITOR_SECTIONS: readonly ScoringSectionDef[] = composeCata
       { key: 'def_safety', label: registryLabel('def_safety') },
       { key: 'def_block', label: registryLabel('def_block') },
       { key: 'def_return_td', label: registryLabel('def_return_td') },
+      { key: 'def_2pt_return', label: registryLabel('def_2pt_return') }, // F871 / 218
     ],
   },
 ])

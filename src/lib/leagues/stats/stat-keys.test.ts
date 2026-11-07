@@ -37,6 +37,7 @@ const APPENDIX_B4_KEYS = [
   'fg_0_39',
   'fg_40_49',
   'fg_50_plus',
+  'fg_60_plus', // v2.16.116 (F871, migration 218)
   'pat_made',
   'fg_missed',
   'pat_missed',
@@ -47,6 +48,7 @@ const APPENDIX_B4_KEYS = [
   'def_safety',
   'def_block',
   'def_return_td',
+  'def_2pt_return', // v2.16.116 (F871, migration 218)
   'def_pa_0',
   'def_pa_35_plus',
   'pass_300_bonus',
@@ -108,6 +110,7 @@ const GOLDEN_KEY_LIST = [
   'fg_0_39',
   'fg_40_49',
   'fg_50_plus',
+  'fg_60_plus', // F871 / 218
   'pat_made',
   'fg_missed',
   'pat_missed',
@@ -119,6 +122,7 @@ const GOLDEN_KEY_LIST = [
   'def_safety',
   'def_block',
   'def_return_td',
+  'def_2pt_return', // F871 / 218
   'def_pa_0',
   'def_pa_1_6',
   'def_pa_7_13',
@@ -196,6 +200,9 @@ const EXPECTED_COLUMN_MAPPINGS: Record<string, string> = {
   pat_missed: 'pat_missed',
   def_block: 'def_block',
   def_return_td: 'def_return_td',
+  // Migration-217 columns (F871 / D834), read from 218 on: same-named too.
+  fg_60_plus: 'fg_60_plus',
+  def_2pt_return: 'def_2pt_return',
   fumble_recovery_td: 'fumble_recovery_td',
   return_td: 'return_td',
   def_yards_allowed: 'def_yards_allowed',
@@ -375,6 +382,7 @@ const SECTION_CATALOG_KEYS = [
   'fg_0_39',
   'fg_40_49',
   'fg_50_plus',
+  'fg_60_plus', // F871 / 218
   'pat_made',
   'fg_missed',
   'pat_missed',
@@ -386,6 +394,7 @@ const SECTION_CATALOG_KEYS = [
   'def_safety',
   'def_block',
   'def_return_td',
+  'def_2pt_return', // F871 / 218
 ]
 
 // §23.5's own enumeration of the context surface, transcribed verbatim from
@@ -426,12 +435,13 @@ const surfaceKeys = (surface: string) =>
     .sort()
 
 describe('STAT_KEYS scoring_surface (§23.5 v2.11 — the editor’s editable scope)', () => {
-  it('classifies the WHOLE registry — the three surfaces partition it, 48/14/4 = 66', () => {
+  it('classifies the WHOLE registry — the three surfaces partition it, 50/14/4 = 68', () => {
     const scorable = surfaceKeys('scorable')
     const context = surfaceKeys('context')
     const reserved = surfaceKeys('reserved')
 
-    expect(scorable.length).toBe(48)
+    // 48 → 50 at migration 218 (F871): `fg_60_plus` and `def_2pt_return`.
+    expect(scorable.length).toBe(50)
     expect(context.length).toBe(14)
     expect(reserved.length).toBe(4)
     // Partition, not just counts: every key classified exactly once, and no
@@ -441,7 +451,7 @@ describe('STAT_KEYS scoring_surface (§23.5 v2.11 — the editor’s editable sc
     expect([...scorable, ...context, ...reserved].sort()).toEqual(
       STAT_KEYS.map((def) => def.key).sort(),
     )
-    expect(STAT_KEYS.length).toBe(66)
+    expect(STAT_KEYS.length).toBe(68)
   })
 
   it('THE SCORABLE SET ≡ the §7.3.3.1 section catalog ∪ the CUT-GENERATED tier keys (set equality, not a count)', () => {
@@ -460,13 +470,14 @@ describe('STAT_KEYS scoring_surface (§23.5 v2.11 — the editor’s editable sc
     // 7 shared PA + 8 ESPN PA (4 key names genuinely shared) + 9 YA = 20.
     const tierUnion = [...new Set(generatedTierKeys)]
     expect(tierUnion.length).toBe(20)
-    // …and the catalog half is 28 (4 Passing + 3 Rushing + 4 Receiving +
-    // 1 Special Teams + 3 Turnovers + 6 Kicking + 7 D/ST events), so the
-    // 28 + 20 = 48 arithmetic is measured here, not asserted in prose.
-    expect(SECTION_CATALOG_KEYS.length).toBe(28)
+    // …and the catalog half is 30 (4 Passing + 3 Rushing + 4 Receiving +
+    // 1 Special Teams + 3 Turnovers + 7 Kicking + 8 D/ST events — Kicking and
+    // D/ST each gained one key at migration 218, F871), so the 30 + 20 = 50
+    // arithmetic is measured here, not asserted in prose.
+    expect(SECTION_CATALOG_KEYS.length).toBe(30)
 
     const expected = [...new Set([...SECTION_CATALOG_KEYS, ...tierUnion])].sort()
-    expect(expected.length).toBe(48)
+    expect(expected.length).toBe(50)
     expect(surfaceKeys('scorable')).toEqual(expected)
   })
 

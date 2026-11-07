@@ -118,6 +118,14 @@ export const STAT_KEYS: readonly StatKeyDef[] = [
   // (live-stats STAT_MAP sources it from Sleeper's fgm_40_49; 50+ is separate).
   { key: 'fg_40_49', label: 'FG Made (40–49)', tier: 'core_box', storage: 'column', column: 'fg_made_40_plus', scoring_surface: 'scorable' },
   { key: 'fg_50_plus', label: 'FG Made (50+)', tier: 'core_box', storage: 'column', column: 'fg_made_50_plus', scoring_surface: 'scorable' },
+  // F871 (migrations 217 / 218; Chris 2026-11-05, "go on league kickers and the
+  // other plays"): a 60+ yard make, Sleeper's `fgm_60p`. A TOP-UP, not a split:
+  // `fg_made_50_plus` stays inclusive of 60+ (`fgm_50p` = `fgm_50_59 + fgm_60p`
+  // on 954 of 954 kicker lines), so a document naming this key pays it ON TOP of
+  // `fg_50_plus` (ESPN: 5 + 1 = 6) and one that doesn't pays a 60-yarder its 50+
+  // value, exactly as before. Column, not `advanced` (§23.5's named exception):
+  // Sleeper omits a zero, and an absent advanced key would read pending.
+  { key: 'fg_60_plus', label: 'FG Made (60+)', tier: 'core_box', storage: 'column', column: 'fg_60_plus', scoring_surface: 'scorable' },
   { key: 'pat_made', label: 'PAT Made', tier: 'core_box', storage: 'column', column: 'xp_made', scoring_surface: 'scorable' },
   { key: 'fg_missed', label: 'FG Missed', tier: 'core_box', storage: 'column', column: 'fg_missed', scoring_surface: 'scorable' },
   { key: 'pat_missed', label: 'PAT Missed', tier: 'core_box', storage: 'column', column: 'pat_missed', scoring_surface: 'scorable' },
@@ -130,6 +138,10 @@ export const STAT_KEYS: readonly StatKeyDef[] = [
   { key: 'def_safety', label: 'Safety', tier: 'core_box', storage: 'column', column: 'def_safeties', scoring_surface: 'scorable' },
   { key: 'def_block', label: 'Blocked Kick', tier: 'core_box', storage: 'column', column: 'def_block', scoring_surface: 'scorable' },
   { key: 'def_return_td', label: 'Return TD (D/ST)', tier: 'core_box', storage: 'column', column: 'def_return_td', scoring_surface: 'scorable' },
+  // F871 (migrations 217 / 218): the defense returns a two-point try, Sleeper's
+  // `def_2pt` (ESPN's stat 206 on 786 of 786 D/ST lines). Column, not
+  // `advanced`, for the same reason as `fg_60_plus`.
+  { key: 'def_2pt_return', label: 'Two-Point Return (D/ST)', tier: 'core_box', storage: 'column', column: 'def_2pt_return', scoring_surface: 'scorable' },
   // Points-allowed tier indicators. B.4 names the two endpoint keys
   // (`def_pa_0` … `def_pa_35_plus`); the middle tiers follow the same
   // def_pa_<lo>_<hi> shape (D21). Storage is 'derived' (D44): a pure helper
@@ -230,6 +242,20 @@ export const STAT_KEYS: readonly StatKeyDef[] = [
   { key: 'example_tracking_yards', label: 'Example Tracking Yards (placeholder)', tier: 'tracking', storage: 'advanced', placeholder: true, scoring_surface: 'reserved' },
   { key: 'example_charted_yards', label: 'Example Charted Yards (placeholder)', tier: 'charted', storage: 'advanced', placeholder: true, scoring_surface: 'reserved' },
 ]
+
+/**
+ * The ONE key whose words as a scoring RULE are not its registry label (F871,
+ * migration 218). `fg_60_plus` is paid ON TOP of `fg_50_plus` (a 60-yarder
+ * under ESPN's rules pays 5 + 1 = 6), so "FG Made (60+)" beside a 1 would read
+ * as the whole value of the kick. Read wherever a rule's VALUE is shown: the
+ * scoring editor's row (`scoring-editor-ops.ts`) and the commissioner log's
+ * `edit_scoring` sentence (`commish-log-copy.ts`). A stat correction names a
+ * COUNT of 60+ makes, so it keeps the registry label
+ * (`stat-correction-labels.ts`, 218's `stat_key_label_internal`).
+ */
+export const RULE_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
+  fg_60_plus: 'FG 60+ extra (on top of FG 50+)',
+}
 
 /**
  * L.E1.26 / F390 — the canonical keys whose stored NULL means NOT DELIVERED

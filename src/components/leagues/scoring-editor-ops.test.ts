@@ -14,7 +14,7 @@ import {
   POSITION_SCORABLE_KEYS,
   SCORABLE_KEYS,
 } from '@/lib/leagues/scoring/validate-rules-doc'
-import { STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
+import { RULE_LABEL_OVERRIDES, STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
 
 import {
   allPositionsOn,
@@ -175,14 +175,22 @@ describe('the section catalog (F136 discharge)', () => {
     expect(catalog).toStrictEqual(expected)
   })
 
-  it('every ungated label is the STAT_KEYS registry label (composed, not re-written)', () => {
+  it('every ungated label is the STAT_KEYS registry label (composed, not re-written), except the named editor overrides', () => {
     for (const section of SCORING_EDITOR_SECTIONS) {
       for (const field of renderableFields(section)) {
         const def = STAT_KEYS.find((d) => d.key === field.key)
         expect(def, field.key).toBeDefined()
-        expect(field.label).toBe(def?.label)
+        expect(field.label).toBe(RULE_LABEL_OVERRIDES[field.key] ?? def?.label)
       }
     }
+  })
+
+  it('F871 / 218: the one override is the 60+ row, worded as a top-up on the 50+ row, and it sits right after it', () => {
+    expect(RULE_LABEL_OVERRIDES).toStrictEqual({ fg_60_plus: 'FG 60+ extra (on top of FG 50+)' })
+    const kicking = sectionsForPosition('K')[0]
+    expect(kicking.fields.map((f) => f.key)).toStrictEqual(['fg_0_39', 'fg_40_49', 'fg_50_plus', 'fg_60_plus', 'pat_made', 'fg_missed', 'pat_missed'])
+    const dst = sectionsForPosition('DST')[0]
+    expect(dst.fields.map((f) => [f.key, f.label])).toContainEqual(['def_2pt_return', 'Two-Point Return (D/ST)'])
   })
 })
 

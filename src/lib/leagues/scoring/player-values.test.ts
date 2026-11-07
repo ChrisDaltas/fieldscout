@@ -166,9 +166,11 @@ describe('V1 GOLDEN vs SLEEPER — the recorded week-4 lines through the canonic
   it('V1e ESPN scoring now SCORES the yards-allowed tier from the projected line (L.E1.26 / F390 — re-cut; it was named unscored under F386(a))', () => {
     // MIN projects 300.39 yards → floor 300 → def_ya_300_349 (ESPN 0);
     // PIT 296.73 → 296 → def_ya_200_299 (ESPN +2). F870: the source now
-    // supplies blocks and return TDs too, so nothing stays named.
-    expect(weekly(ESPN_STD, 'MIN').unscored).toEqual([])
-    expect(weekly(ESPN_STD, 'PIT').unscored).toEqual([])
+    // supplies blocks and return TDs too. F871 / 218: ESPN pays a D/ST
+    // two-point return, which the projections feed never sends, so it is the
+    // one key NAMED (never a silent 0).
+    expect(weekly(ESPN_STD, 'MIN').unscored).toEqual(['def_2pt_return'])
+    expect(weekly(ESPN_STD, 'PIT').unscored).toEqual(['def_2pt_return'])
     // Sleeper Standard scores no yards-allowed tier: its value does not move.
     expect(weekly(SLEEPER_STD, 'MIN').unscored).toEqual([])
   })
@@ -322,6 +324,7 @@ describe('V6 F385 — the LEGACY season line, translated through the registry\'s
     const scored = scorePreseasonLine(SCOUT_STD, 'DST', { def_sacks: 52, def_interceptions: 15, def_fumble_recoveries: 11, def_tds: 3 })
     expect(scored.points).toBe(122)
     expect(scored.unscored).toEqual([
+      'def_2pt_return', // F871 / 218: Scout pays it (Q2); the season line has no such stat
       'def_block', 'def_pa_0', 'def_pa_14_17', 'def_pa_1_6', 'def_pa_28_34', 'def_pa_35_45', 'def_pa_46_plus', 'def_pa_7_13',
       'def_return_td', 'def_ya_0_99', 'def_ya_100_199', 'def_ya_200_299', 'def_ya_350_399', 'def_ya_400_449', 'def_ya_450_499',
       'def_ya_500_549', 'def_ya_550_plus',

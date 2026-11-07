@@ -375,15 +375,15 @@ select is(
     "rush_yards": 0.1, "rush_tds": 6, "rush_2pt": 2,
     "receptions": 0, "receiving_yards": 0.1, "receiving_tds": 6, "rec_2pt": 2,
     "fumbles_lost": -2, "fumble_recovery_td": 6, "return_td": 6,
-    "fg_0_39": 3, "fg_40_49": 4, "fg_50_plus": 5, "pat_made": 1, "fg_missed": -1,
+    "fg_0_39": 3, "fg_40_49": 4, "fg_50_plus": 5, "fg_60_plus": 1, "pat_made": 1, "fg_missed": -1,
     "def_sack": 1, "def_int": 2, "def_fumble_rec": 2, "def_td": 6,
-    "def_safety": 2, "def_block": 2, "def_return_td": 6,
+    "def_safety": 2, "def_block": 2, "def_return_td": 6, "def_2pt_return": 2,
     "def_pa_0": 5, "def_pa_1_6": 4, "def_pa_7_13": 3, "def_pa_14_17": 1,
     "def_pa_18_27": 0, "def_pa_28_34": -1, "def_pa_35_45": -3, "def_pa_46_plus": -5,
     "def_ya_0_99": 5, "def_ya_100_199": 3, "def_ya_200_299": 2, "def_ya_300_349": 0,
     "def_ya_350_399": -1, "def_ya_400_449": -3, "def_ya_450_499": -5,
     "def_ya_500_549": -6, "def_ya_550_plus": -7}'::jsonb,
-  'snapshot equals the COMPLETE ESPN Standard rules literal (stored literal — cross-pins the 058 seed through the RPC)');
+  'snapshot equals the COMPLETE ESPN Standard rules literal (stored literal — cross-pins the 058 seed, plus 218''s two keys, through the RPC)');
 
 -- R69: the snapshot RPC is allowed in BOTH pre-draft statuses. The first
 -- freeze above ran in 'setup'; move to 'scheduled' (settings still carry the

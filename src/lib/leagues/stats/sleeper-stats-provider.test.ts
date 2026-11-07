@@ -172,7 +172,15 @@ describe('SleeperStatsProvider', () => {
       def_st_fum_rec: 'def_fumble_rec',
       blk_kick: 'def_block',
     })
-    expect(SLEEPER_ACTUALS_ONLY_MAP).toEqual({ fgmiss: 'fg_missed', def_st_td: 'def_return_td', st_td: 'return_td', fum_rec_td: 'fumble_recovery_td' })
+    expect(SLEEPER_ACTUALS_ONLY_MAP).toEqual({
+      fgmiss: 'fg_missed',
+      def_st_td: 'def_return_td',
+      st_td: 'return_td',
+      fum_rec_td: 'fumble_recovery_td',
+      // F871 / migration 218 — measured on the saved actuals feed (adapter comment)
+      fgm_60p: 'fg_60_plus',
+      def_2pt: 'def_2pt_return',
+    })
     const projectedOffense = { pr_td: 'return_td', def_kr_td: 'return_td' }
     expect(SLEEPER_PROJECTIONS_ONLY_MAP).toEqual({
       QB: projectedOffense,

@@ -86,19 +86,19 @@ select is(
     "fumbles_lost": -2, "fumble_recovery_td": 6, "return_td": 6,
     "fg_0_39": 3, "fg_40_49": 3, "fg_50_plus": 3, "pat_made": 1, "fg_missed": -1,
     "def_sack": 1, "def_int": 2, "def_fumble_rec": 2, "def_td": 6,
-    "def_safety": 2, "def_block": 2, "def_return_td": 6,
+    "def_safety": 2, "def_block": 2, "def_return_td": 6, "def_2pt_return": 2,
     "def_pa_0": 5, "def_pa_1_6": 4, "def_pa_7_13": 3, "def_pa_14_17": 1,
     "def_pa_18_27": 0, "def_pa_28_34": -1, "def_pa_35_45": -3, "def_pa_46_plus": -5,
     "def_ya_0_99": 5, "def_ya_100_199": 3, "def_ya_200_299": 2, "def_ya_300_349": 0,
     "def_ya_350_399": -1, "def_ya_400_449": -3, "def_ya_450_499": -5,
     "def_ya_500_549": -6, "def_ya_550_plus": -7
   }'::jsonb,
-  'B2: the COMPLETE rules object — all 43 App B.5 coefficients as a stored literal (every TD 6 incl. passing; flat FG 3; pass 0.05/yd; receptions explicit 0; fg_missed −1 RULED 2026-08-31; ESPN split D/ST)');
+  'B2: the COMPLETE rules object — all 44 App B.5 coefficients as a stored literal (every TD 6 incl. passing; flat FG 3; pass 0.05/yd; receptions explicit 0; fg_missed −1 RULED 2026-08-31; ESPN split D/ST; def_2pt_return 2 from 218, Q2 ruled 2026-11-05)');
 
 select is(
   (select count(*) from jsonb_object_keys((select rules from scoring_systems where is_template and name = 'Scout Standard')) k),
-  43::bigint,
-  'B3: exactly 43 coefficients (B.5''s recount: 14 + 5 + 7 + 8 + 9)');
+  44::bigint,
+  'B3: exactly 44 coefficients (B.5''s recount 14 + 5 + 7 + 8 + 9, plus 218''s D/ST two-point return: 14 + 5 + 8 + 8 + 9)');
 
 select is(
   (select rules ? 'return_yards' from scoring_systems where is_template and name = 'Scout Standard'),

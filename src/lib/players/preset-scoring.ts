@@ -34,8 +34,12 @@
  * its games pay.
  *
  * Still short of ESPN's table:
- * - K: a 60+ yard FG pays 5 rather than 6 (F871). Boswell 2025 wk1 reads 14, ESPN 15.
- * - D/ST: a two-point return (+2; F871). Tampa Bay 2026 wk7 reads 26, ESPN 28.
+ * - A stored row whose `fg_60_plus` / `def_2pt_return` were never filled. The
+ *   ESPN templates pay both plays since migration 218 (F871): on a line that
+ *   carries them Boswell 2025 wk1 reads ESPN's 15 and Tampa Bay 2026 wk7 ESPN's
+ *   28. An unfilled row holds 0, so its 60-yarder pays 5 and its two-point
+ *   return nothing: all of 2025 until F872, and 2026 rows written before the
+ *   map change until the second quiet fill (F890).
  * - What no rule can reproduce from one feed (F893): the sack ESPN doesn't count
  *   (Arizona 2026 wk6 reads 8, ESPN 7) and a two-point catch ESPN doesn't pay
  *   (Chris Blair ATL 2026 wk3 reads 2, ESPN 0).

@@ -86,7 +86,7 @@ const EXPECTED_SUMMARIES: Record<string, TemplateSummary> = {
   'Scout Standard': {
     ppr: 0,
     int: -2,
-    kicking: { fg0_39: 3, fg40_49: 3, fg50Plus: 3, patMade: 1, fgMissed: -1, patMissed: null },
+    kicking: { fg0_39: 3, fg40_49: 3, fg50Plus: 3, fg60Plus: 3, patMade: 1, fgMissed: -1, patMissed: null },
     dstModel: 'split',
   },
   // Scout PPR (App B.5.1 as marked up 2026-09-01; SC.4): the same body one
@@ -94,43 +94,43 @@ const EXPECTED_SUMMARIES: Record<string, TemplateSummary> = {
   'Scout PPR': {
     ppr: 0.2,
     int: -2,
-    kicking: { fg0_39: 3, fg40_49: 3, fg50Plus: 3, patMade: 1, fgMissed: -1, patMissed: null },
+    kicking: { fg0_39: 3, fg40_49: 3, fg50Plus: 3, fg60Plus: 3, patMade: 1, fgMissed: -1, patMissed: null },
     dstModel: 'split',
   },
   'ESPN Standard': {
     ppr: 0,
     int: -2,
-    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, patMade: 1, fgMissed: -1, patMissed: null },
+    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, fg60Plus: 6, patMade: 1, fgMissed: -1, patMissed: null },
     dstModel: 'split',
   },
   'ESPN Full PPR': {
     ppr: 1,
     int: -2,
-    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, patMade: 1, fgMissed: -1, patMissed: null },
+    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, fg60Plus: 6, patMade: 1, fgMissed: -1, patMissed: null },
     dstModel: 'split',
   },
   'Yahoo Standard': {
     ppr: 0,
     int: -1,
-    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, patMade: 1, fgMissed: null, patMissed: null },
+    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, fg60Plus: 5, patMade: 1, fgMissed: null, patMissed: null },
     dstModel: 'single',
   },
   'Yahoo Half PPR': {
     ppr: 0.5,
     int: -1,
-    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, patMade: 1, fgMissed: null, patMissed: null },
+    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, fg60Plus: 5, patMade: 1, fgMissed: null, patMissed: null },
     dstModel: 'single',
   },
   'Sleeper Standard': {
     ppr: 0,
     int: -1,
-    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, patMade: 1, fgMissed: -1, patMissed: -1 },
+    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, fg60Plus: 5, patMade: 1, fgMissed: -1, patMissed: -1 },
     dstModel: 'single',
   },
   'Sleeper Full PPR': {
     ppr: 1,
     int: -1,
-    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, patMade: 1, fgMissed: -1, patMissed: -1 },
+    kicking: { fg0_39: 3, fg40_49: 4, fg50Plus: 5, fg60Plus: 5, patMade: 1, fgMissed: -1, patMissed: -1 },
     dstModel: 'single',
   },
 }

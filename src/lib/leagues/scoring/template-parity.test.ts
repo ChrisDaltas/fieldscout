@@ -33,10 +33,13 @@
  * that recorded evidence, and the standard PA bucketization is the one the
  * product renders (Q9 F19(b) resolution).
  *
- * Named parity exceptions (spec v2.8.5): the K week deliberately contains
- * NO 60+ FG make — that is a documented ESPN exception, not a scorable
- * category, and this suite does not manufacture one (orchestrator charter;
- * templates.test.ts pins that no 60+/PAT-micro key exists anywhere).
+ * Named parity exceptions (spec v2.8.5): the five weeks above carry no 60+
+ * FG make and no D/ST two-point return — until migration 218 (F871, spec
+ * v2.16.116) neither was a scorable category. 218 made both scorable
+ * (`fg_60_plus`, a top-up on the inclusive `fg_50_plus`; `def_2pt_return`), so
+ * the five pins stand as they were (the stats are absent there: pending,
+ * adding 0), and two more weeks below carry the plays, hand-computed under
+ * all eight templates. PAT-safety stays the one named exception.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -103,7 +106,7 @@ const WR_TE_WEEK: Record<string, number> = {
 }
 
 /** K week: one make in EACH distance bucket + an FG miss + a PAT miss.
- *  No 60+ make — named parity exception (v2.8.5), not a scorable category.
+ *  No 60+ make (that is the 60+ week below, migration 218).
  *  `receptions` is deliberately NOT delivered: it is a rules key in all 8
  *  templates (a pre-SC.1 "6" corrected in passing at SC.4), so it lands on
  *  the §23.5/E61 pending path here (asserted). */
@@ -455,6 +458,89 @@ describe('F14 re-confirmation — ESPN bucket boundaries, from the RECORDED Q9/D
       expect(tierKeys, name).toHaveLength(17) // 8 PA + 9 YA
       for (const k of tierKeys) {
         expect(bucketKeys.has(k), `${name}: ${k}`).toBe(true)
+      }
+    }
+  })
+})
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Migration 218 (F871; Chris 2026-11-05: "go on league kickers and the other
+ * plays", Q2 "yes"): a 60+ week and a two-point week, under all eight
+ * templates. Worked by hand BEFORE the suite first ran with them:
+ *
+ * 60+ week — one 25-yard make, one 61-yard make (the feed counts it in
+ * `fgm_50p` AND `fgm_60p`, so it is delivered as fg_50_plus 1 AND
+ * fg_60_plus 1), 2 PATs, no misses (delivered zeros):
+ *   ESPN:    fg_0_39 3 + fg_50_plus 5 + fg_60_plus 1 + pat 2 = 11.00  (= ESPN's 3 + 6 + 2)
+ *   Scout:   3 + 3 + 2 = 8.00   (no fg_60_plus key: the stat is ignored; flat 3)
+ *   Yahoo:   3 + 5 + 2 = 10.00  (no 60+ tier)
+ *   Sleeper: 3 + 5 + 2 = 10.00  (no 60+ tier; misses 0 × −1)
+ * Two-point week — 2 sacks, a D/ST two-point return, PA 13, YA 266:
+ *   ESPN:    sacks 2 + two-point return 2 + def_pa_7_13 3 + def_ya_200_299 2 = 9.00
+ *   Scout:   the same tables and, from 218 (Q2), the same 2 = 9.00
+ *   Yahoo / Sleeper: 2 + no key (ignored) + shared def_pa_7_13 4 = 6.00
+ * PPR siblings: receptions undelivered → pending on both sides → identical.
+ * ──────────────────────────────────────────────────────────────────────── */
+const K_60_WEEK: Record<string, number> = {
+  fg_0_39: 1,
+  fg_40_49: 0,
+  fg_50_plus: 1,
+  fg_60_plus: 1,
+  fg_missed: 0,
+  pat_made: 2,
+  pat_missed: 0,
+  fg_made: 2, // context
+  fg_attempted: 2,
+}
+
+const DST_2PT_WEEK: Record<string, number> = {
+  def_points_allowed: 13,
+  def_yards_allowed: 266,
+  def_sack: 2,
+  def_int: 0,
+  def_fumble_rec: 0,
+  def_td: 0,
+  def_safety: 0,
+  def_block: 0,
+  def_return_td: 0,
+  def_2pt_return: 1,
+}
+
+const PINNED_218: Record<string, { k60: number; dst2pt: number }> = {
+  'Scout Standard': { k60: 8, dst2pt: 9 },
+  'Scout PPR': { k60: 8, dst2pt: 9 },
+  'ESPN Standard': { k60: 11, dst2pt: 9 },
+  'ESPN Full PPR': { k60: 11, dst2pt: 9 },
+  'Yahoo Standard': { k60: 10, dst2pt: 6 },
+  'Yahoo Half PPR': { k60: 10, dst2pt: 6 },
+  'Sleeper Standard': { k60: 10, dst2pt: 6 },
+  'Sleeper Full PPR': { k60: 10, dst2pt: 6 },
+}
+
+describe('migration 218 (F871): a 60+ make and a D/ST two-point return, 8 templates', () => {
+  for (const [templateName, pinned] of Object.entries(PINNED_218)) {
+    it(`${templateName}: the 60+ week = ${pinned.k60.toFixed(2)}, the two-point week = ${pinned.dst2pt.toFixed(2)}`, () => {
+      expect(score(templateName, K_60_WEEK).total).toBe(pinned.k60)
+      expect(score(templateName, DST_2PT_WEEK).total).toBe(pinned.dst2pt)
+    })
+  }
+
+  it('the 60+ make is paid ON TOP of the 50+ make under ESPN (5 + 1), never instead of it; the two-point return is a perKey 2 under ESPN and Scout', () => {
+    const k = score('ESPN Standard', K_60_WEEK)
+    expect([k.perKey.fg_50_plus, k.perKey.fg_60_plus]).toEqual([5, 1])
+    for (const name of ['ESPN Standard', 'Scout Standard']) expect(score(name, DST_2PT_WEEK).perKey.def_2pt_return, name).toBe(2)
+    for (const name of ['Yahoo Standard', 'Sleeper Standard', 'Scout Standard']) {
+      expect(score(name, K_60_WEEK).perKey.fg_60_plus, name).toBeUndefined()
+    }
+  })
+
+  it('breakdown invariant on both weeks: perKey keys ⊎ pending ≡ the template’s rules keys, disjoint (E61)', () => {
+    for (const t of SCORING_TEMPLATES) {
+      for (const raw of [K_60_WEEK, DST_2PT_WEEK]) {
+        const b = scorePlayerWeek(t.rules, deriveTierIndicators(raw))
+        const perKeyKeys = Object.keys(b.perKey)
+        expect(new Set([...perKeyKeys, ...b.pending]).size, t.name).toBe(perKeyKeys.length + b.pending.length)
+        expect([...perKeyKeys, ...b.pending].sort(), t.name).toEqual(Object.keys(t.rules).sort())
       }
     }
   })
