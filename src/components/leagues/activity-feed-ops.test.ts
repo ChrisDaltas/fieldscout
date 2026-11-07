@@ -193,13 +193,40 @@ describe('commishLogLines — the act is read from before/after, the reason is o
     expect(line({ action_type: 'edit_faab', target_id: 't1', before: { faab_balance: 5 }, after: { faab_balance: 6 } }).text).not.toContain('edit faab')
   })
 
-  it('M5 L.D3.13 (161): a ruled re-score of a final week reads in plain words, from its {week_scores} documents — never the verb name', () => {
-    const rescore = (metadata: { [key: string]: number }) =>
+  // 222 (PROGRESS D839) re-cut, deliberately: Chris 2026-11-07, verbatim, "fixing stats should
+  // not go to some user, i'm not following". 161's rows named the ruling's author as their
+  // actor; the log now draws them as a SYSTEM notice — no member, no ruling text (it quotes a
+  // person), the plain note the league was given instead. (Was: "re-scored Week 1 after it was
+  // final (12 team scores changed)" after the actor's username.)
+  it('M5 L.D3.13 (161) / 222: a ruled re-score of a final week reads as a SYSTEM notice in plain words — never the verb name, never a member', () => {
+    const rescore = (metadata: { [key: string]: number | string }) =>
       line({ action_type: 'rescore_final_week', target_type: 'week', target_id: '2026:1', before: { week_scores: [] }, after: { week_scores: [] }, metadata }).text
-    expect(rescore({ week: 1, scores_changed: 12 })).toBe('re-scored Week 1 after it was final (12 team scores changed)')
-    expect(rescore({ week: 2, scores_changed: 1 })).toBe('re-scored Week 2 after it was final (1 team score changed)')
-    expect(rescore({})).toBe('re-scored after it was final')
+    expect(rescore({ week: 1, scores_changed: 12 })).toBe('Week 1 was re-scored after it was final (12 team scores changed)')
+    expect(rescore({ week: 2, scores_changed: 1 })).toBe('Week 2 was re-scored after it was final (1 team score changed)')
+    expect(rescore({ week: 1, scores_changed: 2, member_note: 'defense yards allowed were missing when it was first scored.' })).toBe(
+      'Week 1 was re-scored after it was final: defense yards allowed were missing when it was first scored (2 team scores changed)',
+    )
+    expect(rescore({})).toBe('A week was re-scored after it was final')
     expect(rescore({ week: 1 })).not.toContain('rescore final week')
+  })
+
+  it('222 (D839): the re-score row names NO member — the actor is the system chip, no profile link, no ruling, no "(for …)"', () => {
+    const named = line({
+      action_type: 'rescore_final_week',
+      actor: { id: 'u-ruling', username: 'rulingauthor' },
+      reason: 'Someone (product owner), 2026-09-29: "re-score weeks 1 and 2"',
+      acting_as_team_id: 't2',
+      target_type: 'week',
+      target_id: '2026:1',
+      before: { week_scores: [] },
+      after: { week_scores: [] },
+      metadata: { week: 1, scores_changed: 2 },
+    })
+    expect(named).toMatchObject({ actor: SYSTEM_LABEL, actorUsername: null, system: true, reason: null, players: [] })
+    expect(named.marked).toBe(named.text)
+    expect(JSON.stringify(named)).not.toMatch(/rulingauthor|product owner|Bravo/)
+    // Every other receipt keeps its commissioner.
+    expect(line({ after: { slot_map: {} }, before: { slot_map: {} }, metadata: { week: 3 } })).toMatchObject({ system: false, actorUsername: 'chris' })
   })
 
   it('M5 L.D3.5: a commissioner trade override is read from the op it recorded, with the deal — the verb name never on screen', () => {

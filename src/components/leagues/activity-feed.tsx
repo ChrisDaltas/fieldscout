@@ -427,16 +427,25 @@ export function CommishLogSection({
                 aria-current={isHighlighted ? 'true' : undefined}
               >
                 <div className="flex min-w-0 items-start gap-2">
-                  <Badge variant="stroke-purple" className="shrink-0">
-                    {COMMISSIONER_LABEL}
-                  </Badge>
+                  {line.system ? (
+                    // 222 (D839): a system notice — the plain chip, never the ✸ tag (R895).
+                    <Badge variant="stroke" className="shrink-0" data-system>
+                      {SYSTEM_LABEL}
+                    </Badge>
+                  ) : (
+                    <Badge variant="stroke-purple" className="shrink-0">
+                      {COMMISSIONER_LABEL}
+                    </Badge>
+                  )}
                   <span className="min-w-0 flex-1 text-[11px] font-medium leading-[1.45] text-n-2" data-commish-log-text>
-                    {/* L.E1.41: the commissioner, and every member the sentence names, is a door to his profile. */}
-                    {line.actorUsername ? (
+                    {/* L.E1.41: the commissioner, and every member the sentence names, is a door to his profile.
+                        222 (D839): a system notice names no one — its sentence stands alone. */}
+                    {line.system ? null : line.actorUsername ? (
                       <UsernameLink username={line.actorUsername} at={false} className="font-bold text-ink" />
                     ) : (
                       <span className="font-bold text-ink">{line.actor}</span>
-                    )}{' '}
+                    )}
+                    {line.system ? null : ' '}
                     <TextWithUsernames
                       marked={line.marked}
                       // F563: the players the sentence names are doors too (the league shell's ambient card context).

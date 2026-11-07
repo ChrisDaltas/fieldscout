@@ -243,12 +243,21 @@ export function CommishLogRow({
   return (
     <div ref={ref} className={cn('flex flex-col gap-1 py-3', className)} data-commish-line={line.id}>
       <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-m-t3">
-        {line.actorUsername ? (
-          <UsernameLink username={line.actorUsername} className="font-semibold text-m-t1" />
+        {line.system ? (
+          // 222 (D839): a system notice names no one — the feed's plain League pill, never the ✸ tag (R895).
+          <span className="flex h-[18px] items-center rounded-pill bg-m-b2 px-[7px] text-[10.5px] font-semibold text-m-t3" data-system>
+            League
+          </span>
         ) : (
-          <span className="font-semibold text-m-t1">{line.actor}</span>
+          <>
+            {line.actorUsername ? (
+              <UsernameLink username={line.actorUsername} className="font-semibold text-m-t1" />
+            ) : (
+              <span className="font-semibold text-m-t1">{line.actor}</span>
+            )}
+            <span className="flex h-[18px] items-center rounded-pill bg-m-gp px-[7px] text-[10.5px] font-semibold text-m-pos-wr">✸ Commissioner</span>
+          </>
         )}
-        <span className="flex h-[18px] items-center rounded-pill bg-m-gp px-[7px] text-[10.5px] font-semibold text-m-pos-wr">✸ Commissioner</span>
         <span className="whitespace-nowrap">{formatTxDate(line.createdAt)}</span>
       </div>
       <p className="text-[13.5px] font-medium leading-[1.4] text-m-t1">
