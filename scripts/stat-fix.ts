@@ -6,10 +6,13 @@
  * is owed. The logic and the argument rules live in
  * `src/lib/leagues/scoring/stat-fix-cli.ts`.
  *
- *   npm run stat-fix -- plan --file <lines.json>
- *     read-only: per league, week and player, stored → new and the delta
- *   npm run stat-fix -- record --file <lines.json> --reason "<plain words>" [--landed-at <iso>]
- *     prints what it would record; add --apply --confirm-target <host> to record it
+ *   npm run stat-fix -- plan --file <lines.json> [--landed-at <iso>]
+ *     read-only: per league, week and player, stored → new and the delta;
+ *     with --landed-at, a week last scored after it is named not eligible
+ *   npm run stat-fix -- record --file <lines.json> --reason "<plain words>" --landed-at <iso>
+ *     prints what it would record; add --apply --confirm-target <host> to record it.
+ *     --landed-at is REQUIRED (when our change reached the stats, or the
+ *     engine's deploy) and may not be in the future
  *   npm run stat-fix -- status
  *     every written fix: applied / owed / not eligible
  *
