@@ -34,10 +34,12 @@ import {
   FILL_FIX_REASON,
   fillRefusalCauses,
   fillRuledColumns,
+  finishPendingFix,
   kIdentityFailures,
   leagueHoldsWeek,
   mappingRefusals,
   metadataWontRoundTrip,
+  OUR_MAP_ONLY,
   parseFillArgs,
   planFillWeek,
   renderFill,
@@ -1234,8 +1236,8 @@ const lowered = (week: number, id: string, column: string, from: number, to: num
 const omit = (stats: ProviderPlayerWeekStats['stats'], key: string) => Object.fromEntries(Object.entries(stats).filter(([k]) => k !== key))
 /**
  * Round 6: the world as a fill that ran BEFORE 222 left it (production's 11-06 runs): the lines filled, no fix recording
- * them — so no week reads as filled, and a value the feed reads lower is still the plan's problem. (Once a written fix
- * holds a week, the same reading is the provider's, listed and never written: the round-6 block below.)
+ * them. Round 7: such a week is filled all the same — its stored lines carry columns only our map writes — so whatever the
+ * feed reads differently there is the provider's, listed and never written (the round-7 block below).
  */
 const forgetFixes = (world: World): void => void (world.fixes = [])
 
@@ -1333,42 +1335,23 @@ describe('a partial feed read is a problem, never a quiet success (round 1, find
   })
 })
 
-describe('a fill only raises: a stored value the feed reads lower is a named problem in a week no written fix holds (round 1, finding 2; round 6)', () => {
+describe('a fill only raises: a stored value the feed reads lower is a named problem in a week our map has not read (round 1, finding 2; rounds 6 and 7)', () => {
   it('the first fill lists each move off a non-zero stored value by player, and goes ahead', async () => {
     const report = await run(worldWith(ALL_LINES), ALL_LINES)
     expect(report.ok).toBe(true)
     expect(report.weeks.flatMap((w) => w.fromStoredValue)).toEqual([{ player_id: 'CHI', column: 'def_fumble_recoveries', stored: 1, feed: 3 }])
   })
 
-  it('after a clean fill, a feed that omits Arizona’s block: named by player, column and values; exit 1, nothing written', async () => {
-    const world = worldWith(FULL)
-    expect((await run(world, FULL, { apply: true })).ok).toBe(true)
-    forgetFixes(world)
-    const calls = world.doorCalls.length
+  it('the summed column read below its stored part (the old map’s, so the week is not filled by it): named by player, column and values; exit 1, nothing written', async () => {
+    // Chicago week 6 stores 4 recoveries; the feed sums 3. Only `def_fumble_recoveries` is stored, which the old map wrote too.
+    const world = worldWith(ALL_LINES, ALL_LINES.filter((l) => ![PRICE, LAUBE, MITCHELL].includes(l)).map((l) => storedToday(l, l === CHI ? { def_fumble_recoveries: 4 } : {})))
     const before = snapshot(world)
-    const next = FULL.map((l) => (l === ARI ? { ...ARI, stats: omit(ARI.stats, 'def_block') } : l))
-    const { code, out } = await cli([...SPEC, '--apply', '--confirm-target', HOST], world, next)
+    const { code, out } = await cli([...SPEC, '--apply', '--confirm-target', HOST], world)
     expect(code).toBe(1)
-    expect(out).toContain(`      PROBLEM: ${lowered(1, 'ARI', 'def_block', 1, 0)}`)
-    expect(out).toContain('      from a stored value ARI def_block: stored 1 → feed 0')
+    expect(out).toContain(`      PROBLEM: ${lowered(6, 'CHI', 'def_fumble_recoveries', 4, 3)}`)
+    expect(out).toContain('      from a stored value CHI def_fumble_recoveries: stored 4 → feed 3')
     expect(out.join('\n')).not.toContain('Done')
-    expect(world.doorCalls).toHaveLength(calls)
-    expect(snapshot(world)).toBe(before)
-  })
-
-  it('a re-run from a checkout whose map reads less (plain fum_rec, no D/ST return TD): every lowered value named', async () => {
-    const world = worldWith(ALL_LINES)
-    expect((await run(world, ALL_LINES, { apply: true })).ok).toBe(true)
-    forgetFixes(world)
-    const calls = world.doorCalls.length
-    const before = snapshot(world)
-    const narrower = ALL_LINES.map((l) => (l === CHI ? { ...CHI, stats: { ...CHI.stats, def_fumble_rec: 1 } } : l === MIN ? { ...MIN, stats: omit(MIN.stats, 'def_return_td') } : l))
-    const report = await run(world, narrower, { apply: true })
-    expect(report.refused).toBeUndefined()
-    expect(report.ok).toBe(false)
-    expect(report.weeks.flatMap((w) => w.problems)).toEqual([lowered(3, 'MIN', 'def_return_td', 1, 0), lowered(6, 'CHI', 'def_fumble_recoveries', 3, 1)])
-    expect(world.doorCalls).toHaveLength(calls)
-    expect(snapshot(world)).toBe(before)
+    expectNothingWritten(world, before)
   })
 
   it('a raise off a non-zero stored value is listed, never a problem', async () => {
@@ -1784,11 +1767,10 @@ describe('names: full_name (id) on every other-column, problem and summed-move l
     const missingDst = await cli(SPEC, named(worldWith(FULL)), without((l) => l === ARI))
     expect(missingDst.out).toContain("      PROBLEM: week 1: the feed doesn't carry D/ST Defense Alpha (ARI), which has a stored line — a partial read")
 
-    const filled = named(worldWith(FULL))
-    expect((await run(filled, FULL, { apply: true })).ok).toBe(true)
-    forgetFixes(filled)
-    const lowerRead = await cli(SPEC, filled, FULL.map((l) => (l === ARI ? { ...ARI, stats: omit(ARI.stats, 'def_block') } : l)))
-    expect(lowerRead.out).toContain(`      PROBLEM: ${lowered(1, 'Defense Alpha (ARI)', 'def_block', 1, 0)}`)
+    // Round 7: a lowered value is a problem only in a week our map hasn't read — here the summed column, below its stored part.
+    const overRead = named(worldWith(ALL_LINES, ALL_LINES.filter((l) => ![PRICE, LAUBE, MITCHELL].includes(l)).map((l) => storedToday(l, l === CHI ? { def_fumble_recoveries: 4 } : {}))))
+    const lowerRead = await cli(SPEC, overRead)
+    expect(lowerRead.out).toContain(`      PROBLEM: ${lowered(6, 'Defense Charlie (CHI)', 'def_fumble_recoveries', 4, 3)}`)
 
     const stale = named(worldWith([BOSWELL, TEN], [storedToday(BOSWELL, { fg_made: 1 }), storedToday(TEN)]))
     const identity = await cli(['--season', '2026', '--weeks', '6,8'], stale, [BOSWELL, TEN])
@@ -1946,8 +1928,10 @@ function storedAfterFirstFill(feedLine: ProviderPlayerWeekStats): Row {
   return { player_id: feedLine.playerId, season: SEASON, week: feedLine.week, stat_type: 'weekly', game_id: null, team: feedLine.team ?? null, is_live: false, source: 'sleeper+nflverse', advanced: feedLine.advanced, updated_at: PAST, ...row?.columns }
 }
 
-describe('F871 / 218: a second run on filled weeks moves only fg_60_plus and def_2pt_return (D835)', () => {
+describe('F871 / 218: a second run on filled weeks moves only fg_60_plus and def_2pt_return (D835) — named new to our map since round 7 (F899)', () => {
   const lines = [AUBREY_2, TB_7]
+  /** Round 7: the weeks are filled by their stored lines (the first seven), so the two columns are ours only when named. */
+  const NEW = ['fg_60_plus', 'def_2pt_return'] as const
   const secondWorld = () => {
     const world = worldWith(lines, lines.map(storedAfterFirstFill))
     world.players.push({ id: '11533', position: 'K' }, { id: 'TB', position: 'DEF' })
@@ -1962,7 +1946,7 @@ describe('F871 / 218: a second run on filled weeks moves only fg_60_plus and def
   it('plans one move each — the two new columns, nothing else — and the K identities hold', async () => {
     const world = secondWorld()
     const before = snapshot(world)
-    const report = await fillRuledColumns({ db: world.client(), provider: feed(lines), time: new VirtualClock(NOW) }, { season: SEASON, weeks: [2, 7], apply: false })
+    const report = await fillRuledColumns({ db: world.client(), provider: feed(lines), time: new VirtualClock(NOW) }, { season: SEASON, weeks: [2, 7], apply: false, newColumns: NEW })
     expect(report.refused).toBeUndefined()
     expect(report.ok).toBe(true)
     expect(report.weeks.map((w) => [w.week, w.updates.length, w.newRows.length, Object.fromEntries(Object.entries(w.moves).filter(([, n]) => n > 0)), w.problems, w.otherDifferences])).toEqual([
@@ -1979,7 +1963,7 @@ describe('F871 / 218: a second run on filled weeks moves only fg_60_plus and def
 
   it('--apply writes them through the quiet door (ruled columns only, no queue row, no event), and the K identities hold after', async () => {
     const world = secondWorld()
-    const report = await fillRuledColumns({ db: world.client(), provider: feed(lines), time: new VirtualClock(NOW) }, { season: SEASON, weeks: [2, 7], apply: true })
+    const report = await fillRuledColumns({ db: world.client(), provider: feed(lines), time: new VirtualClock(NOW) }, { season: SEASON, weeks: [2, 7], apply: true, newColumns: NEW })
     expect(report.ok).toBe(true)
     expect(report.afterProblems).toEqual([])
     expect(world.queue).toEqual([])
@@ -1991,6 +1975,19 @@ describe('F871 / 218: a second run on filled weeks moves only fg_60_plus and def
       }
     }
     expect([world.stored('11533', 2).fg_60_plus, world.stored('11533', 2).fg_made_50_plus, world.stored('TB', 7).def_2pt_return]).toEqual([1, 1, 1])
+  })
+
+  it('round 7: NOT named, the same run reads both weeks as filled by their stored lines — the two moves are listed as the provider’s, nothing written or recorded', async () => {
+    const world = secondWorld()
+    const before = snapshot(world)
+    const report = await fillRuledColumns({ db: world.client(), provider: feed(lines), time: new VirtualClock(NOW) }, { season: SEASON, weeks: [2, 7], apply: true })
+    expect(report.ok).toBe(true)
+    expect(report.weeks.map((w) => [w.week, w.filled, w.filledByStoredLines, w.updates.length, w.providerMoves])).toEqual([
+      [2, true, 1, 0, [{ player_id: '11533', column: 'fg_60_plus', stored: 0, feed: 1, newLine: false }]],
+      [7, true, 1, 0, [{ player_id: 'TB', column: 'def_2pt_return', stored: 0, feed: 1, newLine: false }]],
+    ])
+    expect([report.fix, world.calls.includes('record_stat_fix')]).toEqual([undefined, false])
+    expectNothingWritten(world, before)
   })
 
   it('still refuses every season but 2026, by name, before any read', () => {
@@ -2207,22 +2204,25 @@ describe('a failed run’s fix is FINISHED by its re-run — every move that lan
     expect(world.fixes.map((f) => [f.id, f.written])).toEqual([['fix-a', false], ['fix-b', false]])
   })
 
-  it('a landed move this run would move ON from its after is REFUSED by name — what of that is ours is not known (round 6)', async () => {
+  it('a landed move the feed has moved ON from since: carried (ours), and the move on listed as the provider’s — never written (round 7; round 6 refused it)', async () => {
     const world = worldWith(ALL_LINES)
     world.doorError = { callNumber: 3, message: 'door says no' }
     await run(world, ALL_LINES, { apply: true })
     world.doorError = null
-    // Minnesota's return TD landed at 1 (stored 1 = the pending fix's after); the feed now reads 2, so this run moves it on.
+    // Minnesota's return TD landed at 1 (stored 1 = the pending fix's after); the feed now reads 2. The line it landed fills
+    // week 3 (round 7), so the 1 → 2 is the provider's since; Price's line, never landed, is still the fix's to write.
     expect(world.stored('MIN', 3).def_return_td).toBe(1)
     const lines = ALL_LINES.map((l) => (l === MIN ? { ...MIN, stats: { ...MIN.stats, def_return_td: 2 } } : l))
-    const before = snapshot(world)
-    const doorCalls = world.doorCalls.length
     const report = await run(world, lines, { apply: true })
-    expect(report.ok).toBe(false)
-    expect(report.fixRefusal).toBe(
-      'stat fix fix-1 (an earlier run’s, recorded and never written) can’t be finished: week 3 MIN def_return_td landed at its after (1) and this run moves it on from there — what of that is ours is not known. Nothing was written.',
-    )
-    expect([world.doorCalls.length, snapshot(world), world.fixes.map((f) => [f.id, f.written])]).toEqual([doorCalls, before, [['fix-1', false]]])
+    expect(report.ok).toBe(true)
+    expect([weekOf(report, 3).filled, weekOf(report, 3).providerMoves, weekOf(report, 3).newRows.map((row) => row.player_id)]).toEqual([
+      true,
+      [{ player_id: 'MIN', column: 'def_return_td', stored: 1, feed: 2, newLine: false }],
+      [PRICE.playerId],
+    ])
+    expect(report.fix).toEqual({ id: 'fix-2', lines: 10, written: true, supersedes: 'fix-1', carried: 2 })
+    expect(world.stored('MIN', 3).def_return_td).toBe(1)
+    expect(sorted(world.fixes[0].lines).filter((l) => l.player_id === 'MIN')).toEqual([{ week: 3, player_id: 'MIN', stat_key: 'def_return_td', before: 0, after: 1 }])
   })
 
   it('a mark that genuinely does NOT land (read back unwritten): the fix is reported NOT written, exit 1, and "the fix is written" never prints (round 6)', async () => {
@@ -2295,7 +2295,7 @@ describe('a FILLED week (a written stat fix holds a line of it) writes, records 
   const CHI_FILLED = storedToday(CHI, { def_fumble_recoveries: 3 })
   /** The provider has since credited Chicago a block. */
   const CHI_LATE = { ...CHI, stats: { ...CHI.stats, def_block: 1 } }
-  /** Week 8's kicker, already filled: the mapping proof reads him, and nothing of his moves. */
+  /** Week 8's kicker, already filled (round 7: so week 8 reads as filled by its stored lines): the mapping proof reads him, and nothing of his moves. */
   const BOSWELL_FILLED = storedToday(BOSWELL, { fg_0_39: 2, fg_missed: 1 })
   const WEEKS_6_8 = ['--season', '2026', '--weeks', '6,8']
 
@@ -2321,7 +2321,9 @@ describe('a FILLED week (a written stat fix holds a line of it) writes, records 
     expect([code, err]).toEqual([0, []])
     expect(out).toContain('      filled (a written stat fix of ours holds this week): nothing is written, recorded or paid here — every ruled difference is the provider’s since our fill')
     expect(out).toContain('      the provider’s since our fill (not written, not paid — F405) CHI def_block: stored 0 → feed 1')
-    expect(out).toContain('  filled weeks 6 (a written stat fix holds each): nothing written, recorded or paid there; 1 ruled differences listed as the provider’s since our fill (F405)')
+    expect(out).toContain('  filled weeks 6 (a written stat fix holds each): 1 ruled differences listed as the provider’s since our fill — not written, recorded or paid (F405)')
+    // Round 7: week 8 is filled too — no written fix holds it, but its kicker's stored line carries columns only our map writes.
+    expect(out).toContain('  filled weeks 8 (no written stat fix holds them; their stored lines carry columns only our map writes): 0 ruled differences listed as the provider’s since our fill — not written, recorded or paid (F405)')
     expect(out.at(-1)).toBe('Done — ruled columns only; no queue row, no event; K identities and row counts hold; nothing moved, so no stat fix was recorded.')
     expect(snapshot(again)).toBe(before)
   })
@@ -2396,5 +2398,253 @@ describe('a FILLED week (a written stat fix holds a line of it) writes, records 
     expect([plan.filled, plan.updates, plan.newRows, Object.values(plan.moves).every((n) => n === 0), plan.problems]).toEqual([true, [], [], true, []])
     expect(plan.providerMoves).toEqual([{ player_id: 'CHI', column: 'def_block', stored: 0, feed: 1, newLine: false }])
     expect(planFillWeek({ week: 6, lines: [CHI_LATE], stored, positions: new Map([['CHI', 'DEF']]), ctx: CTX }).updates.map((row) => row.player_id)).toEqual(['CHI'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Round 7 (the review of round 6; F405 / Q81, F899). A week our map has read is
+// FILLED even with no written fix: its stored lines carry a column only our map
+// writes (a week ingested once the map change was in, or filled before 222
+// recorded fills). In a filled week a move of our own unwritten fix is still
+// ours, and so is a column named new to our map (`--new-columns`); a move of
+// that fix the run can't write is refused by name, never dropped.
+// ---------------------------------------------------------------------------
+
+describe('round 7: a week our map has read is filled without a written fix — the provider’s late correction there is never recorded or paid (F405 / Q81)', () => {
+  /** The weeks as production's 11-06 fill left them, before D838's backlog is recorded: filled, no fix. */
+  const TEN_FILLED = storedToday(TEN, { def_block: 1, def_return_td: 1 })
+  const CHI_FILLED = storedToday(CHI, { def_fumble_recoveries: 3 })
+  const CHI_LATE = { ...CHI, stats: { ...CHI.stats, def_block: 1 } }
+  const BOSWELL_FILLED = storedToday(BOSWELL, { fg_0_39: 2, fg_missed: 1 })
+
+  it('filled before 222, not yet recorded (D838): the CHI block the provider credits since is listed — never recorded, written or paid; exit 0', async () => {
+    const lines = [BOSWELL, TEN, CHI_LATE]
+    const world = worldWith(lines, [BOSWELL_FILLED, TEN_FILLED, CHI_FILLED])
+    const before = snapshot(world)
+    const { code, out, err } = await cli(['--season', '2026', '--weeks', '6,8', '--apply', '--confirm-target', HOST], world, lines)
+    expect([code, err]).toEqual([0, []])
+    expect(out).toContain(
+      '      filled (no written stat fix holds this week, but 1 stored lines carry columns only our map writes — it read the week at ingest, or a fill wrote it before 222 recorded fills (D838)): nothing is written, recorded or paid here — every ruled difference is the provider’s since our fill',
+    )
+    expect(out).toContain('      the provider’s since our fill (not written, not paid — F405) CHI def_block: stored 0 → feed 1')
+    expect(out.at(-1)).toBe('Done — ruled columns only; no queue row, no event; K identities and row counts hold; nothing moved, so no stat fix was recorded.')
+    expect([world.calls.includes('record_stat_fix'), world.fixes]).toEqual([false, []])
+    expectNothingWritten(world, before)
+  })
+
+  it('week 9 on, ingested once the map change was in: no fix holds it, its kicker carries fg_0_39 — a block the provider credits later is listed, never recorded or paid', async () => {
+    const K9 = line('7042', 9, { fg_made: 2, fg_attempted: 2, fg_0_39: 2, pat_made: 1, pat_attempted: 1 }, {}, 'BUF', 'MIA')
+    const BUF9 = line('BUF', 9, { def_sack: 2, def_points_allowed: 17, def_yards_allowed: 300, def_block: 1 }, {}, 'BUF', 'MIA')
+    const world = worldWith([K9, BUF9], [storedAfterFirstFill(K9), storedAfterFirstFill({ ...BUF9, stats: omit(BUF9.stats, 'def_block') })])
+    world.weeks.push(calendarRow(9))
+    world.players.push({ id: 'BUF', position: 'DEF' })
+    const before = snapshot(world)
+    const report = await run(world, [K9, BUF9], { weeks: [9], apply: true })
+    expect(report.ok).toBe(true)
+    expect([weekOf(report, 9).filled, weekOf(report, 9).filledByStoredLines, weekOf(report, 9).updates, weekOf(report, 9).problems]).toEqual([true, 1, [], []])
+    expect(weekOf(report, 9).providerMoves).toEqual([{ player_id: 'BUF', column: 'def_block', stored: 0, feed: 1, newLine: false }])
+    expect([report.fix, world.calls.includes('record_stat_fix')]).toEqual([undefined, false])
+    expectNothingWritten(world, before)
+  })
+
+  it('a re-run over weeks filled before 222 from a checkout whose map reads LESS: every lowered value is listed as the provider’s — no problem, nothing written', async () => {
+    const world = worldWith(ALL_LINES)
+    expect((await run(world, ALL_LINES, { apply: true })).ok).toBe(true)
+    forgetFixes(world)
+    const calls = world.doorCalls.length
+    const before = snapshot(world)
+    const narrower = ALL_LINES.map((l) => (l === CHI ? { ...CHI, stats: { ...CHI.stats, def_fumble_rec: 1 } } : l === MIN ? { ...MIN, stats: omit(MIN.stats, 'def_return_td') } : l))
+    const report = await run(world, narrower, { apply: true })
+    expect(report.ok).toBe(true)
+    expect(report.weeks.flatMap((w) => w.problems)).toEqual([])
+    expect(report.weeks.flatMap((w) => w.providerMoves)).toEqual([
+      { player_id: 'MIN', column: 'def_return_td', stored: 1, feed: 0, newLine: false },
+      { player_id: 'CHI', column: 'def_fumble_recoveries', stored: 3, feed: 1, newLine: false },
+    ])
+    expect([world.doorCalls.length, snapshot(world), world.fixes]).toEqual([calls, before, []])
+  })
+
+  it('planFillWeek: a stored line carrying a column only our map writes fills the week — one a failed run of ours landed too; the summed column alone does not', () => {
+    expect(OUR_MAP_ONLY).toEqual(RULED_COLUMNS.filter((column) => column !== 'def_fumble_recoveries'))
+    const plan = (stored: StatRow, owed: Array<{ week: number; player_id: string; stat_key: string; before: number; after: number }> = []) =>
+      planFillWeek({ week: 6, lines: [CHI_LATE], stored: new Map([['CHI', stored]]), positions: new Map([['CHI', 'DEF']]), ctx: CTX, owed })
+    const blocked = toStatRow({ ...CHI, stats: { ...CHI.stats, def_block: 1 } }, CTX).row!
+    expect([plan(blocked).filled, plan(blocked).filledByStoredLines]).toEqual([true, 1])
+    const recoveriesOnly = toStatRow(CHI, CTX).row!
+    expect(recoveriesOnly.columns.def_fumble_recoveries).toBe(3)
+    expect([plan(recoveriesOnly).filled, plan(recoveriesOnly).updates.map((row) => row.player_id)]).toEqual([false, ['CHI']])
+    // A line a failed run of ours landed fills its week like any other; that run's own move still at its before is still ours.
+    const tenLanded = toStatRow(TEN, CTX).row!
+    const stored = new Map([['TEN', tenLanded], ['CHI', recoveriesOnly]])
+    const finishing = planFillWeek({
+      week: 6,
+      lines: [TEN, CHI_LATE],
+      stored,
+      positions: new Map([['TEN', 'DEF'], ['CHI', 'DEF']]),
+      ctx: CTX,
+      owed: [{ week: 6, player_id: 'CHI', stat_key: 'def_block', before: 0, after: 1 }],
+    })
+    expect([finishing.filled, finishing.filledByStoredLines, finishing.updates.map((row) => [row.player_id, row.columns.def_block]), finishing.providerMoves]).toEqual([true, 1, [['CHI', 1]], []])
+  })
+})
+
+describe('round 7: a fix of ours never written is FINISHED in a week another written fix fills — a move it can’t write is refused, never dropped', () => {
+  /** An engine fix written since, with a line in week 6: week 6 now reads as filled. */
+  const ENGINE_6 = { id: 'fix-e', season: SEASON, reason: 'an engine fix', lines: [{ week: 6, player_id: 'wr-6', stat_key: 'rush_yards', before: 0, after: 3 }], landed_at: '2026-11-06T04:00:00.000Z', written: true }
+  const failedRun = async () => {
+    const world = worldWith(ALL_LINES)
+    world.doorError = { callNumber: 3, message: 'door says no' }
+    await run(world, ALL_LINES, { apply: true })
+    world.doorError = null
+    expect(world.fixes.map((f) => [f.id, f.written, f.lines.length])).toEqual([['fix-1', false, 10]])
+    // Week 6's moves never landed (the failing call was week 3's); the engine fix fills week 6 before the re-run.
+    expect([world.stored('TEN', 6).def_block, world.stored('CHI', 6).def_fumble_recoveries]).toEqual([0, 1])
+    world.fixes.push({ ...ENGINE_6, lines: ENGINE_6.lines.map((l) => ({ ...l })) })
+    return world
+  }
+
+  it('its moves that never landed, the feed still at their after, are written and recorded in the filled week — ONE fix holding all ten, the landed two carried', async () => {
+    const world = await failedRun()
+    const report = await run(world, ALL_LINES, { apply: true })
+    expect(report.ok).toBe(true)
+    expect([weekOf(report, 6).filled, weekOf(report, 6).updates.map((row) => row.player_id).sort(), weekOf(report, 6).providerMoves]).toEqual([true, ['CHI', 'TEN'], []])
+    expect(report.fix).toEqual({ id: 'fix-2', lines: 10, written: true, supersedes: 'fix-1', carried: 2 })
+    expect(world.fixes.map((f) => [f.id, f.written, f.lines.length])).toEqual([['fix-e', true, 1], ['fix-2', true, 10]])
+    expect([world.stored('TEN', 6).def_block, world.stored('TEN', 6).def_return_td, world.stored('CHI', 6).def_fumble_recoveries]).toEqual([1, 1, 3])
+    expect(renderFill(report)).toContain(
+      '      filled (a written stat fix of ours holds this week): only the moves still ours are written, recorded and paid here (an unwritten fix of ours, a --new-columns column) — every other ruled difference is the provider’s since our fill',
+    )
+  })
+
+  it('one the feed no longer reads at its after (the provider moved it since): REFUSED by name before any write — never dropped from the fix that replaces it', async () => {
+    const world = await failedRun()
+    const lines = ALL_LINES.map((l) => (l === TEN ? { ...TEN, stats: { ...TEN.stats, def_block: 2 } } : l))
+    const before = snapshot(world)
+    const doorCalls = world.doorCalls.length
+    const { code, out } = await cli([...SPEC, '--apply', '--confirm-target', HOST], world, lines)
+    expect(code).toBe(1)
+    const refusal =
+      'stat fix fix-1 (an earlier run’s, recorded and never written) can’t be finished: week 6 TEN def_block never landed (it still reads its before, 0) and this run doesn\'t write it — the feed no longer reads its after (1) as ours, so finished without it the move would be lost unsaid. Nothing was written.'
+    expect(out).toContain(`  REFUSED: ${refusal}`)
+    expect([world.doorCalls.length, snapshot(world), world.fixes.map((f) => [f.id, f.written])]).toEqual([doorCalls, before, [['fix-1', false], ['fix-e', true]]])
+  })
+
+  it('finishPendingFix, the review’s own case: K2 never landed and the plan takes nothing — refused, never finished without it', () => {
+    const stored = (id: string, made: number) => toStatRow(line(id, 9, { fg_made: made, fg_attempted: made, fg_0_39: made }), CTX).row!
+    const pending = [
+      {
+        id: 'P',
+        landed_at: NOW.toISOString(),
+        lines: [
+          { week: 9, player_id: 'K1', stat_key: 'fg_0_39', before: 0, after: 2 },
+          { week: 9, player_id: 'K2', stat_key: 'fg_0_39', before: 0, after: 1 },
+        ],
+      },
+    ]
+    const before = new Map([[9, new Map([['K1', stored('K1', 2)], ['K2', stored('K2', 0)]])]])
+    expect(finishPendingFix(pending, [], before, [9])).toEqual({
+      fix: null,
+      carried: [],
+      refusal:
+        'stat fix P (an earlier run’s, recorded and never written) can’t be finished: week 9 K2 fg_0_39 never landed (it still reads its before, 0) and this run doesn\'t write it — the feed no longer reads its after (1) as ours, so finished without it the move would be lost unsaid. Nothing was written.',
+    })
+    // The plan taking it again: finished, K1 carried.
+    const planned = [{ week: 9, player_id: 'K2', stat_key: 'fg_0_39', before: 0, after: 1 }]
+    expect(finishPendingFix(pending, planned, before, [9])).toEqual({ fix: pending[0], carried: [pending[0].lines[0]] })
+  })
+})
+
+describe('round 7: a column OUR map gains after the weeks were filled (--new-columns, F899) — written, recorded and paid there; nothing else moves', () => {
+  const lines = [AUBREY_2, { ...TB_7, stats: { ...TB_7.stats, def_block: 2 } }]
+  const NEW = ['fg_60_plus', 'def_2pt_return'] as const
+  /** D838's backlog, recorded and written: it holds weeks 2 and 7. */
+  const BACKLOG = {
+    id: 'fix-0',
+    season: SEASON,
+    reason: 'the weeks 1–8 backlog',
+    lines: [
+      { week: 2, player_id: '11533', stat_key: 'fg_0_39', before: 0, after: 1 },
+      { week: 7, player_id: 'TB', stat_key: 'def_block', before: 0, after: 1 },
+    ],
+    landed_at: '2026-11-06T02:00:00.000Z',
+    written: true,
+  }
+  const filledWorld = (stored = [AUBREY_2, TB_7].map(storedAfterFirstFill)) => {
+    const world = worldWith(lines, stored)
+    world.players.push({ id: '11533', position: 'K' }, { id: 'TB', position: 'DEF' })
+    world.fixes.push({ ...BACKLOG, lines: BACKLOG.lines.map((l) => ({ ...l })) })
+    return world
+  }
+
+  it('in weeks the backlog fills, the two named columns are written and recorded — the provider’s later Tampa Bay block stays listed, never written', async () => {
+    const world = filledWorld()
+    const report = await run(world, lines, { weeks: [2, 7], apply: true, newColumns: NEW })
+    expect(report.ok).toBe(true)
+    expect(report.weeks.map((w) => [w.week, w.filled, w.filledByStoredLines, w.updates.length, w.providerMoves])).toEqual([
+      [2, true, 0, 1, []],
+      [7, true, 0, 1, [{ player_id: 'TB', column: 'def_block', stored: 1, feed: 2, newLine: false }]],
+    ])
+    expect(world.fixes.map((f) => [f.id, f.written, f.lines])).toEqual([
+      ['fix-0', true, BACKLOG.lines],
+      [
+        'fix-1',
+        true,
+        [
+          { week: 2, player_id: '11533', stat_key: 'fg_60_plus', before: 0, after: 1 },
+          { week: 7, player_id: 'TB', stat_key: 'def_2pt_return', before: 0, after: 1 },
+        ],
+      ],
+    ])
+    expect([world.stored('11533', 2).fg_60_plus, world.stored('TB', 7).def_2pt_return, world.stored('TB', 7).def_block]).toEqual([1, 1, 1])
+    expect(renderFill(report)).toContain('  new to our map since these weeks were filled (--new-columns, F899): fg_60_plus, def_2pt_return — in a filled week their moves are ours, written, recorded and paid')
+  })
+
+  it('without --new-columns the same weeks list both as the provider’s: nothing written or recorded', async () => {
+    const world = filledWorld()
+    const before = snapshot(world)
+    const report = await run(world, lines, { weeks: [2, 7], apply: true })
+    expect(report.ok).toBe(true)
+    expect(report.weeks.flatMap((w) => w.providerMoves.map((m) => `${m.player_id} ${m.column}`))).toEqual(['11533 fg_60_plus', 'TB def_block', 'TB def_2pt_return'])
+    expect(world.fixes.map((f) => f.id)).toEqual(['fix-0'])
+    expectNothingWritten(world, before)
+  })
+
+  it('a column a written fix of ours already moves is not new: REFUSED by name before the feed is read', async () => {
+    const world = filledWorld()
+    world.fixes.push({ id: 'fix-c', season: SEASON, reason: 'the 11-07 second fill', lines: [{ week: 4, player_id: 'k-4', stat_key: 'fg_60_plus', before: 0, after: 1 }], landed_at: '2026-11-07T16:00:00.000Z', written: true })
+    const provider = feed(lines)
+    const report = await fillRuledColumns({ db: world.client(), provider, time: new VirtualClock(NOW) }, { season: SEASON, weeks: [2, 7], apply: true, newColumns: NEW })
+    expect(report.refused).toBe(
+      'refused — --new-columns names a column that is not new to our map: fg_60_plus: written stat fix fix-c already moves it (week 4). Nothing was read from the provider or written.',
+    )
+    expect([provider.weekCalls, world.doorCalls, world.calls.includes('record_stat_fix')]).toEqual([[], [], false])
+  })
+
+  it('a week whose stored lines already carry it has held it: a named problem, nothing written', async () => {
+    // Aubrey's line as the corrected map ingested it: the 60-yarder already stored.
+    const world = filledWorld([storedToday(AUBREY_2, { fg_0_39: 1 }), storedAfterFirstFill(TB_7)])
+    const before = snapshot(world)
+    const report = await run(world, lines, { weeks: [2, 7], apply: true, newColumns: NEW })
+    expect(report.ok).toBe(false)
+    expect(weekOf(report, 2).problems).toEqual(['week 2: --new-columns names fg_60_plus, but 1 stored line(s) here already carry it (11533) — this week has held it, so it is not new here'])
+    expectNothingWritten(world, before)
+  })
+
+  it('the CLI: --new-columns parses by name (exit 2 on a column that isn’t ruled, is summed, or comes twice); the plan names it, and its hint carries it', async () => {
+    for (const [value, why] of [
+      ['fg_99_plus', /--new-columns fg_99_plus is not a ruled column/],
+      ['def_fumble_recoveries', /--new-columns def_fumble_recoveries: the feed sums it with a part the old map stored/],
+      ['fg_60_plus,fg_60_plus', /--new-columns names fg_60_plus twice/],
+      ['', /--new-columns needs a value|--new-columns \(empty\) is not a ruled column/],
+    ] as const) {
+      const { code, err, connected } = await cli(['--season', '2026', '--weeks', '2,7', '--new-columns', value])
+      expect(code, value).toBe(2)
+      expect(err.join(), value).toMatch(why)
+      expect(connected, value).toBe(0)
+    }
+    expect(parseFillArgs(['--season', '2026', '--weeks', '2,7', '--new-columns', 'fg_60_plus, def_2pt_return'])).toEqual({ season: 2026, weeks: [2, 7], apply: false, confirmTarget: undefined, newColumns: ['fg_60_plus', 'def_2pt_return'] })
+    const { code, out } = await cli(['--season', '2026', '--weeks', '2,7', '--new-columns', 'fg_60_plus,def_2pt_return'], filledWorld(), lines)
+    expect(code).toBe(0)
+    expect(out.at(-1)).toBe(`Plan only — nothing written. To write it: npm run sync:fill-ruled -- --season 2026 --weeks 2,7 --new-columns fg_60_plus,def_2pt_return --apply --confirm-target ${HOST}`)
   })
 })

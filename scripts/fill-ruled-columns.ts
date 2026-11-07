@@ -1,8 +1,11 @@
 /**
  * sync:fill-ruled — fill the ruled stat columns on finished weeks, quietly
- * (PROGRESS F890, D832, D835). Nine columns since migration 218 (F871): the
- * first seven, plus `fg_60_plus` and `def_2pt_return`. A run on weeks a first
- * run already filled moves only those two. The logic and the argument rules live in
+ * (PROGRESS F890, D832, D835, D839). Nine columns since migration 218
+ * (F871): the first seven, plus `fg_60_plus` and `def_2pt_return`. A week our
+ * map has already read — a written stat fix holds it, or its stored lines
+ * carry those columns — is FILLED: nothing is written there but what is still
+ * ours (round 7). A column OUR map gains after a week was filled is named with
+ * `--new-columns` (F899). The logic and the argument rules live in
  * `src/lib/sync/fill-ruled-columns.ts`; this wrapper binds the provider the
  * cron route binds, so a new line's `source` is the live poll's.
  *
@@ -10,6 +13,10 @@
  *     prints the plan and writes nothing
  *   npm run sync:fill-ruled -- --season 2026 --weeks 1-8 --apply --confirm-target <host>
  *     writes it
+ *   npm run sync:fill-ruled -- --season 2026 --weeks 1-8 --new-columns <column,…> [--apply …]
+ *     the same, with the named columns ours in a filled week (each refused by
+ *     name if it is summed, a written fix already moves it, or a requested
+ *     week's stored lines already carry it)
  *
  * ⚠ TARGET. Like every sync:* script it loads `.env.local`, which names the
  * HOSTED project. Once the arguments parse, the first line printed is
