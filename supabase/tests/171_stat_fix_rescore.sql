@@ -31,7 +31,9 @@
 --       week not final, last scored after the fix landed, batch incomplete,
 --       lineup = the STORED rows (slot_map disagrees on purpose), plan_stale,
 --       rows_drift, shape (no `stored`; an apply with no fix), and (round 6)
---       a row moving for a player the fix does not name (`row_not_in_fix`).
+--       a row moving for a player the fix does not name (`row_not_in_fix`) —
+--       (round 7) in THIS week: one it names only in another week, or one
+--       only another written fix names, is refused too.
 --   §F  the dry run: the apply's own document, NOTHING persists.
 --   §G  the apply: score + E38 result in one statement (the flip), the
 --       overridden matchup's score kept and ITS TEAM'S PLAYERS moved by the
@@ -65,7 +67,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(107);
+select plan(109);
 
 -- 222's hunk and words reversed — the D137 pin (161's file text byte for byte).
 create function pg_temp.un222(p_src text) returns text language sql as $un$
@@ -416,8 +418,19 @@ select throws_ok(format($$ select pg_temp.fix(%L, 'b9720000-0000-4000-8000-00000
 select throws_ok(format($$ select pg_temp.fix(%L, 'b9720000-0000-4000-8000-00000000000a', 1, jsonb_set(jsonb_set(pg_temp.batch_a(), '{1,players,0,points}', '43'), '{1,points}', '104'), false) $$, current_setting('pgtap.f1')),
   'P0001', format('apply_stat_fix_week: row_not_in_fix — league b9720000-0000-4000-8000-00000000000a week 1: 1 row(s) move for a player stat fix %s does not name in this week ([{"slot": "k:0", "points": 43, "stored": 40.00, "team_id": "c9720000-0000-4000-8000-000000000002", "player_id": "pgtap-sfx-k2"}]); a stat fix moves only the players it names', current_setting('pgtap.f1')),
   'E15 a batch moving a starter the fix does not name is refused BY NAME — the door''s own backstop, not only the planner''s (a provider''s correction is never paid, F405)');
+-- Round 7: the backstop names THIS fix's players in THIS week only. One's quarterback (q1) is in F1 — in weeks 2 and 3,
+-- never week 1 — so a batch moving his week-1 row (55 → 60, One's score with it) is not F1's change in week 1.
+select throws_ok(format($$ select pg_temp.fix(%L, 'b9720000-0000-4000-8000-00000000000a', 1, jsonb_set(jsonb_set(pg_temp.batch_a(), '{0,players,1,points}', '60'), '{0,points}', '107'), false) $$, current_setting('pgtap.f1')),
+  'P0001', format('apply_stat_fix_week: row_not_in_fix — league b9720000-0000-4000-8000-00000000000a week 1: 1 row(s) move for a player stat fix %s does not name in this week ([{"slot": "qb:0", "points": 60, "stored": 55.00, "team_id": "c9720000-0000-4000-8000-000000000001", "player_id": "pgtap-sfx-q1"}]); a stat fix moves only the players it names', current_setting('pgtap.f1')),
+  'E16 …and a player the fix names in ANOTHER week is refused in this one (q1: F1''s weeks 2 and 3, not 1)');
+-- …and Two's quarterback (q2) is named in week 1 by ANOTHER written fix (fx), never by F1: fx's line is not F1's.
+select set_config('pgtap.fx', public.record_stat_fix(2097, 'another fix of week 1', '[{"week": 1, "player_id": "pgtap-sfx-q2", "stat_key": "rush_yards", "before": 0, "after": 20}]', '2097-10-01T12:00:00Z')::text, true);
+select public.mark_stat_fix_written(current_setting('pgtap.fx')::uuid);
+select throws_ok(format($$ select pg_temp.fix(%L, 'b9720000-0000-4000-8000-00000000000a', 1, jsonb_set(jsonb_set(pg_temp.batch_a(), '{1,players,1,points}', '63'), '{1,points}', '103'), false) $$, current_setting('pgtap.f1')),
+  'P0001', format('apply_stat_fix_week: row_not_in_fix — league b9720000-0000-4000-8000-00000000000a week 1: 1 row(s) move for a player stat fix %s does not name in this week ([{"slot": "qb:0", "points": 63, "stored": 61.00, "team_id": "c9720000-0000-4000-8000-000000000002", "player_id": "pgtap-sfx-q2"}]); a stat fix moves only the players it names', current_setting('pgtap.f1')),
+  'E17 …and so is a player only ANOTHER written fix names in this week (q2: fx''s, not F1''s) — each fix pays only its own lines');
 select is(pg_temp.sf_digest(), current_setting('pgtap.g0'),
-  'E16 NOTHING was written by any refusal — scores, results, medians, rows, receipts, audit rows, posts, notifications');
+  'E18 NOTHING was written by any refusal — scores, results, medians, rows, receipts, audit rows, posts, notifications');
 
 -- ---------------------------------------------------------------------------
 -- F. THE DRY RUN — the apply's own document, and NOTHING persists
