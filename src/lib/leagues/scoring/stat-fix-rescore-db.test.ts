@@ -14,7 +14,10 @@
  *        field goal empty (fg_0_39 0): One 13.00 v Two 14.50, Two wins, final.
  *        Then OUR fix lands (fg_0_39 0 → 1, written quietly — no queue row)
  *        and is recorded and written; then the PROVIDER corrects Two's
- *        receiver after the window (125 → 175 yards). League B is archived.
+ *        receiver (125 → 175 yards) AND One's own kicker (a 4th PAT) after the
+ *        window; and A's commissioner edits One's final-week lineup (a bench
+ *        kicker in K1's slot — 201: the score does not follow). League B is
+ *        archived.
  *   SF1  the CLI's plan (read-only, the door's own dry run): A would move One's
  *        kicker 3.00 → 6.00 (+3.00) and its score 13.00 → 16.00; B is named
  *        not eligible (archived); NOTHING is written or recorded.
@@ -63,11 +66,13 @@ const K1 = `${PREFIX}-k1`
 const WR1 = `${PREFIX}-wr1`
 const K2 = `${PREFIX}-k2`
 const WR2 = `${PREFIX}-wr2`
+const K3 = `${PREFIX}-k3`
 const PLAYERS = [
   { id: K1, full_name: 'SFX Kicker One', position: 'K', team: 'SFA', status: 'Active' },
   { id: WR1, full_name: 'SFX Receiver One', position: 'WR', team: 'SFA', status: 'Active' },
   { id: K2, full_name: 'SFX Kicker Two', position: 'K', team: 'SFB', status: 'Active' },
   { id: WR2, full_name: 'SFX Receiver Two', position: 'WR', team: 'SFB', status: 'Active' },
+  { id: K3, full_name: 'SFX Kicker Bench', position: 'K', team: 'SFB', status: 'Active' },
 ]
 
 /** The calendar (literals). Week 1's window ends at week 2's first kickoff (158). */
@@ -82,7 +87,10 @@ const LATE = '2075-10-01T12:00:00.000Z'
  * receiving yard. One: K1 3 PATs (the short field goal unread) 3 + WR1 100
  * yards 10 = 13.00; Two: K2 2 PATs 2 + WR2 125 yards 12.50 = 14.50. With our
  * fix One's kicker is 6 ⇒ 16.00 — One wins. The provider's late 175 yards
- * would make Two 19.50 and keep Two winning: it must not be paid.
+ * would make Two 19.50 and keep Two winning, and its late 4th PAT would make
+ * One's kicker 7: neither may be paid. The bench kicker the commissioner put in
+ * One's slot after the week was final scores nothing here: the lineup is the
+ * stored rows (what was scored), never slot_map.
  */
 const REASON = 'the short field goals the feed map left empty (test fixture)'
 
@@ -180,6 +188,7 @@ async function buildLeague(name: string, actionId: string): Promise<Fixture> {
   await must(service.from('league_rosters').insert([
     { league_id: leagueId, team_id: t1, player_id: K1 }, { league_id: leagueId, team_id: t1, player_id: WR1 },
     { league_id: leagueId, team_id: t2, player_id: K2 }, { league_id: leagueId, team_id: t2, player_id: WR2 },
+    { league_id: leagueId, team_id: t1, player_id: K3 },
   ]), 'rosters')
   await must(service.from('team_lineups').insert([
     { team_id: t1, season: SEASON, week: 1, starters: [], bench: [], slot_map: { 'k:0': K1, 'wr:0': WR1 } },
@@ -281,9 +290,11 @@ beforeAll(async () => {
     'record',
   )) as string
   await must(service.rpc('mark_stat_fix_written', { p_fix_id: fixId }), 'mark written')
-  // (4) THE PROVIDER corrects Two's receiver after the window — never to be paid (F405 / Q81).
+  // (4) THE PROVIDER corrects Two's receiver and One's own kicker after the window — never to be paid (F405 / Q81).
   clock.advanceTo(new Date(LATE))
-  await plant({ [WR2]: { receiving_yards: 175 } }, LATE, false)
+  await plant({ [WR2]: { receiving_yards: 175 }, [K1]: { xp_made: 4, xp_attempted: 4, fg_made: 1, fg_attempted: 1, fg_0_39: 1 } }, LATE, false)
+  // (4b) A's commissioner edits One's FINAL week lineup (201 allows it; the score does not follow): K3 in K1's slot.
+  await must(service.from('team_lineups').update({ slot_map: { 'k:0': K3, 'wr:0': WR1 } }).eq('team_id', L.A.t1).eq('week', 1).select('team_id'), 'commissioner edit after final')
   // (5) League B is archived.
   await must(service.from('leagues').update({ deleted_at: LATE }).eq('id', L.B.leagueId), 'archive B')
 }, 90_000)
@@ -294,8 +305,10 @@ describe('222 — our own stat fix re-scores final weeks, automatically and quie
   let quietA: string
   let quietB: string
 
-  it('SF0 PREMISE — final as first scored (One 13.00 v Two 14.50, Two wins); the fix written; A owed, B archived', async () => {
+  it('SF0 PREMISE — final as first scored (One 13.00 v Two 14.50, Two wins); the fix written; A owed, B archived; slot_map no longer what was scored', async () => {
     expect(await scores(L.A)).toBe('13.00/14.50 final away')
+    const map = await must(service.from('team_lineups').select('slot_map').eq('team_id', L.A.t1).eq('week', 1).single(), 'slot_map')
+    expect(map!.slot_map).toEqual({ 'k:0': K3, 'wr:0': WR1 })
     expect(await results(L.A)).toBe('One=13.00:loss:true Two=14.50:win:true')
     expect(await storedRows(L.A)).toBe('One/k:0=3.00:worker One/wr:0=10.00:worker Two/k:0=2.00:worker Two/wr:0=12.50:worker')
     expect(await states()).toBe('A:1:owed B:1:league_archived')

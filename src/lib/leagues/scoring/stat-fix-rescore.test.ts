@@ -138,6 +138,13 @@ describe('planWeekFix — the week at stored + our change, from the STORED rows'
     expect([t2.stored_sum, t2.points]).toEqual([101.4, 105.4])
   })
 
+  it('F405 / Q81 at the row: a fixed starter whose line ALSO carries a provider correction is stored + our delta only — never today’s whole line', () => {
+    const corrected = { ...TB, def_sacks: Number(TB.def_sacks) + 1 }
+    const plan = week([{ team_id: 'T7', cells: [22], overridden_cells: 0, rows: [row('T7', 'dst:0', 'tb', 22)] }], TB_FIX, { tb: corrected }, { tb: 'DST' })
+    expect(plan.teams[0].changed).toEqual([{ slot: 'dst:0', player_id: 'tb', points: 26, pending: [], reason: 'scored', stored: 22, delta: 4 }])
+    expect(plan.teams[0].points).toBe(26) // a recompute of today's line would say 27
+  })
+
   it('a non-starter is ignored: a fix line for a player no stored row starts changes nothing', () => {
     const plan = week([one], [fix(2, 'bench-k', 'fg_0_39', 0, 3)], { 'bench-k': AUBREY }, { 'bench-k': 'K' })
     expect([plan.problems, plan.teams[0].changed, plan.teams[0].points]).toEqual([[], [], 95])
