@@ -56,8 +56,9 @@
 --      (`admin_rescore_final_week`, 161:265-889), changed where the rulings
 --      ask: the lineup is the stored rows; the fix must be written; a receipt
 --      for (fix, league, week) replays; the receipt is written even when
---      nothing changed (the pass never retries a done week); NO
---      commissioner_actions row, NO league_chat post, NO notification.
+--      nothing changed (the pass never retries a done week); a row moves only
+--      for a player the fix names in that week (`row_not_in_fix`, round 6);
+--      NO commissioner_actions row, NO league_chat post, NO notification.
 --
 -- MATCHUPS, RESULTS, WEEKS: no final-week lock of their own (measured:
 -- 110's transition guard fires only on a status change, 126's override guard
@@ -930,6 +931,31 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
+  -- ROWS NOT IN THE FIX (round 6) — the door's own backstop for the pass's
+  -- arithmetic: a row's points move only for a player the fix names in this
+  -- week. Any other moved row is not our change (a provider's correction,
+  -- F405 / Q81, or a planner's mistake), so it is refused by name, never
+  -- written. A dry run of lines not yet recorded has no fix to read (the
+  -- CLI's plan).
+  IF p_fix_id IS NOT NULL THEN
+    SELECT COALESCE(jsonb_agg(jsonb_build_object('team_id', b ->> 'team_id', 'slot', x ->> 'slot', 'player_id', p.player_id,
+                                                 'stored', p.points, 'points', (x ->> 'points')::numeric)
+                              ORDER BY b ->> 'team_id', x ->> 'slot'), '[]'::jsonb)
+      INTO v_bad
+    FROM jsonb_array_elements(p_teams) b
+    CROSS JOIN LATERAL jsonb_array_elements(b -> 'players') x
+    JOIN public.league_week_player_points p
+      ON p.league_id = p_league_id AND p.season = v_league.season AND p.week = p_week
+     AND p.team_id = (b ->> 'team_id')::uuid AND p.slot = x ->> 'slot'
+    WHERE p.points IS DISTINCT FROM (x ->> 'points')::numeric
+      AND NOT EXISTS (SELECT 1 FROM public.stat_fix_lines ln
+                      WHERE ln.fix_id = p_fix_id AND ln.week = p_week AND ln.player_id = p.player_id);
+    IF jsonb_array_length(v_bad) > 0 THEN
+      RAISE EXCEPTION 'apply_stat_fix_week: row_not_in_fix — league % week %: % row(s) move for a player stat fix % does not name in this week (%); a stat fix moves only the players it names', p_league_id, p_week, jsonb_array_length(v_bad), p_fix_id, v_bad
+        USING ERRCODE = 'P0001';
+    END IF;
+  END IF;
+
   -- (6) THE PLAN, BY VALUE.
   IF v_mode = 'total_points' THEN
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
@@ -1191,4 +1217,4 @@ END;
 $$;
 REVOKE EXECUTE ON FUNCTION apply_stat_fix_week(UUID, UUID, INTEGER, JSONB, BOOLEAN) FROM PUBLIC, anon, authenticated;
 COMMENT ON FUNCTION apply_stat_fix_week(UUID, UUID, INTEGER, JSONB, BOOLEAN) IS
-  'Migration 222 (PROGRESS D836; spec v2.16.118): writes ONE stat fix of our own into ONE final league-week, quietly — Chris 2026-11-07, verbatim: "just update the points as they should be so we can move on." and "fixing stats should not go to some user, i''m not following". The batch is every team of the week, each stored starter row at stored + exactly our change (computed by the score-week pass through the worker''s scorer under the week''s own rules); checked against the STORED rows (the lineup that was scored, the points the plan read, rows that add up to the score); the non-overridden scores written with their E38 result (a commissioner-overridden score kept), every changed row marked stat_fix (an overridden team''s players too: Chris 2026-11-06, verbatim, "as long as all the players have the right stats and scores as a result, then the "team" scores do not matter."), then the results math finalization calls (rebuild_team_week_results). One system receipt (stat_fix_rescores), written even when nothing changed; NO commissioner_actions row, NO league post, NO notification. Refused by name: an archived or not-in-season league, a built bracket, a week not final or last scored after the fix landed, an unwritten fix. Replays by receipt. Dry run (the default) = the apply rolled back. Service role only.';
+  'Migration 222 (PROGRESS D836; spec v2.16.118): writes ONE stat fix of our own into ONE final league-week, quietly — Chris 2026-11-07, verbatim: "just update the points as they should be so we can move on." and "fixing stats should not go to some user, i''m not following". The batch is every team of the week, each stored starter row at stored + exactly our change (computed by the score-week pass through the worker''s scorer under the week''s own rules); checked against the STORED rows (the lineup that was scored, the points the plan read, rows that add up to the score); the non-overridden scores written with their E38 result (a commissioner-overridden score kept), every changed row marked stat_fix (an overridden team''s players too: Chris 2026-11-06, verbatim, "as long as all the players have the right stats and scores as a result, then the "team" scores do not matter."), then the results math finalization calls (rebuild_team_week_results). One system receipt (stat_fix_rescores), written even when nothing changed; NO commissioner_actions row, NO league post, NO notification. Refused by name: an archived or not-in-season league, a built bracket, a week not final or last scored after the fix landed, an unwritten fix, a row moving for a player the fix does not name in that week (row_not_in_fix). Replays by receipt. Dry run (the default) = the apply rolled back. Service role only.';

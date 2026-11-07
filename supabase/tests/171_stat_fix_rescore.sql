@@ -30,7 +30,8 @@
 --       unwritten fix, a week the fix doesn't move, not in season, bracket,
 --       week not final, last scored after the fix landed, batch incomplete,
 --       lineup = the STORED rows (slot_map disagrees on purpose), plan_stale,
---       rows_drift, shape (no `stored`; an apply with no fix).
+--       rows_drift, shape (no `stored`; an apply with no fix), and (round 6)
+--       a row moving for a player the fix does not name (`row_not_in_fix`).
 --   §F  the dry run: the apply's own document, NOTHING persists.
 --   §G  the apply: score + E38 result in one statement (the flip), the
 --       overridden matchup's score kept and ITS TEAM'S PLAYERS moved by the
@@ -54,7 +55,9 @@
 --       by mark_stat_fix_written); p_supersedes (the fill finishing a run that
 --       failed); week_scored_after_fix reads the CLOSE STAMP, not
 --       finalization — a week closed before an engine fix landed and
---       finalized after it is owed.
+--       finalized after it is owed, and (round 6) the door applies it. No
+--       assertion sits in a rolled-back savepoint at the end (finish() counts
+--       every one).
 -- ============================================================================
 
 begin;
@@ -62,7 +65,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(103);
+select plan(107);
 
 -- 222's hunk and words reversed — the D137 pin (161's file text byte for byte).
 create function pg_temp.un222(p_src text) returns text language sql as $un$
@@ -408,8 +411,13 @@ select throws_ok($$ select pg_temp.fix(null, 'b9720000-0000-4000-8000-0000000000
 select throws_ok(format($$ select pg_temp.fix(%L, 'b9720000-0000-4000-8000-00000000000a', 1, jsonb_set(pg_temp.batch_a(), '{0,points}', '103'), false) $$, current_setting('pgtap.f1')),
   '22023', 'apply_stat_fix_week: element 1 (team c9720000-0000-4000-8000-000000000001) players add up to 102 but points is 103 — the stored lines must add up to the stored score (F405, §7.3.3)',
   'E14 rows that do not add up to the score are refused (158''s one check, called)');
+-- Round 6: Two's kicker (k2) is in no line of F1's week 1 — a batch that moves his row anyway (40 → 43, Two's score with it,
+-- so every earlier check passes) is not our change. G1 is the normal apply: every row it moves is a player F1 names.
+select throws_ok(format($$ select pg_temp.fix(%L, 'b9720000-0000-4000-8000-00000000000a', 1, jsonb_set(jsonb_set(pg_temp.batch_a(), '{1,players,0,points}', '43'), '{1,points}', '104'), false) $$, current_setting('pgtap.f1')),
+  'P0001', format('apply_stat_fix_week: row_not_in_fix — league b9720000-0000-4000-8000-00000000000a week 1: 1 row(s) move for a player stat fix %s does not name in this week ([{"slot": "k:0", "points": 43, "stored": 40.00, "team_id": "c9720000-0000-4000-8000-000000000002", "player_id": "pgtap-sfx-k2"}]); a stat fix moves only the players it names', current_setting('pgtap.f1')),
+  'E15 a batch moving a starter the fix does not name is refused BY NAME — the door''s own backstop, not only the planner''s (a provider''s correction is never paid, F405)');
 select is(pg_temp.sf_digest(), current_setting('pgtap.g0'),
-  'E15 NOTHING was written by any refusal — scores, results, medians, rows, receipts, audit rows, posts, notifications');
+  'E16 NOTHING was written by any refusal — scores, results, medians, rows, receipts, audit rows, posts, notifications');
 
 -- ---------------------------------------------------------------------------
 -- F. THE DRY RUN — the apply's own document, and NOTHING persists
@@ -604,7 +612,8 @@ select throws_ok(format($$ select public.record_stat_fix(2097, 'r', '[{"week": 1
   'L8 a WRITTEN fix is never superseded');
 select throws_ok($$ select public.record_stat_fix(2097, 'r', '[{"week": 1, "player_id": "pgtap-sfx-q3", "stat_key": "pass_tds", "before": 0, "after": 1}]', '2097-10-01T12:00:00Z', 'f9720000-0000-4000-8000-0000000000fe') $$,
   'P0002', 'record_stat_fix: stat fix f9720000-0000-4000-8000-0000000000fe (to supersede) not found', 'L9 …nor an unknown one');
-savepoint l10;
+-- No savepoint from here on: a rolled-back savepoint takes pgTAP's own count with it, and at the end of the file no later
+-- assertion restores it (finish() then reads "planned N but ran N-3", round 6). Nothing after this block reads A's week 2.
 -- An ENGINE fix's week: closed (216's stamp) before the fix landed, finalized after it — no line moved, so never re-scored with it.
 update league_weeks set scored_at = '2097-09-23T00:15:00Z' where league_id = 'b9720000-0000-4000-8000-00000000000a' and week = 2;
 select is(
@@ -617,7 +626,29 @@ select is(
 select throws_ok(format($$ select pg_temp.fix(%L, 'b9720000-0000-4000-8000-00000000000a', 2, pg_temp.batch_a(), false) $$, current_setting('pgtap.f1')),
   'P0001', format('apply_stat_fix_week: week_scored_after_fix — league b9720000-0000-4000-8000-00000000000a week 2 was last scored 2097-10-03 00:15:00+00, after stat fix %s landed (2097-10-01 12:00:00+00): it was scored with the fix already', current_setting('pgtap.f1')),
   'L12 the door reads the same instant, by name');
-rollback to savepoint l10;
+-- L13–L15 (round 6): the predicate where it must NOT refuse, through the DOOR — L12 is a refusal a finalized_at-only
+-- predicate would raise as well. League D's week 1 was finalized 2097-09-20; give it a close stamp of 09-15 and an
+-- engine fix landed on 09-18, in between: closed under the old engine, finalized after the deploy — owed, and applied.
+update league_weeks set scored_at = '2097-09-15T00:15:00Z' where league_id = 'b9720000-0000-4000-8000-00000000000d' and week = 1;
+select set_config('pgtap.fe', public.record_stat_fix(2097, 'an engine fix landed between the week''s close and its finalization', '[{"week": 1, "player_id": "pgtap-sfx-p8", "stat_key": "rush_tds", "before": 0, "after": 1}]', '2097-09-18T00:00:00Z')::text, true);
+select public.mark_stat_fix_written(current_setting('pgtap.fe')::uuid);
+select is(
+  (select lw.scored_at::text || ' < landed 2097-09-18 < ' || lw.finalized_at::text from league_weeks lw where lw.league_id = 'b9720000-0000-4000-8000-00000000000d' and lw.week = 1)
+  || ' ' || (select t.state from public.stat_fix_targets(false, 1, array['b9720000-0000-4000-8000-00000000000d']::uuid[]) t where t.fix_id = current_setting('pgtap.fe')::uuid and t.week = 1),
+  '2097-09-15 00:15:00+00 < landed 2097-09-18 < 2097-09-20 12:00:00+00 owed',
+  'L13 a week CLOSED before the fix landed and FINALIZED after it is owed');
+select set_config('pgtap.le', pg_temp.try_fix(current_setting('pgtap.fe')::uuid, 'b9720000-0000-4000-8000-00000000000d', 1, '[
+  {"team_id": "c9720000-0000-4000-8000-000000000007", "points": 36, "players": [{"slot": "rb:0", "player_id": "pgtap-sfx-p7", "points": 36, "pending": [], "reason": "scored", "stored": 36}]},
+  {"team_id": "c9720000-0000-4000-8000-000000000008", "points": 26, "players": [{"slot": "rb:0", "player_id": "pgtap-sfx-p8", "points": 26, "pending": [], "reason": "scored", "stored": 20}]}]', false)::text, true);
+select is(
+  coalesce(current_setting('pgtap.le')::jsonb ->> 'error', 'applied') || ' ' || coalesce(current_setting('pgtap.le')::jsonb ->> 'players_changed', '-') || ' '
+  || coalesce(current_setting('pgtap.le')::jsonb ->> 'scores_changed', '-') || ' ' || ((current_setting('pgtap.le')::jsonb ->> 'receipt_id') is not null)::text,
+  'applied 1 1 true', 'L14 …and the DOOR applies it, not refuses: the same instant as the read (a finalized_at-only door would refuse it week_scored_after_fix)');
+select is(
+  (select string_agg(p.player_id || '=' || p.points::text || ':' || p.source, ' ' order by p.team_id) from league_week_player_points p where p.league_id = 'b9720000-0000-4000-8000-00000000000d' and p.week = 1)
+  || ' ' || (select string_agg(r.points::text, ' ' order by r.team_id) from team_week_results r where r.league_id = 'b9720000-0000-4000-8000-00000000000d' and r.week = 1),
+  'pgtap-sfx-p7=36.00:stat_fix pgtap-sfx-p8=26.00:stat_fix 36.00 26.00',
+  'L15 …the fixed starter''s row and his team''s score are stored + the fix (J1''s row untouched)');
 
 select * from finish();
 rollback;
