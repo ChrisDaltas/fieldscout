@@ -131,6 +131,10 @@ select is_empty(
                    ('REFERENCES'), ('TRIGGER'), ('MAINTAIN')) p(priv)
       where t.schemaname = 'public'
         and not has_table_privilege(r.rolname, format('%I.%I', t.schemaname, t.tablename), p.priv)
+        -- 222 (D836) — our stat fixes and their receipts are the platform's:
+        -- every client privilege revoked on all three tables (not only
+        -- TRUNCATE), the service role's kept. pgTAP 171 A2 pins the exact ACLs.
+        and not (t.tablename in ('stat_fixes', 'stat_fix_lines', 'stat_fix_rescores') and r.rolname in ('anon', 'authenticated'))
         -- 175 (F555) — the ONE deliberate narrowing since this sweep (D23: an
         -- explicit REVOKE): the audit log's INSERT, from the two client
         -- roles only. pgTAP 123 pins that exact grant matrix.

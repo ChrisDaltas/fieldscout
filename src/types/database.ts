@@ -4553,6 +4553,129 @@ export type Database = {
           },
         ]
       }
+      stat_fix_lines: {
+        Row: {
+          after_value: number
+          before_value: number
+          fix_id: string
+          player_id: string
+          season: number
+          stat_key: string
+          week: number
+        }
+        Insert: {
+          after_value: number
+          before_value: number
+          fix_id: string
+          player_id: string
+          season: number
+          stat_key: string
+          week: number
+        }
+        Update: {
+          after_value?: number
+          before_value?: number
+          fix_id?: string
+          player_id?: string
+          season?: number
+          stat_key?: string
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stat_fix_lines_fix_id_fkey"
+            columns: ["fix_id"]
+            isOneToOne: false
+            referencedRelation: "stat_fixes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stat_fix_lines_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stat_fix_rescores: {
+        Row: {
+          applied_at: string
+          fix_id: string
+          id: string
+          league_id: string
+          players_changed: number
+          result: Json
+          scores_changed: number
+          season: number
+          week: number
+        }
+        Insert: {
+          applied_at?: string
+          fix_id: string
+          id?: string
+          league_id: string
+          players_changed: number
+          result: Json
+          scores_changed: number
+          season: number
+          week: number
+        }
+        Update: {
+          applied_at?: string
+          fix_id?: string
+          id?: string
+          league_id?: string
+          players_changed?: number
+          result?: Json
+          scores_changed?: number
+          season?: number
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stat_fix_rescores_fix_id_fkey"
+            columns: ["fix_id"]
+            isOneToOne: false
+            referencedRelation: "stat_fixes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stat_fix_rescores_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stat_fixes: {
+        Row: {
+          created_at: string
+          id: string
+          landed_at: string
+          reason: string
+          season: number
+          written_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          landed_at: string
+          reason: string
+          season: number
+          written_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          landed_at?: string
+          reason?: string
+          season?: number
+          written_at?: string | null
+        }
+        Relationships: []
+      }
       system_flags: {
         Row: {
           key: string
@@ -5609,6 +5732,16 @@ export type Database = {
         Returns: {
           version: string
         }[]
+      }
+      apply_stat_fix_week: {
+        Args: {
+          p_dry_run?: boolean
+          p_fix_id: string
+          p_league_id: string
+          p_teams: Json
+          p_week: number
+        }
+        Returns: Json
       }
       archive_league: {
         Args: { p_league_id: string; p_reason?: string }
@@ -6713,6 +6846,7 @@ export type Database = {
         Args: { p_report_id: string }
         Returns: Json
       }
+      mark_stat_fix_written: { Args: { p_fix_id: string }; Returns: Json }
       matchup_broadcast_payload: {
         Args: { m: Database["public"]["Tables"]["matchups"]["Row"] }
         Returns: Json
@@ -7052,6 +7186,15 @@ export type Database = {
         Args: { p_league_id: string; p_week: number }
         Returns: Json
       }
+      record_stat_fix: {
+        Args: {
+          p_landed_at?: string
+          p_lines: Json
+          p_reason: string
+          p_season: number
+        }
+        Returns: string
+      }
       release_ai_generation: {
         Args: { p_feature: string; p_user_id: string }
         Returns: number
@@ -7348,6 +7491,20 @@ export type Database = {
       stat_correction_week_state_internal: {
         Args: { p_league_id: string; p_season: number; p_week: number }
         Returns: Json
+      }
+      stat_fix_targets: {
+        Args: {
+          p_league_ids?: string[]
+          p_limit?: number
+          p_owed_only?: boolean
+        }
+        Returns: {
+          fix_id: string
+          league_id: string
+          season: number
+          state: string
+          week: number
+        }[]
       }
       stat_key_label_internal: { Args: { p_key: string }; Returns: string }
       team_broadcast_payload: {

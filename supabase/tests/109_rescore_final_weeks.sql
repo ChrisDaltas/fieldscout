@@ -47,6 +47,19 @@ create function pg_temp.un161(p_src text) returns text language sql as $un$
     '');
 $un$;
 
+-- 222 (D836, the F870 follow-on) re-pin, additive (R992): its one lock hunk and its
+-- refusal's words reversed — the same reading pgTAP 171 A7 pins against 161's md5.
+create function pg_temp.un222(p_src text) returns text language sql as $un222$
+  select replace(
+           replace(p_src,
+             substring(p_src from position(E'    -- 222 (F870 follow-on' in p_src)
+                              for position(E'    RAISE EXCEPTION ''league_week_player_points: week_locked' in p_src)
+                                  - position(E'    -- 222 (F870 follow-on' in p_src)),
+             ''),
+           '(F405: a provider''''s later stat correction updates player_stats, never a locked week — only a stat fix of our own re-scores one, through apply_stat_fix_week, §11.4 / §23.4)',
+           '(F405: a later stat correction updates player_stats, never a locked week — the commissioner''''s audited score override is the one change to a final week, §11.4)');
+$un222$;
+
 -- Everything a re-score could move, for the fixture leagues (the "nothing persisted" digest).
 create function pg_temp.rs_digest() returns text language sql as $dg$
   select md5(
@@ -119,13 +132,14 @@ select is((select relrowsecurity::text || ':' || (select count(*) from pg_polici
 select ok(not has_table_privilege('anon', 'public.admin_rescore_actions', 'TRUNCATE')
           and not has_table_privilege('authenticated', 'public.admin_rescore_actions', 'TRUNCATE'),
   'A5 …and no TRUNCATE for anon or authenticated');
+-- 222 (D836) re-pin: the CHECK gains stat_fix too (pgTAP 171 A5 pins it); every 161 value kept.
 select is((select pg_get_constraintdef(oid) from pg_constraint where conname = 'league_week_player_points_source_check'),
-  'CHECK ((source = ANY (ARRAY[''worker''::text, ''backfill''::text, ''backfill_unrecoverable''::text, ''rescore''::text])))',
-  'A6 the source CHECK gains rescore (every 158 value kept)');
-select is(md5((select prosrc from pg_proc where proname = 'league_week_player_points_lock')),
-  'bc1ac0492d7b05c75aa212d7e9e0d990', 'A7 the lock''s prosrc is 161''s (stored literal)');
-select is(md5(pg_temp.un161((select prosrc from pg_proc where proname = 'league_week_player_points_lock'))),
-  '3b032dac03f1ba65174684c57cfae3fe', 'A8 D137: 161''s one hunk reversed on the LIVE body = 158''s prosrc byte for byte');
+  'CHECK ((source = ANY (ARRAY[''worker''::text, ''backfill''::text, ''backfill_unrecoverable''::text, ''rescore''::text, ''stat_fix''::text])))',
+  'A6 the source CHECK gains rescore (every 158 value kept; 222 adds stat_fix)');
+select is(md5(pg_temp.un222((select prosrc from pg_proc where proname = 'league_week_player_points_lock'))),
+  'bc1ac0492d7b05c75aa212d7e9e0d990', 'A7 the lock''s prosrc is 161''s (stored literal), read under 222''s hunk reversed (pgTAP 171 A6 pins 222''s own)');
+select is(md5(pg_temp.un161(pg_temp.un222((select prosrc from pg_proc where proname = 'league_week_player_points_lock')))),
+  '3b032dac03f1ba65174684c57cfae3fe', 'A8 D137: 161''s one hunk reversed on the LIVE body (222''s first) = 158''s prosrc byte for byte');
 select is((select tgenabled::text from pg_trigger where tgname = 'trg_league_week_player_points_lock'),
   'A', 'A9 the lock trigger is still ENABLE ALWAYS');
 -- M6 L.E2.2 (172) re-pin, additive (the R992 shape): read under 172's five fenced hunks reversed.

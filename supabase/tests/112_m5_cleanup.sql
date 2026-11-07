@@ -1069,12 +1069,24 @@ select is(
    from pg_proc p where p.oid = 'public.admin_rescore_final_week(uuid, integer, jsonb, text, text, uuid, uuid, boolean)'::regprocedure),
   'e604714a034578b8e56c4398621a3921:true:search_path=""',
   'R2 …the function itself is KEPT, byte for byte as 161 wrote it (a stored literal), still DEFINER with search_path empty — re-granting it is one migration');
+-- 222 (D836, the F870 follow-on) re-pin, additive (R992): its one lock hunk and its
+-- refusal's words reversed — the same reading pgTAP 171 A7 pins against 161's md5.
+create function pg_temp.un222(p_src text) returns text language sql as $un222$
+  select replace(
+           replace(p_src,
+             substring(p_src from position(E'    -- 222 (F870 follow-on' in p_src)
+                              for position(E'    RAISE EXCEPTION ''league_week_player_points: week_locked' in p_src)
+                                  - position(E'    -- 222 (F870 follow-on' in p_src)),
+             ''),
+           '(F405: a provider''''s later stat correction updates player_stats, never a locked week — only a stat fix of our own re-scores one, through apply_stat_fix_week, §11.4 / §23.4)',
+           '(F405: a later stat correction updates player_stats, never a locked week — the commissioner''''s audited score override is the one change to a final week, §11.4)');
+$un222$;
 select is(
   (select format('%s:%s:%s', c.relrowsecurity::text, (select count(*) from pg_policies where tablename = 'admin_rescore_actions'),
-                 md5((select pg_temp.un199(pg_temp.un201(prosrc)) from pg_proc where proname = 'league_week_player_points_lock')))
+                 md5((select pg_temp.un222(pg_temp.un199(pg_temp.un201(prosrc))) from pg_proc where proname = 'league_week_player_points_lock')))
    from pg_class c where c.oid = 'public.admin_rescore_actions'::regclass),
   'true:0:bc1ac0492d7b05c75aa212d7e9e0d990',
-  'R3 …its replay ledger is kept (RLS on, zero policies) and so is the lock exit it served (161, a stored literal)');
+  'R3 …its replay ledger is kept (RLS on, zero policies) and so is the lock exit it served (161, a stored literal — read under 222''s stat-fix hunk reversed; pgTAP 171 A6 pins 222''s own)');
 set local role service_role;
 select set_config('request.jwt.claims', '{"role": "service_role"}', true);
 select throws_ok(
