@@ -23,6 +23,7 @@
     "sync:fill-ruled": "npx tsx scripts/fill-ruled-columns.ts",
     "backfill:player-points": "npx tsx scripts/backfill-player-points.ts",
     "rescore:final-weeks": "npx tsx scripts/rescore-final-weeks.ts",
+    "stat-fix": "npx tsx scripts/stat-fix.ts",
     "record:fixtures": "npx tsx scripts/record-fixtures.ts",
     "diff:fixtures": "npx tsx scripts/diff-fixture-snapshots.ts",
     "export:correction-events": "npx tsx scripts/export-correction-events.ts",

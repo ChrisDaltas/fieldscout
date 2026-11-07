@@ -10,6 +10,7 @@ import { VirtualClock } from '../time/virtual-clock'
 import {
   classifyClose,
   classifyDrain,
+  classifyStatFix,
   CLOCK_SKEW_SECONDS,
   closePassErrorAlert,
   DRAIN_INTERVAL_MS,
@@ -17,8 +18,10 @@ import {
   SCORE_WEEK_BUDGET_MS,
   SCORE_WEEK_LEASE_SECONDS,
   SCORE_WEEK_MAX_DURATION_SECONDS,
+  statFixPassErrorAlert,
 } from './score-week-invoker'
 import { type BatchReport, type CloseScoringReport, type LeagueWeekReport, PRE_216_CLOSE_SENTENCE, runCloseScoring } from './score-week-worker'
+import { runStatFixPass, type StatFixPassReport } from './stat-fix-rescore'
 
 function report(over: Partial<BatchReport> = {}): BatchReport {
   return {
@@ -119,6 +122,7 @@ describe('classifyDrain — the loud surface', () => {
 })
 
 const emptyClose: CloseScoringReport = { ran_at: '2099-09-13T20:00:00.000Z', available: true, weeks: [], closed: 0, failed: 0, problems: [] }
+const emptyFix: StatFixPassReport = { ran_at: '2099-09-13T20:00:00.000Z', available: true, weeks: [], applied: 0, problems: [] }
 
 describe('runCloseScoring on a database without 216 (deploy before push)', () => {
   it('says so by name and does nothing', async () => {
@@ -150,8 +154,14 @@ describe('classifyClose (F863)', () => {
 })
 
 describe('runScoreWeekInvocation — the minute-invocation loop', () => {
-  function harness(drains: BatchReport[], hot: boolean, closeReport: CloseScoringReport | (() => Promise<CloseScoringReport>) = emptyClose) {
+  function harness(
+    drains: BatchReport[],
+    hot: boolean,
+    closeReport: CloseScoringReport | (() => Promise<CloseScoringReport>) = emptyClose,
+    fixReport: StatFixPassReport | (() => Promise<StatFixPassReport>) = emptyFix,
+  ) {
     let closes = 0
+    let fixes = 0
     const clock = new VirtualClock(new Date('2099-09-13T20:00:00.000Z'))
     const calls: string[] = []
     const sleeps: number[] = []
@@ -169,6 +179,10 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
         closes += 1
         return typeof closeReport === 'function' ? closeReport() : closeReport
       },
+      statFix: async () => {
+        fixes += 1
+        return typeof fixReport === 'function' ? fixReport() : fixReport
+      },
       drain: async (_deps, opts) => {
         calls.push(`${opts?.leaseSeconds}/${opts?.batchSize}/${opts?.deferSeconds}`)
         const r = drains[Math.min(i, drains.length - 1)]
@@ -177,7 +191,7 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
         return r
       },
     })
-    return { promise, calls, sleeps, closes: () => closes }
+    return { promise, calls, sleeps, closes: () => closes, fixes: () => fixes }
   }
 
   it('an empty queue outside a game window ends the invocation after ONE drain — one claim RPC per idle minute', async () => {
@@ -241,6 +255,7 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
       lastPollCompletedAt: async () => null,
       isHot: async () => true,
       closeWeeks: (deps) => runCloseScoring({ ...deps, db: timingOut }),
+      statFix: async () => emptyFix,
       drain: async () => {
         drains += 1
         clock.advanceBy(1_000)
@@ -284,5 +299,83 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
     expect(out.alerts).toHaveLength(1)
     expect(out.alerts[0]).toMatch(/gone 1/)
     expect(out.infos).toEqual(['drain claimed nothing: all_deferred (R875 — informational)'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 222 (D836 — Chris 2026-11-07: "the stats need to be correct. that should be
+// done automatically"): our own stat fixes, once per invocation
+// ---------------------------------------------------------------------------
+
+describe('the stat-fix pass (222) on the invocation', () => {
+  const clock = () => new VirtualClock(new Date('2099-09-13T20:00:00.000Z'))
+  const idle = (statFix: () => Promise<StatFixPassReport>) =>
+    runScoreWeekInvocation({
+      db: {} as never,
+      time: clock(),
+      sleep: async () => {},
+      lastPollCompletedAt: async () => null,
+      isHot: async () => false,
+      closeWeeks: async () => emptyClose,
+      statFix,
+      drain: async () => report({ reason: 'queue_empty' }),
+    })
+
+  it('runs exactly once per invocation, after the close, and its report rides on the invocation', async () => {
+    let calls = 0
+    const out = await idle(async () => {
+      calls += 1
+      return emptyFix
+    })
+    expect(calls).toBe(1)
+    expect(out.stat_fix).toBe(emptyFix)
+    expect([out.alerts, out.infos]).toEqual([[], []])
+  })
+
+  it('a pass that THROWS is ONE alert by name and the invocation resolves (it never costs the minute its scoring)', async () => {
+    const boom = new Error('stat_fix_targets: canceling statement due to statement timeout')
+    const out = await idle(async () => {
+      throw boom
+    })
+    expect(out.stat_fix).toBeNull()
+    expect(out.stopped).toBe('queue_empty_idle')
+    expect(out.alerts).toEqual([statFixPassErrorAlert(boom)])
+    expect(out.alerts[0]).toBe(
+      'STAT FIX PASS ERROR: stat_fix_targets: canceling statement due to statement timeout — the pass stopped there; every fix it had not applied stays owed and is retried next invocation; draining continues (D836)',
+    )
+  })
+
+  it('a database WITHOUT 222 (the real pass over PGRST202): a SILENT no-op — no alert, no info, nothing thrown', async () => {
+    const pre222 = { rpc: async () => ({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.stat_fix_targets(p_limit, p_owed_only) in the schema cache' } }) } as never
+    const pass = await runStatFixPass({ db: pre222, time: clock() })
+    expect(pass).toEqual({ ran_at: '2099-09-13T20:00:00.000Z', available: false, weeks: [], applied: 0, problems: [] })
+    const out = await idle(() => runStatFixPass({ db: pre222, time: clock() }))
+    expect([out.alerts, out.infos, out.stat_fix?.available]).toEqual([[], [], false])
+  })
+
+  it('any other error from the targets read is not "not deployed": the pass throws, the invocation alerts', async () => {
+    const denied = { rpc: async () => ({ data: null, error: { code: '42501', message: 'permission denied for function stat_fix_targets' } }) } as never
+    await expect(runStatFixPass({ db: denied, time: clock() })).rejects.toThrow('stat_fix_targets: permission denied for function stat_fix_targets')
+    const out = await idle(() => runStatFixPass({ db: denied, time: clock() }))
+    expect(out.alerts).toEqual(['STAT FIX PASS ERROR: stat_fix_targets: permission denied for function stat_fix_targets — the pass stopped there; every fix it had not applied stays owed and is retried next invocation; draining continues (D836)'])
+  })
+
+  it('classifyStatFix: a refused league-week ALERTS by name and stays owed; an applied / unchanged one informs', () => {
+    const v = classifyStatFix({
+      ...emptyFix,
+      applied: 2,
+      weeks: [
+        { fix_id: 'F', league_id: 'A', week: 1, verdict: 'applied', players_changed: 2, scores_changed: 1, results_changed: 1, refusal: null },
+        { fix_id: 'F', league_id: 'B', week: 1, verdict: 'no_changes', players_changed: 0, scores_changed: 0, results_changed: 0, refusal: null },
+        { fix_id: 'F', league_id: 'C', week: 1, verdict: 'refused', players_changed: 0, scores_changed: 0, results_changed: 0, refusal: 'rows_drift' },
+      ],
+      problems: ['fix F league_id=C week 1: apply_stat_fix_week refused — rows_drift'],
+    })
+    expect(v.alerts).toEqual(['STAT FIX NOT APPLIED: fix F league_id=C week 1: apply_stat_fix_week refused — rows_drift — no receipt, so it stays owed and the next pass tries again (D836)'])
+    expect(v.infos).toEqual([
+      'league_id=A week=1 stat fix F applied: 2 player row(s), 1 team score(s), 1 result(s) moved',
+      'league_id=B week=1 stat fix F: nothing in the week moves — receipt written',
+    ])
+    expect(classifyStatFix({ ...emptyFix, available: false })).toEqual({ alerts: [], infos: [] })
   })
 })
