@@ -519,8 +519,8 @@ BEGIN
           'score_b', v_score_b, 'score_a', v_score_a);
         SELECT p.full_name INTO v_oname FROM public.players p WHERE p.id = v_pl.player_id;
         v_lines := v_lines || (COALESCE(v_oname, v_pl.player_id) || '''s ' || v_pl.words || ' — ' || v_tname || ' '
-          || COALESCE(to_char(v_score_b, 'FM999999990.00'), '—') || ' → '
-          || COALESCE(to_char(v_score_a, 'FM999999990.00'), '—'));
+          || COALESCE(to_char(v_score_b, 'FM999999990.00'), 'pending') || ' → '
+          || COALESCE(to_char(v_score_a, 'FM999999990.00'), 'pending'));
       END LOOP;
     END LOOP;
 
