@@ -4,21 +4,36 @@
  * written fix by itself; this records one the fill did not (an engine fix, a
  * backlog), previews what one would move, and says what is owed.
  *
- *   npm run stat-fix -- plan --file <lines.json>
+ *   npm run stat-fix -- plan --file <lines.json> [--landed-at <iso>]
  *     READ-ONLY. Per league, week and player: stored → new and the delta,
- *     through the door's own dry run (rolled back). Nothing is recorded.
- *   npm run stat-fix -- record --file <lines.json> --reason "<plain words>" [--landed-at <iso>]
+ *     through the door's own dry run (rolled back). Nothing is recorded. With
+ *     --landed-at, a week last scored after it is named not eligible, as the
+ *     door will name it.
+ *   npm run stat-fix -- record --file <lines.json> --reason "<plain words>" --landed-at <iso>
  *     prints what it would record; with --apply --confirm-target <host> it
  *     records the fix and marks it written — the pass then applies it.
  *   npm run stat-fix -- status
  *     every written fix: applied / owed / not eligible (each named).
  *
+ * --landed-at is REQUIRED to record, never assumed: when OUR change reached
+ * the stats (a fill: the run's instant) or the engine (a deploy: the instant
+ * the new code answered every request). A week whose scores were last
+ * computed after it — 216's close stamp, else its finalization — was scored
+ * with the change and is not paid again (`week_scored_after_fix`); "now"
+ * would make every week finalized in between owed, and pay it twice. A
+ * landing in the future is refused.
+ *
  * The file: {"season": 2026, "lines": [{"week": 1, "player_id": "…",
  * "stat_key": "fg_0_39", "before": 0, "after": 2}]} — `stat_key` a
  * `player_stats` column, `before` the stored value our change replaced (0 for
- * a line that had no row). An engine fix is written the same way: the value
- * the old engine scored (a kicker's `rush_yards` before 0) → the value it now
- * reads.
+ * a line that had no row), `after` the value OUR change wrote — never simply
+ * today's value, which may carry a provider's later correction (that would
+ * then be paid: PROGRESS D838 says how to read it). An engine fix is written
+ * the same way: the value the old engine scored (a kicker's `rush_yards`
+ * before 0) → the value it now reads, as the week was locked. A move a
+ * WRITTEN fix already holds — the same week, player and stat from the same
+ * before value — is refused by the database by name (`already_recorded`), so
+ * a re-run never pays it twice.
  *
  * ⚠ TARGET. Like every sync script the wrapper loads `.env.local`, which names
  * the HOSTED project. The first line printed is `target: <host>`; `--apply`
@@ -40,8 +55,8 @@ import type { ScoreWorkerClient } from './score-week-worker'
 import { fixLeagueWeek, PRE_222_SENTENCE, STAT_FIX_TARGETS, type StatFixLine, type WeekFixOutcome } from './stat-fix-rescore'
 
 const USAGE = [
-  'usage: npm run stat-fix -- plan --file <lines.json>',
-  '       npm run stat-fix -- record --file <lines.json> --reason "<plain words>" [--landed-at <iso>] [--apply --confirm-target <host>]',
+  'usage: npm run stat-fix -- plan --file <lines.json> [--landed-at <iso>]',
+  '       npm run stat-fix -- record --file <lines.json> --reason "<plain words>" --landed-at <iso> [--apply --confirm-target <host>]',
   '       npm run stat-fix -- status',
 ].join('\n')
 
@@ -49,7 +64,7 @@ const COMMANDS = ['plan', 'record', 'status'] as const
 type Command = (typeof COMMANDS)[number]
 const VALUE_FLAGS: ReadonlySet<string> = new Set(['--file', '--reason', '--landed-at', '--confirm-target'])
 const FLAGS_BY_COMMAND: Record<Command, ReadonlySet<string>> = {
-  plan: new Set(['--file']),
+  plan: new Set(['--file', '--landed-at']),
   record: new Set(['--file', '--reason', '--landed-at', '--apply', '--confirm-target']),
   status: new Set([]),
 }
@@ -93,6 +108,11 @@ export function parseStatFixArgs(argv: readonly string[]): StatFixArgs {
   }
   if ((cmd === 'plan' || cmd === 'record') && args.file === undefined) throw new Error(`${cmd} needs --file.\n${USAGE}`)
   if (cmd === 'record' && (args.reason === undefined || args.reason.trim() === '')) throw new Error(`record needs --reason (plain words: what we fixed and why).\n${USAGE}`)
+  if (cmd === 'record' && args.landedAt === undefined) {
+    throw new Error(
+      `record needs --landed-at <iso>: when our change reached the stats (the fill run’s instant) or the engine (the deploy, once the new code answered every request) — a week last scored after it is not paid again, so it is never assumed.\n${USAGE}`,
+    )
+  }
   if (args.landedAt !== undefined && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(args.landedAt)) {
     throw new Error(`--landed-at must be an ISO instant with its zone (got ${args.landedAt}).\n${USAGE}`)
   }
@@ -152,7 +172,7 @@ const two = (n: number | null | undefined): string => (n === null || n === undef
 const signed = (n: number): string => `${n > 0 ? '+' : n < 0 ? '−' : '±'}${Math.abs(n).toFixed(2)}`
 
 /** The door's eligibility refusals: named, not problems — the league-week is just not one a fix reaches. */
-const NOT_ELIGIBLE = /\b(league_not_in_season|bracket_built|week_not_final|week_not_scheduled|week_finalized_after_fix|fix_other_season)\b/
+const NOT_ELIGIBLE = /\b(league_not_in_season|bracket_built|week_not_final|week_not_scheduled|week_scored_after_fix|fix_other_season)\b/
 
 /** One league-week of a plan, in lines (ids and player names; the league by name). */
 export function renderWeekFix(outcome: WeekFixOutcome, names: ReadonlyMap<string, string>): string[] {
@@ -168,7 +188,7 @@ export function renderWeekFix(outcome: WeekFixOutcome, names: ReadonlyMap<string
   for (const team of plan.teams) {
     for (const row of team.changed) {
       const who = names.get(row.player_id)
-      lines.push(`  team ${team.team_id} ${row.slot} ${who ? `${who} (${row.player_id})` : row.player_id}: ${two(row.stored)} → ${two(row.points)} (${signed(row.delta)})${team.writable ? '' : ' — commissioner-set score kept; this team\'s rows are not written (158)'}`)
+      lines.push(`  team ${team.team_id} ${row.slot} ${who ? `${who} (${row.player_id})` : row.player_id}: ${two(row.stored)} → ${two(row.points)} (${signed(row.delta)})${team.writable ? '' : ' — the commissioner-set score is kept; the player\'s row moves'}`)
     }
     if (team.writable && team.changed.length > 0) lines.push(`  team ${team.team_id} score: ${team.cells.map(two).join('/')} → ${two(team.points)}`)
   }
@@ -224,16 +244,21 @@ export async function runStatFixCli(argv: readonly string[], io: StatFixCliIo): 
 
   if (args.command === 'record' && !args.apply) {
     const weeks = [...new Set(file!.lines.map((l) => l.week))].sort((a, b) => a - b)
-    io.log(`would record a stat fix: season ${file!.season}, ${file!.lines.length} line(s) over week(s) ${weeks.join(', ')} — "${args.reason!.trim()}"`)
+    io.log(`would record a stat fix: season ${file!.season}, ${file!.lines.length} line(s) over week(s) ${weeks.join(', ')}, landed ${args.landedAt} — "${args.reason!.trim()}"`)
     for (const l of file!.lines) io.log(`  week ${l.week} ${l.player_id} ${l.stat_key}: ${l.before} → ${l.after}`)
-    io.log(`Nothing recorded. To record it (the score-week pass then applies it): npm run stat-fix -- record --file ${args.file} --reason "${args.reason!.trim()}"${args.landedAt ? ` --landed-at ${args.landedAt}` : ''} --apply --confirm-target ${host}`)
+    io.log(`Nothing recorded. To record it (the score-week pass then applies it): npm run stat-fix -- record --file ${args.file} --reason "${args.reason!.trim()}" --landed-at ${args.landedAt} --apply --confirm-target ${host}`)
     return 0
   }
 
   const { db, time } = io.connect()
+  // A landing in the future would make every week finalized until then owed (and pay those already scored with it).
+  if (args.landedAt !== undefined && Date.parse(args.landedAt) > time.now().getTime()) {
+    io.error(`--landed-at ${args.landedAt} is after now (${time.now().toISOString()}): our change can’t have landed yet — nothing read or written`)
+    return 2
+  }
   try {
-    if (args.command === 'plan') return await runPlan(db, file!, io)
-    if (args.command === 'record') return await runRecord(db, time, file!, args, io)
+    if (args.command === 'plan') return await runPlan(db, file!, args.landedAt, io)
+    if (args.command === 'record') return await runRecord(db, file!, args, io)
     return await runStatus(db, io)
   } catch (err) {
     io.error(`FAILED — ${err instanceof Error ? err.message : String(err)}`)
@@ -241,14 +266,16 @@ export async function runStatFixCli(argv: readonly string[], io: StatFixCliIo): 
   }
 }
 
-async function runPlan(db: ScoreWorkerClient, file: StatFixFile, io: StatFixCliIo): Promise<number> {
+async function runPlan(db: ScoreWorkerClient, file: StatFixFile, landedAt: string | undefined, io: StatFixCliIo): Promise<number> {
   const weeks = [...new Set(file.lines.map((l) => l.week))].sort((a, b) => a - b)
-  io.log(`Plan [${file.season}] weeks ${weeks.join(', ')}: ${file.lines.length} line(s) — read-only, every league-week through the door's dry run (rolled back)`)
+  io.log(
+    `Plan [${file.season}] weeks ${weeks.join(', ')}: ${file.lines.length} line(s)${landedAt ? `, landed ${landedAt}` : ' (no --landed-at: a week scored after the fix lands is not told apart)'} — read-only, every league-week through the door's dry run (rolled back)`,
+  )
   const names = await namesOf(db, [...new Set(file.lines.map((l) => l.player_id))])
   let problems = 0
   let moving = 0
   for (const lw of await leagueWeeksOf(db, file.season, weeks)) {
-    const outcome = await fixLeagueWeek(db, { fixId: null, leagueId: lw.league_id, week: lw.week, lines: file.lines }, false)
+    const outcome = await fixLeagueWeek(db, { fixId: null, leagueId: lw.league_id, week: lw.week, lines: file.lines, landedAt }, false)
     for (const line of renderWeekFix(outcome, names)) io.log(line)
     if (outcome.verdict === 'would_apply') moving += 1
     const notEligible = outcome.verdict === 'refused' && NOT_ELIGIBLE.test(outcome.refusal ?? '')
@@ -263,8 +290,8 @@ async function runPlan(db: ScoreWorkerClient, file: StatFixFile, io: StatFixCliI
   return 0
 }
 
-async function runRecord(db: ScoreWorkerClient, time: TimeProvider, file: StatFixFile, args: StatFixArgs, io: StatFixCliIo): Promise<number> {
-  const landedAt = args.landedAt ?? time.now().toISOString()
+async function runRecord(db: ScoreWorkerClient, file: StatFixFile, args: StatFixArgs, io: StatFixCliIo): Promise<number> {
+  const landedAt = args.landedAt!
   const recorded = await db.rpc('record_stat_fix', {
     p_season: file.season,
     p_reason: args.reason!.trim(),
@@ -277,25 +304,46 @@ async function runRecord(db: ScoreWorkerClient, time: TimeProvider, file: StatFi
   }
   const fixId = recorded.data as string
   const written = await db.rpc('mark_stat_fix_written', { p_fix_id: fixId })
+  let lost = ''
   if (written.error) {
-    io.error(`FAILED — fix ${fixId} is recorded but NOT written (nothing applies from it): mark_stat_fix_written: ${written.error.message}`)
-    return 1
+    // An error is not "not written": the mark may have committed and only its
+    // reply been lost. Read it back — never guess either way (a wrong "NOT
+    // written" invites a second record; the database refuses that one anyway).
+    const back = await db.from('stat_fixes').select('written_at').eq('id', fixId).maybeSingle()
+    if (back.error || back.data === null) {
+      io.error(
+        `FAILED — fix ${fixId} is recorded; whether it is written is NOT known (mark_stat_fix_written: ${written.error.message}; read-back: ${back.error?.message ?? 'no such fix'}). ` +
+          'Run npm run stat-fix -- status before anything else: written, it is done; not written, re-run this record (a re-run is refused while a written fix holds these moves).',
+      )
+      return 1
+    }
+    if (back.data.written_at === null) {
+      io.error(`FAILED — fix ${fixId} is recorded but NOT written (read back): nothing applies from it (mark_stat_fix_written: ${written.error.message}). Re-run this record: a fix never written applies nowhere, so nothing is paid twice.`)
+      return 1
+    }
+    lost = ` (mark_stat_fix_written’s reply was lost — read back: written ${back.data.written_at})`
   }
-  io.log(`recorded and written: stat fix ${fixId} — season ${file.season}, ${file.lines.length} line(s), landed ${landedAt}`)
+  io.log(`recorded and written: stat fix ${fixId} — season ${file.season}, ${file.lines.length} line(s), landed ${landedAt}${lost}`)
   io.log('The score-week pass applies it to every eligible final league-week within minutes, quietly. `npm run stat-fix -- status` shows where it stands.')
   return 0
 }
 
 async function runStatus(db: ScoreWorkerClient, io: StatFixCliIo): Promise<number> {
+  // Every (written fix, league, week) — fixes × weeks × leagues, growing all
+  // season — PAGED past PostgREST's 1000-row cap with an exact count (round 5:
+  // one call was cut at row 1000, and the function lists the NEWEST fix last,
+  // so the fix being checked read "owed 0"). Ordered on the row's own key.
+  const page = (from: number, to: number) =>
+    db.rpc(STAT_FIX_TARGETS, { p_owed_only: false, p_limit: 1 }, { count: 'exact' }).order('fix_id').order('league_id').order('week').range(from, to)
+  const probe = await page(0, 0)
+  if (probe.error) {
+    io.error(isMissingSchemaObject(probe.error, [STAT_FIX_TARGETS]) ? `REFUSED — ${PRE_222_SENTENCE}` : `FAILED — ${STAT_FIX_TARGETS}: ${probe.error.message}`)
+    return 1
+  }
+  const rows = await pageAll(page)
   const fixes = await pageAll<{ id: string; season: number; reason: string; landed_at: string; created_at: string; written_at: string | null }>((from, to) =>
     db.from('stat_fixes').select('id, season, reason, landed_at, created_at, written_at', { count: 'exact' }).order('created_at').order('id').range(from, to),
   )
-  const targets = await db.rpc(STAT_FIX_TARGETS, { p_owed_only: false, p_limit: 1 })
-  if (targets.error) {
-    io.error(isMissingSchemaObject(targets.error, [STAT_FIX_TARGETS]) ? `REFUSED — ${PRE_222_SENTENCE}` : `FAILED — ${STAT_FIX_TARGETS}: ${targets.error.message}`)
-    return 1
-  }
-  const rows = targets.data ?? []
   if (fixes.length === 0) io.log('no stat fix has been recorded')
   for (const fix of fixes) {
     const mine = rows.filter((r) => r.fix_id === fix.id)

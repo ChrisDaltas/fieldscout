@@ -168,13 +168,15 @@ describe('planWeekFix — the week at stored + our change, from the STORED rows'
     expect(plan.teams[0].points).toBe(3.4)
   })
 
-  it('an OVERRIDDEN team (every cell the commissioner’s) is planned but not writable — the door keeps its score and its rows (158)', () => {
+  it('an OVERRIDDEN team (every cell the commissioner’s): its score is not the door’s to write, but its PLAYERS still take our change (Chris 2026-11-06: "as long as all the players have the right stats and scores")', () => {
     const kept: PlanTeamIn = { team_id: 'T5', cells: [], overridden_cells: 1, rows: [row('T5', 'k:0', 'aub', 40)] }
     const plan = week([one, kept], AUBREY_FIX, { aub: AUBREY }, { aub: 'K' })
     const t5 = plan.teams.find((t) => t.team_id === 'T5')!
     expect([t5.writable, t5.changed.length, t5.points]).toEqual([false, 1, 43])
+    // Its rows need not add up to the commissioner's number (158): no rows_drift for it.
+    expect(plan.problems).toEqual([])
     const wp: WeekFixPlan = { league_id: 'L', league_name: 'L', season: 2026, week: 2, schedule_mode: 'h2h', ineligible: null, teams: plan.teams, problems: [] }
-    expect(plannedRowWrites(wp)).toBe(1) // T1's kicker only
+    expect(plannedRowWrites(wp)).toBe(2) // T1's kicker AND T5's
   })
 
   it('a held game (184): a fixed starter on it scores nothing either way — no change', () => {
@@ -245,6 +247,21 @@ describe('planLeagueWeekFix — the door’s order of refusals, read before anyt
     expect((await planLeagueWeekFix(db({ leagues: [league()], league_weeks: [{ week: 1, status: 'correction_window', scoring_rules_snapshot: ESPN }] }), 'L', 1, AUBREY_FIX)).ineligible).toBe(
       'week_not_final (correction_window)',
     )
+  })
+
+  it('given the landing (the CLI’s plan --landed-at), a week LAST SCORED after it is named as the door names it — the close stamp first, finalization only without one (round 5)', async () => {
+    const final = (over: Record<string, unknown>) => ({ week: 1, status: 'final', scoring_rules_snapshot: ESPN, scored_at: null, finalized_at: '2026-10-01T00:15:00+00:00', ...over })
+    const landed = '2026-10-02T00:00:00.000Z'
+    expect((await planLeagueWeekFix(db({ leagues: [league()], league_weeks: [final({ scored_at: '2026-10-03T00:00:00+00:00' })] }), 'L', 1, AUBREY_FIX, landed)).ineligible).toBe(
+      'week_scored_after_fix (last scored 2026-10-03T00:00:00+00:00, after the fix landed 2026-10-02T00:00:00.000Z: scored with it already)',
+    )
+    // An engine fix's week: closed before the deploy, finalized after it — never re-scored with it, so planned.
+    const engine = await planLeagueWeekFix(db({ leagues: [league()], league_weeks: [final({ scored_at: '2026-09-30T00:00:00+00:00', finalized_at: '2026-10-05T00:15:00+00:00' })] }), 'L', 1, AUBREY_FIX, landed)
+    expect(engine.ineligible).toBeNull()
+    // No close stamp (a pre-216 week): its finalization.
+    expect((await planLeagueWeekFix(db({ leagues: [league()], league_weeks: [final({ finalized_at: '2026-10-05T00:15:00+00:00' })] }), 'L', 1, AUBREY_FIX, landed)).ineligible).toMatch(/^week_scored_after_fix/)
+    // No landing given: the plan doesn't tell them apart (the door will).
+    expect((await planLeagueWeekFix(db({ leagues: [league()], league_weeks: [final({ scored_at: '2026-10-03T00:00:00+00:00' })] }), 'L', 1, AUBREY_FIX)).ineligible).toBeNull()
   })
 })
 

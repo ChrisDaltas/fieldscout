@@ -32,7 +32,10 @@
  * both terms and cancels, so it is never paid; on the SAME key the fix's
  * after value is what we wrote, and a provider move past it is not ours
  * either. A team's score = Σ its new rows (they ARE the score, F405). A
- * starter on a held game (184) scores nothing either way.
+ * starter on a held game (184) scores nothing either way. A commissioner-
+ * overridden team keeps his score (§22.2) and its players still move (Chris
+ * 2026-11-06: "as long as all the players have the right stats and scores as
+ * a result, then the "team" scores do not matter.").
  *
  * WHERE. `runStatFixPass` runs inside every score-week invocation, beside the
  * 216 close pass: it asks `stat_fix_targets` for the owed (fix, league, week)s
@@ -43,8 +46,9 @@
  * results math, and ONE system receipt — no commissioner-log row, no post, no
  * notification. A receipt is written even when nothing changed, so a done
  * week is never asked again. An ineligible league-week (archived, not in
- * season, bracket built, week not final, finalized after the fix landed) is
- * never planned and gets no receipt: it stays owed. DEPLOY BEFORE PUSH: a
+ * season, bracket built, week not final, last scored after the fix landed —
+ * 216's close stamp, else its finalization) is never planned and gets no
+ * receipt: it stays owed. DEPLOY BEFORE PUSH: a
  * database without 222 makes the pass a silent no-op, never an error.
  *
  * Time only via `time`; no provider call — the stats are `player_stats`.
@@ -136,7 +140,7 @@ export interface PlanTeamIn {
   team_id: string
   /** The team's stored score on each NON-overridden cell it sits in (h2h), or its results row (total_points). */
   cells: Array<number | null>
-  /** Overridden cells: the commissioner's numbers, kept (158's rule — a team with none writable keeps its rows). */
+  /** Overridden cells: the commissioner's numbers, kept (§22.2) — his team's ROWS still take our change. */
   overridden_cells: number
   rows: StoredRowIn[]
 }
@@ -157,9 +161,9 @@ export interface PlannedTeam {
   /** Σ of the new rows: the score the door writes on every non-overridden cell. */
   points: number
   players: PlannedRow[]
-  /** The rows our fix moves. */
+  /** The rows our fix moves — the door writes every one of them, an overridden team's too. */
   changed: PlannedRow[]
-  /** ≥ 1 non-overridden cell: the door writes this team's score and rows. */
+  /** ≥ 1 non-overridden cell: the door writes this team's SCORE (and asks it to be Σ its stored rows). */
   writable: boolean
 }
 
@@ -284,13 +288,17 @@ const num = (v: number | string | null | undefined): number | null => (v === nul
 /**
  * Reads one league-week as it was scored and plans `lines` (this week's) onto
  * it. The eligibility read here only saves a pointless plan — the door decides
- * (`stat_fix_targets` already picked the owed ones for the pass).
+ * (`stat_fix_targets` already picked the owed ones for the pass). `landedAt`
+ * (the CLI's `plan --landed-at`: lines not yet recorded, so the door has no
+ * landing to check) names a week last scored after it as not eligible, the
+ * door's own `week_scored_after_fix` reading.
  */
 export async function planLeagueWeekFix(
   db: ScoreWorkerClient,
   leagueId: string,
   week: number,
   lines: readonly StatFixLine[],
+  landedAt?: string,
 ): Promise<WeekFixPlan> {
   const read = await db.from('leagues').select('id, name, season, status, deleted_at, settings, scoring_rules_snapshot').eq('id', leagueId).maybeSingle()
   if (read.error) throw new Error(`league ${leagueId} read: ${read.error.message}`)
@@ -306,10 +314,21 @@ export async function planLeagueWeekFix(
     'bracket read',
   )
   if (bracket.length > 0) return { ...plan, ineligible: 'bracket_built' }
-  const lw = await db.from('league_weeks').select('week, status, scoring_rules_snapshot').eq('league_id', leagueId).eq('season', league.season).eq('week', week).maybeSingle()
+  const lw = await db
+    .from('league_weeks')
+    .select('week, status, scoring_rules_snapshot, scored_at, finalized_at')
+    .eq('league_id', leagueId)
+    .eq('season', league.season)
+    .eq('week', week)
+    .maybeSingle()
   if (lw.error) throw new Error(`league_weeks read: ${lw.error.message}`)
   if (lw.data === null) return { ...plan, ineligible: 'week_not_scheduled' }
   if (lw.data.status !== 'final') return { ...plan, ineligible: `week_not_final (${lw.data.status})` }
+  // The door's last gate (222): when the week's scores were last computed — 216's close stamp, else its finalization.
+  const lastScored = lw.data.scored_at ?? lw.data.finalized_at
+  if (landedAt !== undefined && lastScored !== null && Date.parse(lastScored) > Date.parse(landedAt)) {
+    return { ...plan, ineligible: `week_scored_after_fix (last scored ${lastScored}, after the fix landed ${landedAt}: scored with it already)` }
+  }
   let rules: ScoringRulesDoc
   try {
     rules = weekScoringRules(lw.data, league.scoring_rules_snapshot)
@@ -444,9 +463,14 @@ export function doorTeams(plan: WeekFixPlan): Json {
   })) as unknown as Json
 }
 
-/** Rows the door should write: our moved rows, on teams it writes. */
+/**
+ * Rows the door should write: every row our fix moves, on every team — a
+ * commissioner-overridden one's too (his score stays; Chris 2026-11-06: "as
+ * long as all the players have the right stats and scores as a result, then
+ * the "team" scores do not matter.").
+ */
 export function plannedRowWrites(plan: WeekFixPlan): number {
-  return plan.teams.filter((t) => t.writable).reduce((n, t) => n + t.changed.length, 0)
+  return plan.teams.reduce((n, t) => n + t.changed.length, 0)
 }
 
 /**
@@ -459,10 +483,10 @@ export function plannedRowWrites(plan: WeekFixPlan): number {
  */
 export async function fixLeagueWeek(
   db: ScoreWorkerClient,
-  target: { fixId: string | null; leagueId: string; week: number; lines: readonly StatFixLine[] },
+  target: { fixId: string | null; leagueId: string; week: number; lines: readonly StatFixLine[]; landedAt?: string },
   apply: boolean,
 ): Promise<WeekFixOutcome> {
-  const plan = await planLeagueWeekFix(db, target.leagueId, target.week, target.lines)
+  const plan = await planLeagueWeekFix(db, target.leagueId, target.week, target.lines, target.landedAt)
   const out: WeekFixOutcome = { plan, verdict: 'ineligible', doc: null, refusal: plan.ineligible, problems: [] }
   if (plan.ineligible !== null) return out
   if (plan.problems.length > 0) return { ...out, verdict: 'refused', refusal: plan.problems.join('; '), problems: plan.problems }

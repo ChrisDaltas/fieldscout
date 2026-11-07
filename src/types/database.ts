@@ -7188,10 +7188,11 @@ export type Database = {
       }
       record_stat_fix: {
         Args: {
-          p_landed_at?: string
+          p_landed_at: string
           p_lines: Json
           p_reason: string
           p_season: number
+          p_supersedes?: string
         }
         Returns: string
       }

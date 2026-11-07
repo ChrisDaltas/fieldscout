@@ -25,15 +25,16 @@
 --       idempotently.
 --   §D  stat_fix_targets: every state by name (applied, owed, league_archived,
 --       league_not_in_season, bracket_built, week_not_final,
---       week_finalized_after_fix); an unwritten fix targets nothing.
+--       week_scored_after_fix); an unwritten fix targets nothing.
 --   §E  the door's refusals, by name, and nothing written by any of them:
 --       unwritten fix, a week the fix doesn't move, not in season, bracket,
---       week not final, finalized after the fix landed, batch incomplete,
+--       week not final, last scored after the fix landed, batch incomplete,
 --       lineup = the STORED rows (slot_map disagrees on purpose), plan_stale,
 --       rows_drift, shape (no `stored`; an apply with no fix).
 --   §F  the dry run: the apply's own document, NOTHING persists.
 --   §G  the apply: score + E38 result in one statement (the flip), the
---       overridden matchup and its team's rows kept, the rows `stat_fix`
+--       overridden matchup's score kept and ITS TEAM'S PLAYERS moved by the
+--       fix all the same (Chris 2026-11-06), the rows `stat_fix`
 --       (stored + the change), Σ rows = score, results + median rebuilt (a
 --       median flips for a team the fix never touched), ONE receipt — and
 --       QUIET: no commissioner_actions row, no league_chat post, no
@@ -48,6 +49,12 @@
 --   §J  total_points: the results row re-scored, rows stored.
 --   §K  append-only: every edit refused by name; an unapplied fix may be
 --       withdrawn (its lines go with it), an applied one may not.
+--   §L  round-5 fixes: the landing is required; ONE MOVE, PAID ONCE (a move a
+--       written fix holds is refused by record_stat_fix and, under its lock,
+--       by mark_stat_fix_written); p_supersedes (the fill finishing a run that
+--       failed); week_scored_after_fix reads the CLOSE STAMP, not
+--       finalization — a week closed before an engine fix landed and
+--       finalized after it is owed.
 -- ============================================================================
 
 begin;
@@ -55,7 +62,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(91);
+select plan(103);
 
 -- 222's hunk and words reversed — the D137 pin (161's file text byte for byte).
 create function pg_temp.un222(p_src text) returns text language sql as $un$
@@ -89,7 +96,8 @@ create function pg_temp.sf_digest() returns text language sql as $dg$
 $dg$;
 
 -- The week-1 batch of league A: every team, every STORED row, stored + the fix
--- (the pass computes it — T1's kicker +7.00, T4's quarterback +5.00).
+-- (the pass computes it — T1's kicker +7.00, T4's quarterback +5.00: T4's
+-- score is the commissioner's and stays, its quarterback's row moves).
 create function pg_temp.batch_a() returns jsonb language sql as $b$
   select '[
     {"team_id": "c9720000-0000-4000-8000-000000000001", "points": 102, "players": [
@@ -341,10 +349,10 @@ select is(
    from public.stat_fix_targets(false, 1, array['b9720000-0000-4000-8000-00000000000a', 'b9720000-0000-4000-8000-00000000000b',
         'b9720000-0000-4000-8000-00000000000c', 'b9720000-0000-4000-8000-00000000000d', 'b9720000-0000-4000-8000-00000000000e']::uuid[]) t
    where t.fix_id = current_setting('pgtap.f1')::uuid),
-  'b9720000-0000-4000-8000-00000000000a:1:owed b9720000-0000-4000-8000-00000000000a:2:week_finalized_after_fix b9720000-0000-4000-8000-00000000000a:3:week_not_final '
+  'b9720000-0000-4000-8000-00000000000a:1:owed b9720000-0000-4000-8000-00000000000a:2:week_scored_after_fix b9720000-0000-4000-8000-00000000000a:3:week_not_final '
   'b9720000-0000-4000-8000-00000000000b:1:league_not_in_season b9720000-0000-4000-8000-00000000000c:1:bracket_built '
   'b9720000-0000-4000-8000-00000000000d:1:owed b9720000-0000-4000-8000-00000000000e:1:league_archived',
-  'D1 every (fix, league, week) and its state, by name — only an in-season, unbracketed league''s week, final BEFORE the fix landed, is owed');
+  'D1 every (fix, league, week) and its state, by name — only an in-season, unbracketed league''s week, final and last scored BEFORE the fix landed, is owed');
 select is(
   (select count(*)::int from public.stat_fix_targets(false, 1, array['b9720000-0000-4000-8000-00000000000a']::uuid[]) t where t.fix_id = current_setting('pgtap.f0')::uuid),
   0, 'D2 an UNWRITTEN fix targets nothing');
@@ -375,8 +383,8 @@ select throws_ok(format($$ select pg_temp.fix(%L, 'b9720000-0000-4000-8000-00000
   'P0001', 'apply_stat_fix_week: week_not_final — league b9720000-0000-4000-8000-00000000000a week 3 is correction_window; an open week is the score worker''s',
   'E6 a week still open is the worker''s');
 select throws_ok(format($$ select pg_temp.fix(%L, 'b9720000-0000-4000-8000-00000000000a', 2, pg_temp.batch_a(), false) $$, current_setting('pgtap.f1')),
-  'P0001', format('apply_stat_fix_week: week_finalized_after_fix — league b9720000-0000-4000-8000-00000000000a week 2 was finalized 2097-10-05 12:00:00+00, after stat fix %s landed (2097-10-01 12:00:00+00): it was scored with the fix already', current_setting('pgtap.f1')),
-  'E7 a week finalized AFTER the fix landed was scored with it already — never paid twice');
+  'P0001', format('apply_stat_fix_week: week_scored_after_fix — league b9720000-0000-4000-8000-00000000000a week 2 was last scored 2097-10-05 12:00:00+00, after stat fix %s landed (2097-10-01 12:00:00+00): it was scored with the fix already', current_setting('pgtap.f1')),
+  'E7 a week last scored AFTER the fix landed (no close stamp: a pre-216 week, so its finalization) was scored with it already — never paid twice');
 select throws_ok(format($$ select pg_temp.fix(%L, 'b9720000-0000-4000-8000-00000000000a', 1, (select jsonb_agg(e) from jsonb_array_elements(pg_temp.batch_a()) e where e ->> 'team_id' <> 'c9720000-0000-4000-8000-000000000004'), false) $$, current_setting('pgtap.f1')),
   'P0001', 'apply_stat_fix_week: batch_incomplete — league b9720000-0000-4000-8000-00000000000a week 1 has 1 team(s) the batch does not name ({c9720000-0000-4000-8000-000000000004}); a week is fixed whole or not at all',
   'E8 a PARTIAL week is refused by name');
@@ -411,7 +419,7 @@ select is(
   (current_setting('pgtap.d')::jsonb ->> 'dry_run') || ' ' || (current_setting('pgtap.d')::jsonb ->> 'no_changes') || ' '
   || coalesce(current_setting('pgtap.d')::jsonb ->> 'receipt_id', 'null') || ' ' || (current_setting('pgtap.d')::jsonb ->> 'scores_changed')
   || ' ' || (current_setting('pgtap.d')::jsonb ->> 'players_changed'),
-  'true false null 1 1', 'F1 the dry run: one team score, one player row — NO receipt handed out');
+  'true false null 1 2', 'F1 the dry run: one team score, two player rows (the overridden team''s quarterback too) — NO receipt handed out');
 select is((select jsonb_agg(f ->> 'matchup_id') from jsonb_array_elements(current_setting('pgtap.d')::jsonb -> 'flips') f),
   '["d9720000-0000-4000-8000-000000000011"]'::jsonb, 'F2 …it names the ONE result that flips (One v Two)');
 select is(current_setting('pgtap.d')::jsonb ->> 'median_score_after', '98.50', 'F3 …and the median it WOULD store');
@@ -419,7 +427,7 @@ select is(pg_temp.sf_digest(), current_setting('pgtap.g0'), 'F4 NOTHING persiste
 select is(coalesce(current_setting('fieldscout.stat_fix_rescore', true), ''), '', 'F5 …and the lock''s setting did not survive the rolled-back block');
 select set_config('pgtap.d0', pg_temp.try_fix(null, 'b9720000-0000-4000-8000-00000000000a', 1, pg_temp.batch_a(), true)::text, true);
 select is((current_setting('pgtap.d0')::jsonb ->> 'players_changed') || ' ' || (current_setting('pgtap.d0')::jsonb ->> 'scores_changed') || ' ' || coalesce(current_setting('pgtap.d0')::jsonb ->> 'fix_id', 'null'),
-  '1 1 null', 'F6 a dry run of lines not yet recorded (the CLI''s plan) plans the same week');
+  '2 1 null', 'F6 a dry run of lines not yet recorded (the CLI''s plan) plans the same week');
 select is(pg_temp.sf_digest(), current_setting('pgtap.g0'), 'F7 …and persists nothing either');
 
 -- ---------------------------------------------------------------------------
@@ -438,8 +446,8 @@ select is(
    from league_week_player_points p where p.league_id = 'b9720000-0000-4000-8000-00000000000a' and p.week = 1),
   'c9720000-0000-4000-8000-000000000001/k:0=47.00:stat_fix c9720000-0000-4000-8000-000000000001/qb:0=55.00:worker '
   'c9720000-0000-4000-8000-000000000002/k:0=40.00:worker c9720000-0000-4000-8000-000000000002/qb:0=61.00:worker '
-  'c9720000-0000-4000-8000-000000000003/qb:0=96.00:worker c9720000-0000-4000-8000-000000000004/qb:0=80.00:worker',
-  'G3 the ONE moved row is stored + the fix, marked stat_fix; every other row is as scored — the overridden team''s rows too (158''s rule), the slot_map''s k9 nowhere');
+  'c9720000-0000-4000-8000-000000000003/qb:0=96.00:worker c9720000-0000-4000-8000-000000000004/qb:0=85.00:stat_fix',
+  'G3 the moved rows are stored + the fix, marked stat_fix — the OVERRIDDEN team''s quarterback too (its score stays the commissioner''s, G2; Chris 2026-11-06: "as long as all the players have the right stats and scores"); every other row is as scored, the slot_map''s k9 nowhere');
 select is(
   (select sum(p.points)::text from league_week_player_points p where p.team_id = 'c9720000-0000-4000-8000-000000000001' and p.week = 1)
   || '=' || (select home_score::text from matchups where id = 'd9720000-0000-4000-8000-000000000011'),
@@ -454,7 +462,7 @@ select is(
 select is(
   (select r.fix_id::text || '|' || r.season || '|' || r.week || '|' || r.players_changed || '|' || r.scores_changed || '|' || (r.id::text = current_setting('pgtap.a')::jsonb ->> 'receipt_id')
    from stat_fix_rescores r where r.league_id = 'b9720000-0000-4000-8000-00000000000a'),
-  current_setting('pgtap.f1') || '|2097|1|1|1|true', 'G6 ONE system receipt: the fix, the league-week, what moved — no actor anywhere');
+  current_setting('pgtap.f1') || '|2097|1|2|1|true', 'G6 ONE system receipt: the fix, the league-week, what moved (two rows, one score) — no actor anywhere');
 select is(
   (select count(*) from commissioner_actions a where a.league_id = 'b9720000-0000-4000-8000-00000000000a')::text || ' '
   || (select count(*) from league_chat c where c.league_id = 'b9720000-0000-4000-8000-00000000000a')::text || ' '
@@ -494,7 +502,7 @@ select is(
   'true true 0/0', 'H5 a fix that moves nothing in the week writes its receipt even so (0 / 0) — done, never asked again');
 select is(
   (select string_agg(p.slot || '=' || p.points::text || ':' || p.source, ' ' order by p.team_id, p.slot) from league_week_player_points p where p.league_id = 'b9720000-0000-4000-8000-00000000000a' and p.week = 1),
-  'k:0=47.00:stat_fix qb:0=55.00:worker k:0=40.00:worker qb:0=61.00:worker qb:0=96.00:worker qb:0=80.00:worker', 'H6 …and no row moved');
+  'k:0=47.00:stat_fix qb:0=55.00:worker k:0=40.00:worker qb:0=61.00:worker qb:0=96.00:worker qb:0=85.00:stat_fix', 'H6 …and no row moved');
 
 -- ---------------------------------------------------------------------------
 -- I. THE LOCK — the exit is exactly THIS league-week's receipt + a stat_fix UPDATE
@@ -562,6 +570,54 @@ select throws_ok($$ truncate stat_fix_rescores $$, 'P0001', 'stat_fix_rescores i
 select lives_ok(format($$ delete from stat_fixes where id = %L $$, current_setting('pgtap.f0')),
   'K9 an UNAPPLIED fix may be withdrawn…');
 select is((select count(*)::int from stat_fix_lines where fix_id = current_setting('pgtap.f0')::uuid), 0, 'K10 …and its lines go with it (the cascade the guard lets through)');
+
+-- ---------------------------------------------------------------------------
+-- L. ROUND 5: THE LANDING, ONE MOVE PAID ONCE, SUPERSEDING, THE CLOSE STAMP
+-- ---------------------------------------------------------------------------
+select throws_ok($$ select public.record_stat_fix(2097, 'r', '[{"week": 1, "player_id": "pgtap-sfx-q2", "stat_key": "pass_tds", "before": 0, "after": 1}]', null) $$,
+  '22023', 'record_stat_fix: p_landed_at is required — when our change reached the stats (the fill run''s instant) or the engine (the deploy); a week last scored after it is not paid again, so it is never assumed',
+  'L1 the landing is REQUIRED — never assumed "now" (which pays every week finalized in between)');
+select throws_ok($$ select public.record_stat_fix(2097, 'again', '[{"week": 1, "player_id": "pgtap-sfx-k1", "stat_key": "fg_0_39", "before": 0, "after": 2}]', '2097-10-01T12:00:00Z') $$,
+  'P0001', format('record_stat_fix: already_recorded — week 1 player pgtap-sfx-k1 stat fg_0_39 from 0 is already a move of written stat fix %s (0 → 2); recorded again it would be paid twice', current_setting('pgtap.f1')),
+  'L2 a move a WRITTEN fix already holds is refused by name (a lost reply''s re-run, a backlog repeating a fill) — never paid twice');
+select throws_ok($$ select public.record_stat_fix(2097, 'overlap', '[{"week": 1, "player_id": "pgtap-sfx-k1", "stat_key": "fg_0_39", "before": 0, "after": 3}]', '2097-10-01T12:00:00Z') $$,
+  'P0001', format('record_stat_fix: already_recorded — week 1 player pgtap-sfx-k1 stat fg_0_39 from 0 is already a move of written stat fix %s (0 → 2); recorded again it would be paid twice', current_setting('pgtap.f1')),
+  'L3 …and so is an overlapping one from the same value (0 → 3 over a written 0 → 2 would pay 0 → 2 again)');
+select lives_ok($$ select public.record_stat_fix(2097, 'onwards', '[{"week": 1, "player_id": "pgtap-sfx-k1", "stat_key": "fg_0_39", "before": 2, "after": 3}]', '2097-10-02T12:00:00Z') $$,
+  'L4 a move ON from the written value (2 → 3) is not a repeat: recorded');
+select set_config('pgtap.fa', public.record_stat_fix(2097, 'lost reply', '[{"week": 1, "player_id": "pgtap-sfx-q2", "stat_key": "pass_tds", "before": 0, "after": 1}]', '2097-10-01T12:00:00Z')::text, true);
+select set_config('pgtap.fb', public.record_stat_fix(2097, 'lost reply, again', '[{"week": 1, "player_id": "pgtap-sfx-q2", "stat_key": "pass_tds", "before": 0, "after": 1}]', '2097-10-01T12:00:00Z')::text, true);
+select is((public.mark_stat_fix_written(current_setting('pgtap.fa')::uuid) ->> 'already_written'), 'false',
+  'L5 two UNWRITTEN fixes may hold one move (nothing applies from either); the first is written');
+select throws_ok(format($$ select public.mark_stat_fix_written(%L) $$, current_setting('pgtap.fb')),
+  'P0001', format('mark_stat_fix_written: already_recorded — stat fix %s moves week 1 player pgtap-sfx-q2 stat pass_tds from 0, which written stat fix %s already moves (0 → 1); written too it would be paid twice', current_setting('pgtap.fb'), current_setting('pgtap.fa')),
+  'L6 …the second can NEVER be written: the gate itself, under its lock');
+select set_config('pgtap.fc', public.record_stat_fix(2097, 'a fill whose write failed', '[{"week": 1, "player_id": "pgtap-sfx-q3", "stat_key": "rush_yards", "before": 0, "after": 10}]', '2097-10-01T12:00:00Z')::text, true);
+select set_config('pgtap.fd', public.record_stat_fix(2097, 'its re-run', '[{"week": 1, "player_id": "pgtap-sfx-q3", "stat_key": "rush_yards", "before": 0, "after": 10}, {"week": 1, "player_id": "pgtap-sfx-q3", "stat_key": "rush_tds", "before": 0, "after": 1}]', '2097-10-01T12:00:00Z', current_setting('pgtap.fc')::uuid)::text, true);
+select is(
+  (select count(*) from stat_fixes where id = current_setting('pgtap.fc')::uuid)::text || ' '
+  || (select count(*) from stat_fix_lines where fix_id = current_setting('pgtap.fc')::uuid)::text || ' '
+  || (select string_agg(l.stat_key || ':' || l.before_value || '→' || l.after_value, ',' order by l.stat_key) from stat_fix_lines l where l.fix_id = current_setting('pgtap.fd')::uuid),
+  '0 0 rush_tds:0→1,rush_yards:0→10', 'L7 p_supersedes: the new fix holds every move and the unwritten one it replaces is withdrawn in the SAME transaction (its lines with it)');
+select throws_ok(format($$ select public.record_stat_fix(2097, 'r', '[{"week": 1, "player_id": "pgtap-sfx-q3", "stat_key": "pass_tds", "before": 0, "after": 1}]', '2097-10-01T12:00:00Z', %L) $$, current_setting('pgtap.fa')),
+  'P0001', format('record_stat_fix: stat fix %s can''t be superseded — only an unwritten fix of season 2097 can (it is written for season 2097)', current_setting('pgtap.fa')),
+  'L8 a WRITTEN fix is never superseded');
+select throws_ok($$ select public.record_stat_fix(2097, 'r', '[{"week": 1, "player_id": "pgtap-sfx-q3", "stat_key": "pass_tds", "before": 0, "after": 1}]', '2097-10-01T12:00:00Z', 'f9720000-0000-4000-8000-0000000000fe') $$,
+  'P0002', 'record_stat_fix: stat fix f9720000-0000-4000-8000-0000000000fe (to supersede) not found', 'L9 …nor an unknown one');
+savepoint l10;
+-- An ENGINE fix's week: closed (216's stamp) before the fix landed, finalized after it — no line moved, so never re-scored with it.
+update league_weeks set scored_at = '2097-09-23T00:15:00Z' where league_id = 'b9720000-0000-4000-8000-00000000000a' and week = 2;
+select is(
+  (select t.state from public.stat_fix_targets(false, 1, array['b9720000-0000-4000-8000-00000000000a']::uuid[]) t where t.fix_id = current_setting('pgtap.f1')::uuid and t.week = 2),
+  'owed', 'L10 a week CLOSED before the fix landed and finalized after it is OWED — finalization alone never says it was scored with an engine fix');
+update league_weeks set scored_at = '2097-10-03T00:15:00Z' where league_id = 'b9720000-0000-4000-8000-00000000000a' and week = 2;
+select is(
+  (select t.state from public.stat_fix_targets(false, 1, array['b9720000-0000-4000-8000-00000000000a']::uuid[]) t where t.fix_id = current_setting('pgtap.f1')::uuid and t.week = 2),
+  'week_scored_after_fix', 'L11 …and one whose close stamp is after the landing was scored with it: not owed');
+select throws_ok(format($$ select pg_temp.fix(%L, 'b9720000-0000-4000-8000-00000000000a', 2, pg_temp.batch_a(), false) $$, current_setting('pgtap.f1')),
+  'P0001', format('apply_stat_fix_week: week_scored_after_fix — league b9720000-0000-4000-8000-00000000000a week 2 was last scored 2097-10-03 00:15:00+00, after stat fix %s landed (2097-10-01 12:00:00+00): it was scored with the fix already', current_setting('pgtap.f1')),
+  'L12 the door reads the same instant, by name');
+rollback to savepoint l10;
 
 select * from finish();
 rollback;

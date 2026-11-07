@@ -325,6 +325,12 @@ describe('the box score’s points note (F477)', () => {
     expect(BOX_FINAL_STORED_COPY.split(/[.!?](\s|$)/).filter((x) => x && x.trim()).length).toBe(1)
   })
 
+  it('round 5 (222): the copy never says a final week can’t move — it is the OFFICIAL (provider’s) fix that doesn’t move it; a stat fix of our own does, quietly', () => {
+    expect(ops.CORRECTIONS_INTRO_COPY).not.toMatch(/never change/)
+    expect(ops.CORRECTIONS_INTRO_COPY).toBe(`Official stat fixes that changed a score in this league. ${STAT_FIX_RULE_COPY} — after that, an official stat fix doesn’t change a week’s scores.`)
+    expect(BOX_FINAL_STORED_COPY).toBe('Final points as scored — an official stat fix after the week was final changes the stat line only.')
+  })
+
   it('a live week, and a week still in its window (a fix there re-scores), say nothing', () => {
     expect(boxPointsNote({ points_source: 'live', stored_note: null }, 'live')).toBeNull()
     expect(boxPointsNote({ points_source: 'stored', stored_note: null }, 'correction_window')).toBeNull()

@@ -20,7 +20,8 @@
  *        archived.
  *   SF1  the CLI's plan (read-only, the door's own dry run): A would move One's
  *        kicker 3.00 → 6.00 (+3.00) and its score 13.00 → 16.00; B is named
- *        not eligible (archived); NOTHING is written or recorded.
+ *        not eligible (archived); NOTHING is written or recorded. Given a
+ *        landing before A's close stamp, A's week is named scored after it.
  *   SF2  THE PASS applies A: the kicker's row is stored + 3 (stat_fix), Two's
  *        receiver keeps what was scored (the provider's correction is NOT
  *        paid), each score is Σ its rows, the result flips with the score
@@ -28,7 +29,7 @@
  *        commissioner-log row, no league post, no notification. One receipt.
  *   SF3  a second pass is a no-op: nothing owed, nothing written.
  *   SF4  the archived league was skipped and is STILL OWED: restored, the next
- *        pass applies it the same way.
+ *        pass applies it the same way; `status` (paged) reads applied 2, owed 0.
  *   SF5  the provider's own path is unchanged: a queued delta on the final
  *        week is consumed `week_final` and moves nothing (F405 / Q81).
  *
@@ -337,6 +338,21 @@ describe('222 — our own stat fix re-scores final weeks, automatically and quie
     expect(await storedRows(L.A)).toBe('One/k:0=3.00:worker One/wr:0=10.00:worker Two/k:0=2.00:worker Two/wr:0=12.50:worker')
     expect(await receipts(L.A)).toBe(0)
     expect((await must(service.from('stat_fixes').select('id').eq('season', SEASON), 'fixes'))!.length).toBe(fixesBefore)
+
+    // Round 5: given a landing BEFORE the week's close stamp (week 2's kickoff), the plan names A's week the way the
+    // door will — scored after the fix landed, so scored with it already (216's stamp, read off the real row).
+    const early: string[] = []
+    const earlyCode = await runStatFixCli(['plan', '--file', 'lines.json', '--landed-at', '2075-09-18T00:00:00Z'], {
+      supabaseUrl: LOCAL_URL,
+      connect: () => ({ db: service, time: clock }),
+      readFile: () => JSON.stringify({ season: SEASON, lines: [{ week: 1, player_id: K1, stat_key: 'fg_0_39', before: 0, after: 1 }] }),
+      log: (line) => early.push(line),
+      error: (line) => early.push(line),
+    })
+    expect(earlyCode).toBe(0)
+    expect(early.find((l) => l.startsWith(`league ${PREFIX}-A `))).toMatch(
+      new RegExp(`^league ${PREFIX}-A \\(${L.A.leagueId}\\) week 1: not eligible — week_scored_after_fix \\(last scored 2075-09-19T00:15:00\\+00:00, after the fix landed 2075-09-18T00:00:00Z`),
+    )
   })
 
   it('SF2 THE PASS: stored + exactly our fix (the provider’s correction NOT paid), Σ rows = score, the result flips with it, results rebuilt — and QUIET', async () => {
@@ -371,6 +387,18 @@ describe('222 — our own stat fix re-scores final weeks, automatically and quie
     expect(await rowsAreTheScore(L.B)).toBe(true)
     expect(await noise(L.B)).toBe(quietB)
     expect(await states()).toBe('A:1:applied B:1:applied')
+
+    // Round 5: `status` pages the targets through the REAL PostgREST (an exact count, ordered on the row's key).
+    const out: string[] = []
+    const code = await runStatFixCli(['status'], {
+      supabaseUrl: LOCAL_URL,
+      connect: () => ({ db: service, time: clock }),
+      readFile: () => '',
+      log: (line) => out.push(line),
+      error: (line) => out.push(line),
+    })
+    expect(code).toBe(0)
+    expect(out.find((l) => l.startsWith(`fix ${fixId} `))).toMatch(/: applied 2, owed 0, not eligible 0$/)
   })
 
   it('SF5 the provider’s own path is unchanged: a queued delta on the final week is consumed week_final and moves nothing (F405 / Q81)', async () => {

@@ -72,11 +72,32 @@
 -- ELIGIBLE (each one checked again by the door, by name): the league is not
 -- archived, is `in_season`, its season is the fix's, no playoff row exists
 -- (`bracket_built` — a bracket was seeded from standings this would move),
--- the week is `final`, and it was finalized at or before the fix LANDED
--- (`week_finalized_after_fix` — a week that closed after our change was
--- scored with it already; paying it again would pay it twice). An ineligible
--- league-week gets no receipt, so it is still owed if it ever becomes
--- eligible (a restored league).
+-- the week is `final`, and its scores were last computed at or before the
+-- fix LANDED (`week_scored_after_fix` — a week whose every team was scored
+-- after our change was scored with it already; paying it again would pay it
+-- twice). "Last computed" is 216's close stamp (`league_weeks.scored_at`: the
+-- close pass recomputes every team, and finalization holds a week whose lines
+-- moved after it), else the week's `finalized_at` (a week closed before 216
+-- kept no stamp). Never `finalized_at` alone: an ENGINE fix moves no line and
+-- no digest, so a week closed under the old engine and finalized after the
+-- deploy was never re-scored with it — it is owed. An ineligible league-week
+-- gets no receipt, so it is still owed if it ever becomes eligible (a
+-- restored league).
+--
+-- EVERY STARTED PLAYER'S ROW MOVES, a commissioner-overridden team's too
+-- (Chris 2026-11-06: "as long as all the players have the right stats and
+-- scores as a result, then the "team" scores do not matter."): the door
+-- keeps the commissioner's SCORE (§22.2) and moves the team's rows by our
+-- change — those rows already don't add up to an overridden score (158), and
+-- the box score says so.
+--
+-- ONE MOVE, PAID ONCE: a line of a WRITTEN fix — (season, week, player,
+-- stat) from the same before value — is never recorded or written again by
+-- another fix (`already_recorded`, in record_stat_fix and again, under a
+-- lock, in mark_stat_fix_written): a lost reply or a re-run can't pay our
+-- change twice. A fix recorded and never written applies nowhere; the fill
+-- that recorded it finishes it on its re-run (`p_supersedes`: one new fix
+-- holding every move, landed or not, in its place, in one transaction).
 --
 -- Numbering: migration 222 (223 spare) and pgTAP 171–172 reserved by the
 -- orchestrator; production head 221. NOT held: reaches production by
@@ -91,10 +112,12 @@
 --   restated), four new DEFINER functions (in-body JWT refusal, search_path
 --   '', REVOKEd from PUBLIC / anon / authenticated; the service role keeps
 --   EXECUTE). Time: no clock is read for a scoring decision — `now()` only as
---   a write stamp (119 / 158 / 161's precedent) and as record_stat_fix's
---   default landing instant (the fill passes its injected instant). Lock
---   order: the league row FOR UPDATE before any write (rule 8); the rebuild
---   takes the league and the week row after it (126's order). Typegen: the
+--   a write stamp (119 / 158 / 161's precedent); record_stat_fix's landing
+--   instant is the caller's and required (the fill passes its injected
+--   instant). Lock order: the league row FOR UPDATE before any write (rule
+--   8); the rebuild takes the league and the week row after it (126's order);
+--   mark_stat_fix_written serializes on one transaction-scoped advisory lock
+--   (the paid-once check). Typegen: the
 --   tables and the functions (additive; alias block kept). Realtime: none
 --   new — the matchups / team_week_results UPDATEs fire 119's broadcasts, so
 --   open boxes and standings refetch; no post, no notification. WAIVERS: R6 —
@@ -120,7 +143,7 @@ CREATE TABLE IF NOT EXISTS stat_fixes (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   season     INTEGER NOT NULL CHECK (season BETWEEN 2000 AND 2100),
   reason     TEXT NOT NULL CHECK (btrim(reason) <> '' AND char_length(reason) <= 500),
-  landed_at  TIMESTAMPTZ NOT NULL,              -- when OUR change reached the stats (or the engine): a week finalized after it was already scored with it
+  landed_at  TIMESTAMPTZ NOT NULL,              -- when OUR change reached the stats (or the engine): a week last scored after it was scored with it
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   written_at TIMESTAMPTZ,                       -- NULL = recorded, not yet confirmed written; only a written fix is ever applied
   CHECK (written_at IS NULL OR written_at >= created_at)
@@ -392,8 +415,9 @@ REVOKE EXECUTE ON FUNCTION league_week_player_points_lock() FROM PUBLIC, anon, a
 CREATE OR REPLACE FUNCTION record_stat_fix(
   p_season    INTEGER,
   p_reason    TEXT,         -- plain words: what we fixed and why (≤ 500)
-  p_lines     JSONB,        -- [{week, player_id, stat_key, before, after}] — every moved value
-  p_landed_at TIMESTAMPTZ DEFAULT NULL   -- when the change reached the stats (the fill: its own instant); NULL = now
+  p_lines      JSONB,       -- [{week, player_id, stat_key, before, after}] — every moved value
+  p_landed_at  TIMESTAMPTZ, -- REQUIRED: when the change reached the stats (the fill: its own instant) or the engine (the deploy) — never assumed
+  p_supersedes UUID DEFAULT NULL   -- an earlier fix of ours recorded and never written, withdrawn in this same transaction (the fill's re-run finishing it)
 ) RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -401,7 +425,6 @@ SET search_path = ''
 AS $$
 DECLARE
   v_reason  TEXT;
-  v_landed  TIMESTAMPTZ;
   v_e       JSONB;
   v_i       INTEGER := 0;
   v_week    INTEGER;
@@ -409,6 +432,8 @@ DECLARE
   v_key     TEXT;
   v_keys    TEXT[];
   v_seen    TEXT[] := '{}';
+  v_dup     RECORD;
+  v_old     public.stat_fixes;
   v_fix_id  UUID;
 BEGIN
   IF auth.uid() IS NOT NULL THEN
@@ -424,9 +449,6 @@ BEGIN
     RAISE EXCEPTION 'record_stat_fix: the reason (plain words — what we fixed and why) is required and at most 500 characters (got %)', COALESCE(char_length(v_reason), 0)
       USING ERRCODE = '22023';
   END IF;
-  -- The landing instant is the caller's (the fill passes its injected instant,
-  -- the instant its writes are stamped with); NULL is now.
-  v_landed := COALESCE(p_landed_at, now());
   IF p_lines IS NULL OR jsonb_typeof(p_lines) <> 'array' OR jsonb_array_length(p_lines) = 0 THEN
     RAISE EXCEPTION 'record_stat_fix: p_lines must be a non-empty JSON array of {week, player_id, stat_key, before, after}'
       USING ERRCODE = '22023';
@@ -482,8 +504,54 @@ BEGIN
     v_seen := v_seen || (v_week || '|' || v_player || '|' || v_key);
   END LOOP;
 
+  -- The landing instant is the caller's, and required: it decides which weeks
+  -- were already scored with our change (stat_fix_targets' week_scored_after_fix),
+  -- so "now" is never assumed for it (the fill passes its injected instant, the
+  -- instant its writes are stamped with).
+  IF p_landed_at IS NULL THEN
+    RAISE EXCEPTION 'record_stat_fix: p_landed_at is required — when our change reached the stats (the fill run''s instant) or the engine (the deploy); a week last scored after it is not paid again, so it is never assumed'
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- ONE MOVE, PAID ONCE: a move a WRITTEN fix already holds — the same week,
+  -- player and stat from the same before value — is that fix's. Recorded again
+  -- (a re-run after a lost reply, a backlog that repeats a fill) the pass would
+  -- pay it twice. mark_stat_fix_written checks the same under its lock.
+  SELECT f.id AS fix_id, l.week, l.player_id, l.stat_key, l.before_value, l.after_value INTO v_dup
+  FROM jsonb_array_elements(p_lines) e
+  JOIN public.stat_fix_lines l
+    ON l.season = p_season AND l.week = (e ->> 'week')::integer AND l.player_id = btrim(e ->> 'player_id')
+   AND l.stat_key = e ->> 'stat_key' AND l.before_value = (e ->> 'before')::numeric
+  JOIN public.stat_fixes f ON f.id = l.fix_id AND f.written_at IS NOT NULL
+  ORDER BY f.created_at, l.week, l.player_id, l.stat_key
+  LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'record_stat_fix: already_recorded — week % player % stat % from % is already a move of written stat fix % (% → %); recorded again it would be paid twice', v_dup.week, v_dup.player_id, v_dup.stat_key, v_dup.before_value, v_dup.fix_id, v_dup.before_value, v_dup.after_value
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  -- p_supersedes: the fill's re-run finishing a fix an earlier run recorded and
+  -- never wrote (its write failed partway, or its checks did). The new fix holds
+  -- every move of both — the ones that landed then and the ones landing now —
+  -- and the old one is withdrawn HERE, in this transaction, so no move is ever
+  -- in two fixes and none is lost between them. Only a fix of this season that
+  -- was never written (so applied nowhere) can be superseded.
+  IF p_supersedes IS NOT NULL THEN
+    SELECT f.* INTO v_old FROM public.stat_fixes f WHERE f.id = p_supersedes FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'record_stat_fix: stat fix % (to supersede) not found', p_supersedes
+        USING ERRCODE = 'P0002';
+    END IF;
+    IF v_old.written_at IS NOT NULL OR v_old.season <> p_season THEN
+      RAISE EXCEPTION 'record_stat_fix: stat fix % can''t be superseded — only an unwritten fix of season % can (it is % for season %)', p_supersedes, p_season,
+        CASE WHEN v_old.written_at IS NULL THEN 'unwritten' ELSE 'written' END, v_old.season
+        USING ERRCODE = 'P0001';
+    END IF;
+    DELETE FROM public.stat_fixes WHERE id = p_supersedes;   -- its lines cascade (the guards' withdraw exit: applied nowhere)
+  END IF;
+
   INSERT INTO public.stat_fixes (season, reason, landed_at)
-  VALUES (p_season, v_reason, v_landed)
+  VALUES (p_season, v_reason, p_landed_at)
   RETURNING id INTO v_fix_id;
   INSERT INTO public.stat_fix_lines (fix_id, season, week, player_id, stat_key, before_value, after_value)
   SELECT v_fix_id, p_season, (e ->> 'week')::integer, btrim(e ->> 'player_id'), e ->> 'stat_key',
@@ -492,9 +560,9 @@ BEGIN
   RETURN v_fix_id;
 END;
 $$;
-REVOKE EXECUTE ON FUNCTION record_stat_fix(INTEGER, TEXT, JSONB, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
-COMMENT ON FUNCTION record_stat_fix(INTEGER, TEXT, JSONB, TIMESTAMPTZ) IS
-  'Migration 222 (D836): records a stat fix of our own — every moved value, before → after — and returns its id, NOT yet written (nothing is applied from it until mark_stat_fix_written). Each stat_key must be a numeric player_stats stat column, each player known, each line a real move. Service role only. Chris 2026-11-07, verbatim: "the stats need to be correct. that should be done automatically, we should not be doing this is as some live code change."';
+REVOKE EXECUTE ON FUNCTION record_stat_fix(INTEGER, TEXT, JSONB, TIMESTAMPTZ, UUID) FROM PUBLIC, anon, authenticated;
+COMMENT ON FUNCTION record_stat_fix(INTEGER, TEXT, JSONB, TIMESTAMPTZ, UUID) IS
+  'Migration 222 (D836): records a stat fix of our own — every moved value, before → after, and when it landed (required) — and returns its id, NOT yet written (nothing is applied from it until mark_stat_fix_written). Each stat_key must be a numeric player_stats stat column, each player known, each line a real move, and no line a move a WRITTEN fix already holds (already_recorded: paid once). p_supersedes withdraws an earlier unwritten fix in the same transaction (the fill finishing a run that failed). Service role only. Chris 2026-11-07, verbatim: "the stats need to be correct. that should be done automatically, we should not be doing this is as some live code change."';
 
 CREATE OR REPLACE FUNCTION mark_stat_fix_written(
   p_fix_id UUID
@@ -505,6 +573,7 @@ SET search_path = ''
 AS $$
 DECLARE
   v_fix public.stat_fixes;
+  v_dup RECORD;
 BEGIN
   IF auth.uid() IS NOT NULL THEN
     RAISE EXCEPTION 'mark_stat_fix_written: a stat fix is the platform''s (service role), never a signed-in user''s'
@@ -523,6 +592,23 @@ BEGIN
   IF v_fix.written_at IS NOT NULL THEN
     RETURN jsonb_build_object('fix_id', v_fix.id, 'written_at', v_fix.written_at, 'already_written', TRUE);
   END IF;
+  -- ONE MOVE, PAID ONCE — the gate itself (record_stat_fix's check is the early
+  -- word): no two WRITTEN fixes hold the same move. Serialized, so two fixes
+  -- holding one move can't both pass at once.
+  PERFORM pg_advisory_xact_lock(hashtextextended('fieldscout.stat_fix_written', 0));
+  SELECT o.id AS fix_id, l.week, l.player_id, l.stat_key, l.before_value, o_l.after_value INTO v_dup
+  FROM public.stat_fix_lines l
+  JOIN public.stat_fix_lines o_l
+    ON o_l.season = l.season AND o_l.week = l.week AND o_l.player_id = l.player_id
+   AND o_l.stat_key = l.stat_key AND o_l.before_value = l.before_value AND o_l.fix_id <> l.fix_id
+  JOIN public.stat_fixes o ON o.id = o_l.fix_id AND o.written_at IS NOT NULL
+  WHERE l.fix_id = p_fix_id
+  ORDER BY o.created_at, l.week, l.player_id, l.stat_key
+  LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'mark_stat_fix_written: already_recorded — stat fix % moves week % player % stat % from %, which written stat fix % already moves (% → %); written too it would be paid twice', p_fix_id, v_dup.week, v_dup.player_id, v_dup.stat_key, v_dup.before_value, v_dup.fix_id, v_dup.before_value, v_dup.after_value
+      USING ERRCODE = 'P0001';
+  END IF;
   UPDATE public.stat_fixes SET written_at = now() WHERE id = p_fix_id
   RETURNING * INTO v_fix;
   RETURN jsonb_build_object('fix_id', v_fix.id, 'written_at', v_fix.written_at, 'already_written', FALSE);
@@ -530,7 +616,7 @@ END;
 $$;
 REVOKE EXECUTE ON FUNCTION mark_stat_fix_written(UUID) FROM PUBLIC, anon, authenticated;
 COMMENT ON FUNCTION mark_stat_fix_written(UUID) IS
-  'Migration 222 (D836): confirms a recorded stat fix WRITTEN — its stat change has landed and been checked (the fill calls it only after its after-write checks pass). From then on the score-week pass applies it to every eligible final league-week. Idempotent. Service role only.';
+  'Migration 222 (D836): confirms a recorded stat fix WRITTEN — its stat change has landed and been checked (the fill calls it only after its after-write checks pass). From then on the score-week pass applies it to every eligible final league-week. Refused (already_recorded) when another written fix already holds one of its moves — the same week, player and stat from the same before value — so a move is paid once. Idempotent. Service role only.';
 
 CREATE OR REPLACE FUNCTION stat_fix_targets(
   p_owed_only  BOOLEAN DEFAULT TRUE,
@@ -559,9 +645,13 @@ BEGIN
 
   -- Every WRITTEN fix × every league of its season holding one of its weeks.
   -- state: applied (a receipt exists) · league_archived · league_not_in_season
-  -- · bracket_built · week_not_final · week_finalized_after_fix · owed. An
+  -- · bracket_built · week_not_final · week_scored_after_fix · owed. An
   -- ineligible league-week has no receipt, so it is still owed if it ever
-  -- becomes eligible (a restored league).
+  -- becomes eligible (a restored league). week_scored_after_fix reads when the
+  -- week's scores were LAST COMPUTED — 216's close stamp, else (a week closed
+  -- before 216) its finalization — never finalization alone: an engine fix
+  -- moves no digest, so a week closed before the deploy and finalized after it
+  -- still holds the old engine's points, and is owed.
   RETURN QUERY
     WITH fw AS (
       SELECT DISTINCT f.id AS fid, f.season AS sn, ln.week AS wk, f.landed_at, f.created_at
@@ -578,7 +668,7 @@ BEGIN
                                WHERE m.league_id = lg.id AND m.season = lg.season
                                  AND m.round_type IN ('playoff', 'consolation', 'third_place')) THEN 'bracket_built'
                   WHEN lw.status <> 'final' THEN 'week_not_final'
-                  WHEN lw.finalized_at > fw.landed_at THEN 'week_finalized_after_fix'
+                  WHEN COALESCE(lw.scored_at, lw.finalized_at) > fw.landed_at THEN 'week_scored_after_fix'
                   ELSE 'owed' END AS st
       FROM fw
       JOIN public.league_weeks lw ON lw.season = fw.sn AND lw.week = fw.wk
@@ -595,7 +685,7 @@ END;
 $$;
 REVOKE EXECUTE ON FUNCTION stat_fix_targets(BOOLEAN, INTEGER, UUID[]) FROM PUBLIC, anon, authenticated;
 COMMENT ON FUNCTION stat_fix_targets(BOOLEAN, INTEGER, UUID[]) IS
-  'Migration 222 (D836): every (written stat fix, league, week) and its state — applied, owed, or why not (league_archived, league_not_in_season, bracket_built, week_not_final, week_finalized_after_fix). p_owed_only: the owed ones only, in random order, at most p_limit (the score-week pass); else all of them (npm run stat-fix -- status). Platform-wide: Chris 2026-11-07, verbatim, "stat and scoring changes are all platform wide by the way, they are not gated to users or leagues." Service role only.';
+  'Migration 222 (D836): every (written stat fix, league, week) and its state — applied, owed, or why not (league_archived, league_not_in_season, bracket_built, week_not_final, week_scored_after_fix: its scores were last computed — 216''s close stamp, else its finalization — after the fix landed). p_owed_only: the owed ones only, in random order, at most p_limit (the score-week pass); else all of them (npm run stat-fix -- status). Platform-wide: Chris 2026-11-07, verbatim, "stat and scoring changes are all platform wide by the way, they are not gated to users or leagues." Service role only.';
 
 -- ---------------------------------------------------------------------------
 -- 5. apply_stat_fix_week — THE DOOR
@@ -632,8 +722,8 @@ DECLARE
   v_plan         JSONB := '[]'::jsonb;   -- h2h: every NON-overridden row, before → after; total_points: every results row
   v_overridden   JSONB := '[]'::jsonb;   -- the commissioner's numbers, kept
   v_cells        INTEGER := 0;           -- cells (rows) the plan changes
-  v_pp_write     UUID[] := '{}';         -- teams whose per-player rows this door writes (158's rule)
-  v_want         JSONB := '[]'::jsonb;   -- the rows of those teams that change
+  v_cell_teams   UUID[] := '{}';         -- teams whose SCORE this door writes (≥ 1 non-overridden cell): the drift check's set
+  v_want         JSONB := '[]'::jsonb;   -- the rows that change — every team's, an overridden one's too (Chris 2026-11-06)
   v_pp_update    INTEGER := 0;
   v_team_lines   JSONB := '[]'::jsonb;   -- per team: stored cells → recomputed
   v_scores_moved INTEGER := 0;
@@ -771,8 +861,12 @@ BEGIN
     RAISE EXCEPTION 'apply_stat_fix_week: week_not_final — league % week % is %; an open week is the score worker''s', p_league_id, p_week, v_lw.status
       USING ERRCODE = 'P0001';
   END IF;
-  IF p_fix_id IS NOT NULL AND v_lw.finalized_at > v_fix.landed_at THEN
-    RAISE EXCEPTION 'apply_stat_fix_week: week_finalized_after_fix — league % week % was finalized %, after stat fix % landed (%): it was scored with the fix already', p_league_id, p_week, v_lw.finalized_at, p_fix_id, v_fix.landed_at
+  -- When the week's scores were LAST COMPUTED (216's close stamp; a week closed
+  -- before 216 kept none, so its finalization) — never finalized_at alone: an
+  -- engine fix moves no line, so a week closed under the old engine and
+  -- finalized after the deploy was never re-scored with it.
+  IF p_fix_id IS NOT NULL AND COALESCE(v_lw.scored_at, v_lw.finalized_at) > v_fix.landed_at THEN
+    RAISE EXCEPTION 'apply_stat_fix_week: week_scored_after_fix — league % week % was last scored %, after stat fix % landed (%): it was scored with the fix already', p_league_id, p_week, COALESCE(v_lw.scored_at, v_lw.finalized_at), p_fix_id, v_fix.landed_at
       USING ERRCODE = 'P0001';
   END IF;
   v_mode := COALESCE(COALESCE(v_league.settings, '{}'::jsonb) ->> 'schedule_mode', 'h2h');
@@ -846,7 +940,7 @@ BEGIN
     JOIN jsonb_array_elements(p_teams) b(e) ON (b.e ->> 'team_id')::uuid = r.team_id
     WHERE r.league_id = p_league_id AND r.season = v_league.season AND r.week = p_week;
     SELECT count(*) INTO v_cells FROM jsonb_array_elements(v_plan) p WHERE (p ->> 'changed')::boolean;
-    v_pp_write := v_team_ids;
+    v_cell_teams := v_team_ids;
   ELSE
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
              'matchup_id', m.id, 'round_type', m.round_type,
@@ -880,16 +974,19 @@ BEGIN
     WHERE m.league_id = p_league_id AND m.season = v_league.season AND m.week = p_week
       AND m.is_overridden;
 
-    -- 158's rule: a team's rows follow a score this door may write (≥ 1 non-overridden cell).
-    SELECT COALESCE(array_agg(t.id), '{}') INTO v_pp_write
+    -- The teams whose score this door writes: ≥ 1 non-overridden cell. (Their
+    -- ROWS are not limited to these — below: every started player's row moves.)
+    SELECT COALESCE(array_agg(t.id), '{}') INTO v_cell_teams
     FROM unnest(v_team_ids) t(id)
     WHERE EXISTS (SELECT 1 FROM public.matchups m
                   WHERE m.league_id = p_league_id AND m.season = v_league.season AND m.week = p_week
                     AND (m.home_team_id = t.id OR m.away_team_id = t.id) AND NOT m.is_overridden);
   END IF;
 
-  -- DRIFT — a team this door writes must store a score its rows add up to (the
-  -- rows ARE the score, F405), so stored + our change is the whole story. A team
+  -- DRIFT — a team whose SCORE this door writes must store a score its rows add
+  -- up to (the rows ARE the score, F405), so stored + our change is the whole
+  -- story. (An overridden team's score is the commissioner's, never written, so
+  -- it is not asked to add up — 158.) A team
   -- whose rows do not (a backfill_unrecoverable week, a pre-158 week never
   -- backfilled) is refused by name — never "fixed" silently.
   SELECT COALESCE(jsonb_agg(jsonb_build_object('team_id', d.team_id, 'cell', d.cell, 'rows_sum', d.rows_sum) ORDER BY d.team_id), '[]'::jsonb)
@@ -898,7 +995,7 @@ BEGIN
     SELECT t.id AS team_id, c.cell,
            (SELECT COALESCE(sum(p.points), 0) FROM public.league_week_player_points p
             WHERE p.league_id = p_league_id AND p.season = v_league.season AND p.week = p_week AND p.team_id = t.id) AS rows_sum
-    FROM unnest(v_pp_write) t(id)
+    FROM unnest(v_cell_teams) t(id)
     CROSS JOIN LATERAL (
       SELECT r.points AS cell FROM public.team_week_results r
       WHERE v_mode = 'total_points' AND r.league_id = p_league_id AND r.season = v_league.season AND r.week = p_week AND r.team_id = t.id
@@ -936,8 +1033,14 @@ BEGIN
     ) c
   ) cells;
 
-  -- The rows that change: of a team this door writes, the stored row whose
-  -- points, pending or reason differ from the batch's.
+  -- The rows that change: every stored row whose points, pending or reason
+  -- differ from the batch's — a commissioner-overridden team's too. Chris
+  -- 2026-11-06, verbatim: "as long as all the players have the right stats and
+  -- scores as a result, then the "team" scores do not matter." The override is
+  -- the commissioner's SCORE, kept above (§22.2); his team's players still get
+  -- our change (their rows already don't add up to that score — 158 — and the
+  -- box score says so). The drift check above is for the scores this door
+  -- writes; the stale-plan check covers every row.
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
            'team_id', b ->> 'team_id', 'slot', x ->> 'slot', 'player_id', x ->> 'player_id',
            'stored', p.points, 'points', (x ->> 'points')::numeric, 'pending', x -> 'pending', 'reason', x ->> 'reason')
@@ -948,8 +1051,7 @@ BEGIN
   JOIN public.league_week_player_points p
     ON p.league_id = p_league_id AND p.season = v_league.season AND p.week = p_week
    AND p.team_id = (b ->> 'team_id')::uuid AND p.slot = x ->> 'slot'
-  WHERE (b ->> 'team_id')::uuid = ANY (v_pp_write)
-    AND (p.points, p.pending, p.reason)
+  WHERE (p.points, p.pending, p.reason)
         IS DISTINCT FROM ((x ->> 'points')::numeric, ARRAY(SELECT jsonb_array_elements_text(x -> 'pending')), x ->> 'reason');
   v_pp_update := jsonb_array_length(v_want);
 
@@ -1089,4 +1191,4 @@ END;
 $$;
 REVOKE EXECUTE ON FUNCTION apply_stat_fix_week(UUID, UUID, INTEGER, JSONB, BOOLEAN) FROM PUBLIC, anon, authenticated;
 COMMENT ON FUNCTION apply_stat_fix_week(UUID, UUID, INTEGER, JSONB, BOOLEAN) IS
-  'Migration 222 (PROGRESS D836; spec v2.16.118): writes ONE stat fix of our own into ONE final league-week, quietly — Chris 2026-11-07, verbatim: "just update the points as they should be so we can move on." and "fixing stats should not go to some user, i''m not following". The batch is every team of the week, each stored starter row at stored + exactly our change (computed by the score-week pass through the worker''s scorer under the week''s own rules); checked against the STORED rows (the lineup that was scored, the points the plan read, rows that add up to the score); the non-overridden scores written with their E38 result, the rows marked stat_fix, then the results math finalization calls (rebuild_team_week_results). One system receipt (stat_fix_rescores), written even when nothing changed; NO commissioner_actions row, NO league post, NO notification. Refused by name: an archived or not-in-season league, a built bracket, a week not final or finalized after the fix landed, an unwritten fix. Replays by receipt. Dry run (the default) = the apply rolled back. Service role only.';
+  'Migration 222 (PROGRESS D836; spec v2.16.118): writes ONE stat fix of our own into ONE final league-week, quietly — Chris 2026-11-07, verbatim: "just update the points as they should be so we can move on." and "fixing stats should not go to some user, i''m not following". The batch is every team of the week, each stored starter row at stored + exactly our change (computed by the score-week pass through the worker''s scorer under the week''s own rules); checked against the STORED rows (the lineup that was scored, the points the plan read, rows that add up to the score); the non-overridden scores written with their E38 result (a commissioner-overridden score kept), every changed row marked stat_fix (an overridden team''s players too: Chris 2026-11-06, verbatim, "as long as all the players have the right stats and scores as a result, then the "team" scores do not matter."), then the results math finalization calls (rebuild_team_week_results). One system receipt (stat_fix_rescores), written even when nothing changed; NO commissioner_actions row, NO league post, NO notification. Refused by name: an archived or not-in-season league, a built bracket, a week not final or last scored after the fix landed, an unwritten fix. Replays by receipt. Dry run (the default) = the apply rolled back. Service role only.';

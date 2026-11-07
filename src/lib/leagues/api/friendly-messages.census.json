@@ -850,17 +850,17 @@
   "text": "trade_lock: league % has no league_weeks rows — no season calendar to evaluate the game-day lock against"
  },
  {
-  "loc": "222_stat_fix_rescore.sql:315",
+  "loc": "222_stat_fix_rescore.sql:338",
   "fn": "league_week_player_points_lock",
   "text": "league_week_player_points_lock: league % has no league_weeks row for season % week %"
  },
  {
-  "loc": "222_stat_fix_rescore.sql:320",
+  "loc": "222_stat_fix_rescore.sql:343",
   "fn": "league_week_player_points_lock",
   "text": "league_week_player_points_lock: week_not_open — league % week % is upcoming; nothing has been scored"
  },
  {
-  "loc": "222_stat_fix_rescore.sql:380",
+  "loc": "222_stat_fix_rescore.sql:403",
   "fn": "league_week_player_points_lock",
   "text": "league_week_player_points_lock: week_locked — league % week % is final; its stored per-player points never change (F405: a provider's later stat correction updates player_stats, never a locked week — only a stat fix of our own re-scores one, through apply_stat_fix_week, §11.4 / §23.4)"
  },
