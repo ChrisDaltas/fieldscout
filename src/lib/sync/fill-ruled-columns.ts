@@ -52,6 +52,17 @@
  *      first, so the CLI prints it before the first door call.
  *   5. ASSERTS AFTER, LOUD: the K identities on every stored K line, row counts
  *      equal to the plan, nothing moved outside the ruled columns.
+ *   6. RECORDS ITS FIX (migration 222; PROGRESS D839; Chris 2026-11-07, "the
+ *      stats need to be correct. that should be done automatically"). Before
+ *      the first write, every move — week, player, column, stored → feed (0
+ *      for a new line) — is recorded as a stat fix (`record_stat_fix`), not
+ *      yet written; once the after-write checks pass it is marked written
+ *      (`mark_stat_fix_written`), and from then on the score-week pass
+ *      re-scores every final league-week it touches, quietly, paying exactly
+ *      these moves (`stat-fix-rescore.ts`). A run whose checks fail leaves it
+ *      unwritten: nothing applies from it. A database without 222 refuses
+ *      `--apply` by name before any write. The fill itself still writes no
+ *      league table.
  *
  * Time only via `time`; provider reads only via `provider`; every table read
  * pages past the PostgREST cap. It never touches `nfl_games`, `nfl_weeks` or
@@ -61,7 +72,10 @@
 
 import { z } from 'zod'
 
+import type { StatFixLine } from '@/lib/leagues/scoring/stat-fix-rescore'
 import type { ProviderPlayerWeekStats } from '@/lib/leagues/stats/stats-provider'
+import { isMissingSchemaObject } from '@/lib/supabase/postgrest-errors'
+import type { Json } from '@/types/database'
 import { FANTASY_POSITIONS } from '@/lib/sports-data/sleeper'
 import { pageAll } from '@/lib/supabase/page-all'
 
@@ -642,6 +656,41 @@ export interface FillReport {
   writeFailure?: string
   /** Assertions that failed after writing. */
   afterProblems: string[]
+  /** 222: the stat fix this run recorded (apply only, when anything moved); `written` once its checks passed. */
+  fix?: { id: string; lines: number; written: boolean }
+  /** 222: the fix could not be recorded, so nothing was written (a database without 222, or a refusal). */
+  fixRefusal?: string
+}
+
+/** The fill's stat-fix reason (222): plain words, recorded on every fix it writes. */
+export const FILL_FIX_REASON =
+  'sync:fill-ruled: the ruled stat columns the feed map left empty on finished weeks (PROGRESS F870, F871, F890, D832; Chris 2026-11-05: "go on league kickers and the other plays")'
+
+/**
+ * Every move a plan writes, as stat-fix lines (222): an updated line's ruled
+ * columns that differ from the stored ones (stored → feed), a new line's
+ * non-zero ruled columns (0 → feed).
+ */
+export function fixLinesOf(plans: readonly FillWeekPlan[], before: ReadonlyMap<number, ReadonlyMap<string, StatRow>>): StatFixLine[] {
+  const out: StatFixLine[] = []
+  for (const plan of plans) {
+    const stored = before.get(plan.week) ?? new Map<string, StatRow>()
+    for (const row of plan.updates) {
+      const prior = stored.get(row.player_id)
+      for (const column of RULED_COLUMNS) {
+        const was = prior?.columns[column] ?? 0
+        const now = row.columns[column] ?? 0
+        if (was !== now) out.push({ week: plan.week, player_id: row.player_id, stat_key: column, before: was, after: now })
+      }
+    }
+    for (const row of plan.newRows) {
+      for (const column of RULED_COLUMNS) {
+        const now = row.columns[column] ?? 0
+        if (now !== 0) out.push({ week: plan.week, player_id: row.player_id, stat_key: column, before: 0, after: now })
+      }
+    }
+  }
+  return out
 }
 
 function emptyTally(): DoorTally {
@@ -734,6 +783,18 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
 
   opts.beforeWrite?.(report)
   const stamp = time.now().toISOString()
+  // 222: the fix is recorded BEFORE any write (not yet written: nothing applies from it until the checks below pass).
+  const lines = fixLinesOf(report.weeks, before)
+  if (lines.length > 0) {
+    const recorded = await db.rpc('record_stat_fix', { p_season: season, p_reason: FILL_FIX_REASON, p_lines: lines as unknown as Json, p_landed_at: stamp })
+    if (recorded.error) {
+      report.fixRefusal = isMissingSchemaObject(recorded.error, ['record_stat_fix'])
+        ? 'the database predates migration 222 (no record_stat_fix): a fill records its fix before it writes, so every final week it touches re-scores by itself — push 222 first. Nothing was written.'
+        : `record_stat_fix refused the fix: ${recorded.error.message}. Nothing was written.`
+      return report
+    }
+    report.fix = { id: recorded.data as string, lines: lines.length, written: false }
+  }
   const noQueue = new Set<string>()
   const noCorrections = new Map<string, MovedKey[]>()
   try {
@@ -775,6 +836,15 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
   const { stats, corrections } = report.door
   const unexpected = stats.enqueued + stats.restamped + corrections.recorded + corrections.replayed + corrections.unchangedAtWrite
   if (unexpected !== 0) report.afterProblems.push(`the door reports ${unexpected} queue rows or events; this tool sends none`)
+  if (report.fix !== undefined) {
+    if (report.afterProblems.length > 0) {
+      report.afterProblems.push(`stat fix ${report.fix.id} stays recorded but NOT written: nothing applies from it — once the lines are explained, record what landed with npm run stat-fix -- record`)
+    } else {
+      const marked = await db.rpc('mark_stat_fix_written', { p_fix_id: report.fix.id })
+      if (marked.error) report.afterProblems.push(`stat fix ${report.fix.id} could not be marked written (${marked.error.message}): nothing applies from it until it is`)
+      else report.fix.written = true
+    }
+  }
   report.ok = report.afterProblems.length === 0
   return report
 }
@@ -854,6 +924,12 @@ export function renderFillWrite(report: FillReport): string[] {
     lines.push(
       `  written: ${report.writeFailure === undefined ? '' : 'at least '}${report.linesWritten} lines; ` +
         `queue rows ${report.door.stats.enqueued + report.door.stats.restamped}; events ${report.door.corrections.recorded + report.door.corrections.replayed + report.door.corrections.unchangedAtWrite}`,
+    )
+  }
+  if (report.fixRefusal !== undefined) lines.push(`  REFUSED: ${report.fixRefusal}`)
+  if (report.fix !== undefined) {
+    lines.push(
+      `  stat fix ${report.fix.id}: ${report.fix.lines} move(s) recorded${report.fix.written ? ' and written — the score-week pass re-scores every final league-week they touch, quietly' : ', NOT written — nothing applies from it'}`,
     )
   }
   if (report.writeFailure !== undefined) lines.push(`  WRITE FAILED: ${report.writeFailure}`)
@@ -952,7 +1028,7 @@ export async function runFillCli(argv: readonly string[], io: FillCliIo): Promis
   const report = await fillRuledColumns(io.connect(), { season: args.season, weeks: args.weeks, apply: args.apply, beforeWrite: printPlan })
   if (!planPrinted) printPlan(report)
   for (const line of renderFillWrite(report)) io.log(line)
-  if (report.refused !== undefined) {
+  if (report.refused !== undefined || report.fixRefusal !== undefined) {
     io.error('REFUSED — nothing written; see the line above')
     return 1
   }
@@ -964,7 +1040,7 @@ export async function runFillCli(argv: readonly string[], io: FillCliIo): Promis
     io.error(args.apply ? 'REFUSED — problems above; nothing written' : 'PROBLEMS above — --apply would write nothing until they are explained')
     return 1
   }
-  if (args.apply) io.log('Done — ruled columns only; no queue row, no event; K identities and row counts hold.')
+  if (args.apply) io.log('Done — ruled columns only; no queue row, no event; K identities and row counts hold; the fix is written, so final weeks re-score by themselves.')
   else io.log(`Plan only — nothing written. To write it: npm run sync:fill-ruled -- --season ${args.season} --weeks ${weeks} --apply --confirm-target ${host}`)
   return 0
 }

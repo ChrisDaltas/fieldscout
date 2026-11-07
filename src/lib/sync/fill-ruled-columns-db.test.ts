@@ -9,6 +9,14 @@
  * score: a final week's line moves here, no league table does. The league exists
  * only to hold the week open, then to stop holding it.
  *
+ * 222 (PROGRESS D839) re-cut, deliberately: the fill now also RECORDS its fix —
+ * every move, before → after, through the real `record_stat_fix` BEFORE its
+ * first write, marked written (`mark_stat_fix_written`) once its checks pass —
+ * so the score-week pass re-scores every final league-week it touched. Those
+ * are platform tables (`stat_fixes`, `stat_fix_lines`), still no league table:
+ * the fill itself never scores. FR5 reads the fix off the database; FR6 records
+ * none (nothing to write). Cleanup withdraws the 2095 fixes (applied nowhere).
+ *
  * Requires the local stack — D59(5); FAILS loudly when it is down. Fixture
  * hygiene (F199): the `vitest-frc` prefix on players / stats / games, the league
  * by name, the 2095 calendar rows; cleanup first and after. Action-id prefix
@@ -108,6 +116,8 @@ async function queueAndEvents(): Promise<{ queue: unknown[] | null; events: unkn
 }
 
 async function cleanup(): Promise<void> {
+  // 222: the fixes this suite's fills recorded — applied nowhere, so they may be withdrawn (their lines go with them).
+  await must(service.from('stat_fixes').delete().eq('season', SEASON), 'cleanup stat_fixes')
   await must(service.from('stat_correction_events').delete().like('player_id', `${PREFIX}-%`), 'cleanup stat_correction_events')
   await must(service.from('score_fanout').delete().like('player_id', `${PREFIX}-%`), 'cleanup score_fanout')
   await must(service.from('player_stats').delete().like('player_id', `${PREFIX}-%`), 'cleanup player_stats')
@@ -236,6 +246,17 @@ describe('the quiet fill over the real door (167)', () => {
     expect(await line(RETURNER)).toMatchObject({ return_td: 1, source: SOURCE, is_live: false, team: 'FRA', def_yards_allowed: null, advanced: { off_snaps: 4 }, receiving_yards: 0 })
 
     expect(await queueAndEvents()).toEqual({ queue: [], events: [] })
+
+    // 222 (D839): the fix, recorded before the write and written after the checks — the moves, before → after (a new line from 0).
+    const fixes = await must(service.from('stat_fixes').select('id, season, landed_at, written_at').eq('season', SEASON), 'fixes')
+    expect(fixes).toHaveLength(1)
+    expect(report.fix).toEqual({ id: fixes![0].id, lines: 4, written: true })
+    expect(fixes![0].written_at).not.toBeNull()
+    expect(new Date(fixes![0].landed_at).toISOString()).toBe(NOW.toISOString())
+    const lines = await must(service.from('stat_fix_lines').select('week, player_id, stat_key, before_value, after_value').eq('fix_id', fixes![0].id), 'fix lines')
+    expect(lines!.map((l) => `${l.week}:${l.player_id}:${l.stat_key}:${l.before_value}→${l.after_value}`).sort()).toEqual(
+      [`1:${DST}:def_block:0→1`, `1:${K}:fg_0_39:0→2`, `1:${K}:fg_missed:0→1`, `1:${RETURNER}:return_td:0→1`].sort(),
+    )
   })
 
   it('FR6 a second run writes nothing', async () => {
@@ -245,5 +266,8 @@ describe('the quiet fill over the real door (167)', () => {
     expect(report.weeks[0].updates).toEqual([])
     expect(report.weeks[0].newRows).toEqual([])
     expect(await queueAndEvents()).toEqual({ queue: [], events: [] })
+    // 222: nothing moved, so no fix is recorded (FR5's stays the only one).
+    expect(report.fix).toBeUndefined()
+    expect(await must(service.from('stat_fixes').select('id').eq('season', SEASON), 'fixes')).toHaveLength(1)
   })
 })

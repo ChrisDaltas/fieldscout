@@ -31,6 +31,7 @@ import { recordedActual } from '@/lib/players/preset-scoring.fixtures'
 
 import {
   afterWriteProblems,
+  FILL_FIX_REASON,
   fillRefusalCauses,
   fillRuledColumns,
   kIdentityFailures,
@@ -95,11 +96,30 @@ class World {
   statReadErrorAfterDoor: string | null = null
   /** Once the door has been called, every player_stats read rejects (a dropped connection, not an error answer). */
   statReadThrowAfterDoor: string | null = null
+  /** 222: the stat fixes recorded (record_stat_fix) and every call, in order, across both doors. */
+  fixes: Array<{ id: string; season: number; reason: string; lines: unknown[]; landed_at: string; written: boolean }> = []
+  calls: string[] = []
+  /** 222: record_stat_fix answers this instead (a database without 222: PGRST202). */
+  fixError: { code?: string; message: string } | null = null
 
   client(): SyncClient {
     return {
       from: (table: string) => this.query(table),
       rpc: async (fn: string, args: Row) => {
+        this.calls.push(fn)
+        if (fn === 'record_stat_fix') {
+          if (this.fixError) return { data: null, error: this.fixError }
+          const id = `fix-${this.fixes.length + 1}`
+          this.fixes.push({ id, season: Number(args.p_season), reason: String(args.p_reason), lines: args.p_lines as unknown[], landed_at: String(args.p_landed_at), written: false })
+          return { data: id, error: null }
+        }
+        if (fn === 'mark_stat_fix_written') {
+          const fix = this.fixes.find((f) => f.id === args.p_fix_id)
+          if (!fix) return { data: null, error: { code: 'P0002', message: `mark_stat_fix_written: stat fix ${String(args.p_fix_id)} not found` } }
+          const already = fix.written
+          fix.written = true
+          return { data: { fix_id: fix.id, already_written: already }, error: null }
+        }
         if (fn === 'week_games_state_internal') {
           const season = Number(args.p_season)
           const week = Number(args.p_week)
@@ -956,7 +976,7 @@ describe('a new line with no ruled value but other data is a late line: listed, 
     ])
     expect(out.find((l) => l.startsWith('  all weeks: '))).toMatch(/^ {2}all weeks: 8 lines \(5 updated, 3 new\), 10 moves: .*; 3 other-column differences; 1 late lines \(not written\)$/)
     expect(out).toContain('  written: 8 lines; queue rows 0; events 0')
-    expect(out.at(-1)).toBe('Done — ruled columns only; no queue row, no event; K identities and row counts hold.')
+    expect(out.at(-1)).toBe('Done — ruled columns only; no queue row, no event; K identities and row counts hold; the fix is written, so final weeks re-score by themselves.')
   })
 })
 
@@ -1430,8 +1450,11 @@ describe('a re-read that fails after writing still prints what landed (round 1, 
     const report = await run(world, ALL_LINES, { apply: true })
     expect(report.ok).toBe(false)
     expect(report.wrote).toBe(true)
-    expect(report.afterProblems).toHaveLength(1)
+    // 222 (D839): the fix recorded before the write stays NOT written — said, after the cause.
+    expect(report.afterProblems).toHaveLength(2)
     expect(report.afterProblems[0]).toMatch(/^could not re-read week 1: upstream 502; 8 lines were written in this run/)
+    expect(report.afterProblems[1]).toBe('stat fix fix-1 stays recorded but NOT written: nothing applies from it — once the lines are explained, record what landed with npm run stat-fix -- record')
+    expect(world.fixes.map((f) => f.written)).toEqual([false])
   })
 })
 
@@ -1540,7 +1563,7 @@ describe('the CLI', () => {
     expect(code).toBe(0)
     expect(world.doorCalls.length).toBeGreaterThan(0)
     expect(out).toContain('  written: 8 lines; queue rows 0; events 0')
-    expect(out.at(-1)).toBe('Done — ruled columns only; no queue row, no event; K identities and row counts hold.')
+    expect(out.at(-1)).toBe('Done — ruled columns only; no queue row, no event; K identities and row counts hold; the fix is written, so final weeks re-score by themselves.')
   })
 
   it('a refused run exits 1', async () => {
@@ -1763,7 +1786,7 @@ describe('the mutants that survived round 2, one test each (round 3, item 7)', (
     const report = await run(world, ALL_LINES, { apply: true })
     expect(report.wrote).toBe(true)
     expect(report.ok).toBe(false)
-    expect(report.afterProblems).toEqual(['week 3: new line 13075 was stored differently outside the ruled columns'])
+    expect(report.afterProblems).toEqual(['week 3: new line 13075 was stored differently outside the ruled columns', 'stat fix fix-1 stays recorded but NOT written: nothing applies from it — once the lines are explained, record what landed with npm run stat-fix -- record'])
   })
 
   it('a league week naming a league the read did not return throws by name, before the feed is read', async () => {
@@ -1926,3 +1949,90 @@ describe('F871 / 218: a second run on filled weeks moves only fg_60_plus and def
     expect(() => parseFillArgs(['--season', '2025', '--weeks', '1-8'])).toThrow(/2025/)
   })
 })
+
+// ---------------------------------------------------------------------------
+// 222 (PROGRESS D839; Chris 2026-11-07: "the stats need to be correct. that
+// should be done automatically"): the fill records its fix BEFORE it writes and
+// marks it written only once its checks pass — the score-week pass then
+// re-scores every final week it touched. The fill itself still writes no
+// league table.
+// ---------------------------------------------------------------------------
+
+describe('the stat fix the fill records (222)', () => {
+  /** Every ruled value that moved, read off the world before and after — independent of the fill's own list. */
+  function moved(before: Row[], after: Row[]): Array<{ week: number; player_id: string; stat_key: string; before: number; after: number }> {
+    const out: Array<{ week: number; player_id: string; stat_key: string; before: number; after: number }> = []
+    for (const row of after) {
+      const prior = before.find((r) => r.player_id === row.player_id && r.week === row.week)
+      for (const column of RULED_COLUMNS) {
+        const was = Number(prior?.[column] ?? 0)
+        const now = Number(row[column] ?? 0)
+        if (was !== now) out.push({ week: Number(row.week), player_id: String(row.player_id), stat_key: column, before: was, after: now })
+      }
+    }
+    const key = (l: { week: number; player_id: string; stat_key: string }) => `${l.week}|${l.player_id}|${l.stat_key}`
+    return out.sort((a, b) => (key(a) < key(b) ? -1 : 1))
+  }
+
+  it('--apply records every move (a new line from 0) BEFORE the first write, at the run’s instant, then marks it written', async () => {
+    const world = worldWith(ALL_LINES)
+    const before = world.stats.map((r) => ({ ...r }))
+    const report = await run(world, ALL_LINES, { apply: true })
+    expect(report.ok).toBe(true)
+    expect(world.calls.indexOf('record_stat_fix')).toBeGreaterThan(-1)
+    expect(world.calls.indexOf('record_stat_fix')).toBeLessThan(world.calls.indexOf(INGEST_DOOR))
+    expect(world.calls.filter((c) => c === 'mark_stat_fix_written')).toHaveLength(1)
+    expect(world.calls.lastIndexOf('mark_stat_fix_written')).toBeGreaterThan(world.calls.lastIndexOf(INGEST_DOOR))
+    expect(world.fixes).toHaveLength(1)
+    const fix = world.fixes[0]
+    expect([fix.season, fix.reason, fix.landed_at, fix.written]).toEqual([SEASON, FILL_FIX_REASON, NOW.toISOString(), true])
+    const key = (l: { week: number; player_id: string; stat_key: string }) => `${l.week}|${l.player_id}|${l.stat_key}`
+    const recorded = [...(fix.lines as Array<{ week: number; player_id: string; stat_key: string; before: number; after: number }>)].sort((a, b) => (key(a) < key(b) ? -1 : 1))
+    expect(recorded).toEqual(moved(before, world.stats))
+    expect(recorded.length).toBe(report.weeks.reduce((n, plan) => n + RULED_COLUMNS.reduce((m, c) => m + plan.moves[c], 0), 0))
+    // A new line is a move from 0 (the design's "new line (before 0)").
+    expect(recorded.filter((l) => l.player_id === PRICE.playerId)).toEqual([{ week: 3, player_id: PRICE.playerId, stat_key: 'return_td', before: 0, after: 1 }])
+    expect(report.fix).toEqual({ id: 'fix-1', lines: recorded.length, written: true })
+    expect(renderFill(report)).toContain(`  stat fix fix-1: ${recorded.length} move(s) recorded and written — the score-week pass re-scores every final league-week they touch, quietly`)
+  })
+
+  it('the plan records nothing; a second --apply with nothing to write records nothing', async () => {
+    const world = worldWith(ALL_LINES)
+    await run(world, ALL_LINES)
+    expect(world.fixes).toEqual([])
+    await run(world, ALL_LINES, { apply: true })
+    await run(world, ALL_LINES, { apply: true })
+    expect(world.fixes).toHaveLength(1)
+  })
+
+  it('a database WITHOUT 222 refuses --apply BY NAME before any write — the fill can no longer land a final week the leagues never hear of', async () => {
+    const world = worldWith(ALL_LINES)
+    world.fixError = { code: 'PGRST202', message: 'Could not find the function public.record_stat_fix(p_landed_at, p_lines, p_reason, p_season) in the schema cache' }
+    const before = snapshot(world)
+    const report = await run(world, ALL_LINES, { apply: true })
+    expect(report.ok).toBe(false)
+    expect(report.wrote).toBe(false)
+    expect(world.calls).not.toContain(INGEST_DOOR)
+    expect(snapshot(world)).toBe(before)
+    expect(report.fixRefusal).toBe('the database predates migration 222 (no record_stat_fix): a fill records its fix before it writes, so every final week it touches re-scores by itself — push 222 first. Nothing was written.')
+    expect(renderFill(report)).toContain(`  REFUSED: ${report.fixRefusal}`)
+  })
+
+  it('…and the CLI exits 1, REFUSED, nothing written', async () => {
+    const world = worldWith(ALL_LINES)
+    world.fixError = { code: 'PGRST202', message: 'Could not find the function public.record_stat_fix(p_landed_at, p_lines, p_reason, p_season) in the schema cache' }
+    const { code, err } = await cli([...SPEC, '--apply', '--confirm-target', HOST], world)
+    expect(code).toBe(1)
+    expect(err).toEqual(['REFUSED — nothing written; see the line above'])
+    expect(world.calls).not.toContain(INGEST_DOOR)
+  })
+
+  it('any other refusal of the record stops the run before any write too, with its words', async () => {
+    const world = worldWith(ALL_LINES)
+    world.fixError = { code: '22023', message: 'record_stat_fix: line 3 names player x, whom players does not know' }
+    const report = await run(world, ALL_LINES, { apply: true })
+    expect(report.fixRefusal).toBe('record_stat_fix refused the fix: record_stat_fix: line 3 names player x, whom players does not know. Nothing was written.')
+    expect(world.calls).not.toContain(INGEST_DOOR)
+  })
+})
+
