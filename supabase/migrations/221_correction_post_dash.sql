@@ -1,6 +1,6 @@
 -- ============================================================================
 -- 221 — the stat-correction post and notification print a blank team score
---       as "—", never "pending" (PROGRESS F911, D847; D845's last place;
+--       as "—", never "pending" (PROGRESS F911, D847; D845's correction post;
 --       spec §16.4 / §23.4, v2.16.117). COPY ONLY: no scoring, no NULL
 --       semantics, no result or flip logic changes.
 -- ============================================================================
