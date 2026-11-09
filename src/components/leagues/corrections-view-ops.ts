@@ -16,7 +16,11 @@
  *
  * Q81 (Chris 2026-09-29): a stat fix after a week is final changes nothing
  * in the league, so it is never listed and there is no "week final" state,
- * no "would have been" number and no commissioner door anywhere here.
+ * no "would have been" number and no commissioner door anywhere here. That is
+ * the PROVIDER's official fix; a stat fix of OUR OWN (our feed map or
+ * ingestion — migration 222, spec v2.16.118) re-scores final weeks quietly,
+ * so the copy below says "official" wherever it says a final week doesn't
+ * move (round 5: it must not state what 222 makes false).
  */
 import type { StatCorrectionsState } from '@/hooks/use-stat-corrections'
 import {
@@ -40,7 +44,7 @@ import { activityHref } from './activity-page-ops'
 export const STAT_FIX_RULE_COPY = 'Stat fixes count until next week’s first game'
 
 export const CORRECTIONS_TITLE = 'Stat corrections'
-export const CORRECTIONS_INTRO_COPY = `Official stat fixes that changed a score in this league. ${STAT_FIX_RULE_COPY} — after that, a week’s scores never change.`
+export const CORRECTIONS_INTRO_COPY = `Official stat fixes that changed a score in this league. ${STAT_FIX_RULE_COPY} — after that, an official stat fix doesn’t change a week’s scores.`
 export const CORRECTIONS_PROBLEM_COPY = 'Couldn’t load the stat corrections.'
 /** R1371: the degraded banner's words for THIS list (not the scoreboard's). */
 export const CORRECTIONS_STALE_COPY = "Stat corrections aren't refreshing — showing the last list we read."
@@ -63,8 +67,8 @@ export const OTHER_RESULTS_LINE = 'It also changed a result this week:'
 export const MATCHUP_NOTE_PROBLEM_COPY = 'Couldn’t check this week’s stat corrections.'
 
 // The box score's points note (F477) — each server note, in a member's words.
-/** R1367: "final", not "locked" (a lineup lock is not the week being final); one short line. */
-export const BOX_FINAL_STORED_COPY = 'Final points as scored — a stat fix after the week was final changes the stat line only.'
+/** R1367: "final", not "locked" (a lineup lock is not the week being final); one short line. Round 5: "official" — a fix of our own (222) does move final points. */
+export const BOX_FINAL_STORED_COPY = 'Final points as scored — an official stat fix after the week was final changes the stat line only.'
 export const BOX_NONE_STORED_COPY =
   'These points are worked out from the latest stats — this week was scored before FieldScout kept each player’s points, so they may not add up to the final score.'
 export const BOX_NO_GAME_COPY = 'This team had no game this week, so these points are worked out from the latest stats.'

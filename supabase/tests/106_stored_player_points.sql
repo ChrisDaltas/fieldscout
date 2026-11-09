@@ -86,13 +86,14 @@ select is(
   'league_id:uuid:NO,season:integer:NO,week:integer:NO,team_id:uuid:NO,slot:text:NO,player_id:text:NO,points:numeric:NO,pending:ARRAY:NO,reason:text:NO,source:text:NO,updated_at:timestamp with time zone:NO',
   'A1 league_week_player_points: one row per league / season / week / team / SLOT — the starter, his points, his pending keys, why, where from');
 -- 161 (M5 L.D3.13, D425) re-pin, additive: the source CHECK gains `rescore` — every 158 value kept.
+-- 222 (D836) re-pin, additive: …and `stat_fix` (our own stat fixes — pgTAP 171 A5).
 select is(
   (select string_agg(pg_get_constraintdef(c.oid), ' | ' order by c.contype, c.conname) from pg_constraint c
    where c.conrelid = 'public.league_week_player_points'::regclass),
   'CHECK (((reason <> ''no_stat_row''::text) OR ((points = (0)::numeric) AND (cardinality(pending) = 0)))) | '
   'CHECK ((reason = ANY (ARRAY[''scored''::text, ''no_stat_row''::text]))) | '
   'CHECK ((btrim(slot) <> ''''::text)) | '
-  'CHECK ((source = ANY (ARRAY[''worker''::text, ''backfill''::text, ''backfill_unrecoverable''::text, ''rescore''::text]))) | '
+  'CHECK ((source = ANY (ARRAY[''worker''::text, ''backfill''::text, ''backfill_unrecoverable''::text, ''rescore''::text, ''stat_fix''::text]))) | '
   'FOREIGN KEY (league_id, season, week) REFERENCES league_weeks(league_id, season, week) ON DELETE CASCADE | '
   'FOREIGN KEY (player_id) REFERENCES players(id) | '
   'FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE | '
@@ -360,8 +361,8 @@ select is((select count(*)::int from league_week_player_points where week = 2 an
 update league_weeks set status = 'final' where league_id = 'b9600000-0000-4000-8000-00000000000a' and week = 2;
 select throws_ok(
   $$ update league_week_player_points set points = 15 where team_id = 'c9600000-0000-4000-8000-000000000001' and week = 2 $$,
-  'P0001', 'league_week_player_points: week_locked — league b9600000-0000-4000-8000-00000000000a week 2 is final; its stored per-player points never change (F405: a later stat correction updates player_stats, never a locked week — the commissioner''s audited score override is the one change to a final week, §11.4)',
-  'D4 once the week is FINAL its rows refuse an UPDATE (as postgres) — by name');
+  'P0001', 'league_week_player_points: week_locked — league b9600000-0000-4000-8000-00000000000a week 2 is final; its stored per-player points never change (F405: a provider''s later stat correction updates player_stats, never a locked week — only a stat fix of our own re-scores one, through apply_stat_fix_week, §11.4 / §23.4)',
+  'D4 once the week is FINAL its rows refuse an UPDATE (as postgres) — by name (222 re-pin: the words now say the one exception is our own stat fix, never the provider''s)');
 select throws_ok(
   $$ delete from league_week_player_points where team_id = 'c9600000-0000-4000-8000-000000000001' and week = 2 $$,
   'P0001', null, 'D5 …and a DELETE');

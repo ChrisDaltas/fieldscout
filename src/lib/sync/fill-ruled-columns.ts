@@ -52,6 +52,46 @@
  *      first, so the CLI prints it before the first door call.
  *   5. ASSERTS AFTER, LOUD: the K identities on every stored K line, row counts
  *      equal to the plan, nothing moved outside the ruled columns.
+ *   6. RECORDS ITS FIX (migration 222; PROGRESS D839; Chris 2026-11-07, "the
+ *      stats need to be correct. that should be done automatically"). Before
+ *      the first write, every move — week, player, column, stored → feed (0
+ *      for a new line) — is recorded as a stat fix (`record_stat_fix`), not
+ *      yet written; once the after-write checks pass it is marked written
+ *      (`mark_stat_fix_written`), and from then on the score-week pass
+ *      re-scores every final league-week it touches, quietly, paying exactly
+ *      these moves (`stat-fix-rescore.ts`). A run whose checks fail leaves it
+ *      unwritten: nothing applies from it, and the RE-RUN finishes it (round
+ *      5): it records one fix holding every move — the ones that landed then
+ *      and the ones it writes now — in place of the unwritten one
+ *      (`p_supersedes`, one transaction), so every move that landed is paid,
+ *      once. A database without 222 refuses `--apply` by name before any
+ *      write. The fill itself still writes no league table.
+ *   7. NEVER WRITES THE PROVIDER'S LATE CORRECTION AS OURS (rounds 6 and 7,
+ *      F405 / Q81). A week our map has read is FILLED: it holds a line of a
+ *      WRITTEN stat fix (any fix, any column), or, with no written fix, its
+ *      stored lines already carry a ruled column the old map never wrote
+ *      (`OUR_MAP_ONLY`) — our map read it at ingest (every week ingested once
+ *      the map change was in), or a fill wrote it before 222 recorded fills
+ *      (production's 11-06 and 11-07 runs, D838's backlog). Every ruled
+ *      difference the feed shows there since (a raise, a lower, a new line)
+ *      is the provider's: listed by player, not written, not recorded, not
+ *      paid, and no problem. Two kinds of move stay ours there: a move of our
+ *      own fix recorded and never written, still at its before with the feed
+ *      at its after (the re-run finishes it; one it can't write is refused by
+ *      name, never dropped), and a column named in `newColumns` (8). A fix
+ *      recorded and never written fills no week by itself; the lines it
+ *      landed do, like any our map wrote, so a move on from one of them since
+ *      is the provider's, and the landed move is still carried.
+ *   8. A LATER CHANGE OF OUR MAP (`--new-columns`, round 7, F899). A ruled
+ *      column OUR map gained after the requested weeks were filled is named
+ *      by the operator; in a filled week the feed's values on it are ours —
+ *      written, recorded and paid like a first fill — and every other ruled
+ *      difference stays the provider's. Refused by name: a column that isn't
+ *      ruled, or is summed (its stored part is the old map's); one a written
+ *      stat fix of the season already moves (it is not new to our map); one a
+ *      stored line of a requested week already carries (that week has held
+ *      it). `npm run stat-fix` alone can't land such a change: it records and
+ *      pays, and never writes `player_stats`.
  *
  * Time only via `time`; provider reads only via `provider`; every table read
  * pages past the PostgREST cap. It never touches `nfl_games`, `nfl_weeks` or
@@ -61,7 +101,10 @@
 
 import { z } from 'zod'
 
+import type { StatFixLine } from '@/lib/leagues/scoring/stat-fix-rescore'
 import type { ProviderPlayerWeekStats } from '@/lib/leagues/stats/stats-provider'
+import { isMissingSchemaObject } from '@/lib/supabase/postgrest-errors'
+import type { Json } from '@/types/database'
 import { FANTASY_POSITIONS } from '@/lib/sports-data/sleeper'
 import { pageAll } from '@/lib/supabase/page-all'
 
@@ -117,6 +160,15 @@ const RULED: ReadonlySet<string> = new Set(RULED_COLUMNS)
  */
 export const SUMMED_RULED_COLUMNS = ['def_fumble_recoveries'] as const satisfies readonly RuledColumn[]
 const SUMMED: ReadonlySet<string> = new Set(SUMMED_RULED_COLUMNS)
+
+/**
+ * The ruled columns the old map never wrote: all but the summed ones, whose
+ * stored part it did (round 7). A stored line carrying one of these was
+ * written by OUR map — at ingest once the map change was in, or by a fill —
+ * so a week holding one has been read by our map (PROGRESS F890: every move
+ * of the 11-06 fills off these started from 0).
+ */
+export const OUR_MAP_ONLY: readonly RuledColumn[] = RULED_COLUMNS.filter((column) => !SUMMED.has(column))
 
 /** Code-point order: the same on every machine, whatever its locale. */
 function byCodePoint(a: string, b: string): number {
@@ -255,8 +307,27 @@ export interface StoredValueMove {
   feed: number
 }
 
+/** A ruled difference in a filled week: the provider's since our fill (round 6). `newLine`: no stored line (`stored` 0). */
+export interface ProviderMove extends StoredValueMove {
+  newLine: boolean
+}
+
 export interface FillWeekPlan {
   week: number
+  /**
+   * Round 6: the week holds a line of a WRITTEN stat fix (222) — its first
+   * fill happened — or (round 7) its stored lines carry an `OUR_MAP_ONLY`
+   * column. Every ruled difference is in `providerMoves` but a move still ours
+   * (an unwritten fix of ours, a `newColumns` column): only those are written,
+   * recorded and paid.
+   */
+  filled: boolean
+  /**
+   * Round 7: no written fix holds the week, but this many stored lines carry
+   * an `OUR_MAP_ONLY` column — our map read it at ingest, or a fill wrote it
+   * before 222 recorded fills — so it is filled. 0 otherwise.
+   */
+  filledByStoredLines: number
   /** Lines the provider returned. */
   feedLines: number
   /** Lines for a player `players` doesn't know. A problem only if the line carries a ruled value. */
@@ -287,6 +358,14 @@ export interface FillWeekPlan {
   moves: Record<RuledColumn, number>
   /** Every move whose stored value is not 0, by player: the ones a count alone can't explain. A lowered one is also a problem. */
   fromStoredValue: StoredValueMove[]
+  /**
+   * Round 6 (F405 / Q81): in a FILLED week, every ruled difference — up or
+   * down, a stored line's or a new line's — that isn't still ours (round 7)
+   * is the provider's late correction since our fill. Listed by player; not
+   * written, not a move, not recorded, not paid, not a problem. Empty in a
+   * week that isn't filled.
+   */
+  providerMoves: ProviderMove[]
   /** Every move on a `SUMMED_RULED_COLUMNS` column, 0 → n and new lines included, by column then player id. */
   summedMoves: StoredValueMove[]
   otherDifferences: OtherDifference[]
@@ -358,13 +437,34 @@ export interface PlanInput {
   unsendable?: ReadonlyMap<string, string>
   /** `players.full_name` by id, for the problem text only. */
   names?: ReadonlyMap<string, string>
+  /** Round 6: the week holds a line of a WRITTEN stat fix — its first fill happened, so every ruled difference is the provider's. */
+  filled?: boolean
+  /** Round 7: this week's moves of our own fill fix, recorded and never written (the re-run finishes them). */
+  owed?: readonly StatFixLine[]
+  /** Round 7: ruled columns our map gained after the week was filled (`--new-columns`): ours even in a filled week. */
+  newColumns?: readonly RuledColumn[]
 }
 
 export function planFillWeek(input: PlanInput): FillWeekPlan {
   const { week, lines, stored, positions, ctx, unsendable } = input
   const label = (id: string) => who(input.names ?? NO_NAMES, id)
+  const owed = new Map((input.owed ?? []).map((line) => [`${line.player_id}|${line.stat_key}`, line]))
+  const fresh: ReadonlySet<string> = new Set(input.newColumns ?? [])
+  // Round 7 (F405 / Q81): with no written fix holding it, a week whose stored lines carry a column only our map writes
+  // has been read by our map — at ingest, or by a fill: one before 222 recorded fills, or a run of ours that failed
+  // partway (its own moves stay ours, below).
+  const carrying = input.filled ? 0 : [...stored.values()].filter((row) => OUR_MAP_ONLY.some((column) => (row.columns[column] ?? 0) !== 0)).length
+  const filled = (input.filled ?? false) || carrying > 0
+  /** Round 7: a ruled difference in a filled week that is still ours — a move our unwritten fix holds, still at its before with the feed at its after; or a column our map gained since the week was filled. */
+  const stillOurs = (id: string, column: RuledColumn, was: number, now: number): boolean => {
+    if (fresh.has(column)) return true
+    const line = owed.get(`${id}|${column}`)
+    return line !== undefined && line.before === was && line.after === now
+  }
   const plan: FillWeekPlan = {
     week,
+    filled,
+    filledByStoredLines: carrying,
     feedLines: lines.length,
     unknownPlayers: 0,
     empty: 0,
@@ -378,6 +478,7 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
     newRows: [],
     moves: Object.fromEntries(RULED_COLUMNS.map((column) => [column, 0])) as Record<RuledColumn, number>,
     fromStoredValue: [],
+    providerMoves: [],
     summedMoves: [],
     otherDifferences: [],
     contextDifferences: {},
@@ -388,6 +489,19 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
     dstLinesWithBlock: 0,
   }
   if (lines.length === 0) plan.problems.push(`week ${week}: the feed returned zero lines`)
+  // Round 7: a column named new to our map that a stored line here already carries (not one our unwritten fix landed) has
+  // been held by this week — the map read it at ingest, or a fill wrote it — so it is not new here.
+  for (const column of fresh) {
+    const held = [...stored.values()].filter((row) => {
+      const value = row.columns[column] ?? 0
+      return value !== 0 && owed.get(`${row.player_id}|${column}`)?.after !== value
+    })
+    if (held.length > 0) {
+      plan.problems.push(
+        `week ${week}: --new-columns names ${column}, but ${held.length} stored line(s) here already carry it (${held.slice(0, 3).map((row) => label(row.player_id)).join(', ')}${held.length > 3 ? ', …' : ''}) — this week has held it, so it is not new here`,
+      )
+    }
+  }
 
   const known: StatRow[] = []
   for (const line of lines) {
@@ -467,6 +581,13 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
         // Nothing to fill. Other data on it is a provider line never stored (F895): listed, not this fill's to write or block (D833).
         if (others.length > 0) plan.lateLines.push(id)
         else plan.zeroNewLines += 1
+      } else if (filled && (others.length > 0 || RULED_COLUMNS.some((column) => (row.columns[column] ?? 0) !== 0 && !stillOurs(id, column, 0, row.columns[column] ?? 0)))) {
+        // Round 6: ruled values on a line we never stored, in a week our fill already filled, came from the provider since —
+        // unless every one of them is still ours and nothing else rides on it (round 7).
+        for (const column of RULED_COLUMNS) {
+          const now = row.columns[column] ?? 0
+          if (now !== 0) plan.providerMoves.push({ player_id: id, column, stored: 0, feed: now, newLine: true })
+        }
       } else if (others.length > 0) {
         plan.problems.push(`week ${week}: new line for ${label(id)} also carries ${others.map((o) => `${o.key}=${o.feed}`).join(', ')} — a late provider line, not written`)
       } else {
@@ -485,12 +606,20 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
     for (const key of CONTEXT_ADVANCED_KEYS) {
       if (prior.advanced[key] !== row.advanced[key]) plan.contextDifferences[key] = (plan.contextDifferences[key] ?? 0) + 1
     }
-    const moved = RULED_COLUMNS.filter((column) => (prior.columns[column] ?? 0) !== (row.columns[column] ?? 0))
-    if (moved.length === 0) {
+    const differ = RULED_COLUMNS.filter((column) => (prior.columns[column] ?? 0) !== (row.columns[column] ?? 0))
+    if (differ.length === 0) {
       plan.unchanged += 1
       continue
     }
-    for (const column of moved) {
+    // Round 6 (F405 / Q81): once a week has been filled, every ruled value the feed reads differently moved at the
+    // PROVIDER after our fill — up or down, on any player — unless it is still ours (round 7). The provider's is never
+    // this fill's to write, record or pay; listed by player.
+    const take = filled ? differ.filter((column) => stillOurs(id, column, prior.columns[column] ?? 0, row.columns[column] ?? 0)) : differ
+    for (const column of differ) {
+      if (!take.includes(column)) plan.providerMoves.push({ player_id: id, column, stored: prior.columns[column] ?? 0, feed: row.columns[column] ?? 0, newLine: false })
+    }
+    if (take.length === 0) continue
+    for (const column of take) {
       plan.moves[column] += 1
       const was = prior.columns[column] ?? 0
       const now = row.columns[column] ?? 0
@@ -500,7 +629,8 @@ export function planFillWeek(input: PlanInput): FillWeekPlan {
       // A fill only adds plays the old map dropped. A lower reading is a provider fix or a map that reads less.
       if (now < was) plan.problems.push(`week ${week}: ${label(id)} ${column} would go down from ${was} to ${now} — lowering a stored value is not a fill (a late provider fix, or a map that reads less)`)
     }
-    const ruled = Object.fromEntries(RULED_COLUMNS.map((column) => [column, row.columns[column] ?? 0]))
+    // A column left to the provider goes back as stored: only the moves taken land.
+    const ruled = Object.fromEntries(RULED_COLUMNS.map((column) => [column, (take.includes(column) ? row.columns[column] : prior.columns[column]) ?? 0]))
     // `team` stays off the line: the door leaves a column it isn't sent alone.
     plan.updates.push({ player_id: id, game_id: prior.game_id, is_live: prior.is_live, source: prior.source, advanced: prior.advanced, columns: ruled })
     wouldBe.set(id, { ...prior.columns, ...ruled })
@@ -614,6 +744,8 @@ export interface FillOptions {
   /** Ascending, de-duplicated, each 1-18 (`parseWeeks`). */
   weeks: number[]
   apply: boolean
+  /** Round 7 (F899): ruled columns OUR map gained after these weeks were filled (`--new-columns`) — ours even in a filled week. */
+  newColumns?: readonly RuledColumn[]
   /**
    * Called once with the finished plan, after every check and before the
    * first door call (only on a run that goes on to write), so the plan is on
@@ -625,6 +757,8 @@ export interface FillOptions {
 export interface FillReport {
   season: number
   mode: 'plan' | 'apply'
+  /** Round 7: the columns named new to our map (`--new-columns`), as asked. */
+  newColumns: readonly RuledColumn[]
   /** false when anything was refused, blocked, or failed. */
   ok: boolean
   /** Set when the run stopped before planning finished. Nothing was written. */
@@ -642,6 +776,157 @@ export interface FillReport {
   writeFailure?: string
   /** Assertions that failed after writing. */
   afterProblems: string[]
+  /**
+   * 222: the stat fix this run recorded (apply only, when anything moved); `written` once its checks passed.
+   * `supersedes`: an earlier run's fix never written, finished here — `carried` of its moves had landed then.
+   */
+  fix?: { id: string; lines: number; written: boolean; supersedes?: string; carried?: number }
+  /** 222: the fix could not be recorded, so nothing was written (a database without 222, or a refusal). */
+  fixRefusal?: string
+  /** Round 5: a fix an earlier run recorded and never wrote — `--apply` finishes it (the plan says so first). */
+  pendingFix?: string
+}
+
+/** The fill's stat-fix reason (222): plain words, recorded on every fix it writes. */
+export const FILL_FIX_REASON =
+  'sync:fill-ruled: the ruled stat columns the feed map left empty on finished weeks (PROGRESS F870, F871, F890, D832; Chris 2026-11-05: "go on league kickers and the other plays")'
+/** How a fix the fill recorded is told from any other (the reason's head, whatever words follow it in a later checkout). */
+const FILL_FIX_PREFIX = 'sync:fill-ruled:'
+
+/** 222: our stat fixes of one season, as the fill reads them (rounds 5 and 6). */
+export interface OurFixes {
+  /** Round 6: every week holding a line of any WRITTEN fix (any fix, any column) — a FILLED week: nothing is written, recorded or paid in it. */
+  filledWeeks: ReadonlySet<number>
+  /** Round 7: each stat key a WRITTEN fix moves, with the first such fix and its week — `--new-columns` refuses one (it is not new to our map). */
+  held: ReadonlyMap<string, { fix: string; week: number }>
+  /** Fixes a fill recorded and never wrote (a run whose write or checks failed), oldest first: the re-run finishes them. They fill no week. */
+  pending: Array<{ id: string; landed_at: string; lines: StatFixLine[] }>
+}
+
+/**
+ * Rounds 5 and 6: our stat fixes of the season (222's tables, the service
+ * role's read). A database without 222 has none: no week reads as filled, the
+ * plan reads as before, and `--apply` refuses by name at the record.
+ */
+export async function readOurFixes(db: SyncClient, season: number): Promise<OurFixes> {
+  const none: OurFixes = { filledWeeks: new Set(), held: new Map(), pending: [] }
+  const probe = await db.from('stat_fixes').select('id').eq('season', season).range(0, 0)
+  if (probe.error) {
+    if (isMissingSchemaObject(probe.error, ['stat_fixes'])) return none
+    throw new Error(`stat_fixes read: ${probe.error.message}`)
+  }
+  const fixes = await pageAll<{ id: string; reason: string; landed_at: string; written_at: string | null }>((from, to) =>
+    db.from('stat_fixes').select('id, reason, landed_at, created_at, written_at', { count: 'exact' }).eq('season', season).order('created_at').order('id').range(from, to),
+  )
+  if (fixes.length === 0) return none
+  const rows = await pageAll<{ fix_id: string; week: number; player_id: string; stat_key: string; before_value: number | string; after_value: number | string }>((from, to) =>
+    db
+      .from('stat_fix_lines')
+      .select('fix_id, week, player_id, stat_key, before_value, after_value', { count: 'exact' })
+      .eq('season', season)
+      .order('fix_id')
+      .order('week')
+      .order('player_id')
+      .order('stat_key')
+      .range(from, to),
+  )
+  const byFix = new Map<string, StatFixLine[]>()
+  for (const r of rows) {
+    byFix.set(r.fix_id, [...(byFix.get(r.fix_id) ?? []), { week: r.week, player_id: r.player_id, stat_key: r.stat_key, before: Number(r.before_value), after: Number(r.after_value) }])
+  }
+  const filledWeeks = new Set<number>()
+  const held = new Map<string, { fix: string; week: number }>()
+  const pending: OurFixes['pending'] = []
+  for (const fix of fixes) {
+    const lines = byFix.get(fix.id) ?? []
+    if (fix.written_at !== null) {
+      for (const line of lines) {
+        filledWeeks.add(line.week)
+        if (!held.has(line.stat_key)) held.set(line.stat_key, { fix: fix.id, week: line.week })
+      }
+    } else if (fix.reason.startsWith(FILL_FIX_PREFIX)) pending.push({ id: fix.id, landed_at: fix.landed_at, lines })
+  }
+  return { filledWeeks, held, pending }
+}
+
+/**
+ * Round 5: an earlier run's fix, recorded and never written (its write failed
+ * partway, or its checks did), FINISHED by this run. Each of its moves is, by
+ * what is stored now: never landed (at its before — this run's plan is the
+ * move now: nothing carried; in a filled week the plan takes it while the
+ * feed still reads its after, round 7), or landed (at its after, and this run
+ * moves it no further — ours, still owed its re-score: carried into the one
+ * fix this run records in its place; round 7: the lines it landed fill their
+ * week, so a move on from one since is the provider's, listed, and the landed
+ * move is carried all the same). Anything else, a move never landed that
+ * this run doesn't write (round 7: dropped with the fix it replaces, it would
+ * be lost unsaid), or a week this run doesn't read, is a refusal by name:
+ * what of it is ours is not known. More than one such fix: refused (a run
+ * leaves at most one).
+ */
+export function finishPendingFix(
+  pending: OurFixes['pending'],
+  planned: readonly StatFixLine[],
+  before: ReadonlyMap<number, ReadonlyMap<string, StatRow>>,
+  weeks: readonly number[],
+): { fix: OurFixes['pending'][number] | null; carried: StatFixLine[]; refusal?: string } {
+  if (pending.length === 0) return { fix: null, carried: [] }
+  if (pending.length > 1) {
+    return { fix: null, carried: [], refusal: `${pending.length} stat fixes of earlier runs are recorded and never written (${pending.map((f) => f.id).join(', ')}) — a run leaves at most one, so which to finish is not known. Nothing was written.` }
+  }
+  const fix = pending[0]
+  const head = `stat fix ${fix.id} (an earlier run’s, recorded and never written) can’t be finished`
+  const fixWeeks = [...new Set(fix.lines.map((line) => line.week))].sort((a, b) => a - b)
+  const unread = fixWeeks.filter((week) => !weeks.includes(week))
+  if (unread.length > 0) {
+    const all = [...new Set([...weeks, ...fixWeeks])].sort((a, b) => a - b)
+    return { fix: null, carried: [], refusal: `${head}: ${unread.map((week) => `it moves week ${week}, which this run does not read`).join('; ')} — re-run with its weeks (${all.join(', ')}). Nothing was written.` }
+  }
+  const movingNow = new Set(planned.map((line) => `${line.week}|${line.player_id}|${line.stat_key}`))
+  const carried: StatFixLine[] = []
+  const problems: string[] = []
+  for (const line of fix.lines) {
+    const stored = before.get(line.week)?.get(line.player_id)?.columns[line.stat_key] ?? 0
+    const where = `week ${line.week} ${line.player_id} ${line.stat_key}`
+    if (stored === line.before) {
+      if (!movingNow.has(`${line.week}|${line.player_id}|${line.stat_key}`)) {
+        problems.push(`${where} never landed (it still reads its before, ${line.before}) and this run doesn't write it — the feed no longer reads its after (${line.after}) as ours, so finished without it the move would be lost unsaid`)
+      }
+      continue
+    }
+    if (stored === line.after && !movingNow.has(`${line.week}|${line.player_id}|${line.stat_key}`)) carried.push(line)
+    else if (stored === line.after) problems.push(`${where} landed at its after (${line.after}) and this run moves it on from there — what of that is ours is not known`)
+    else problems.push(`${where} reads ${stored} now, neither its before (${line.before}) nor its after (${line.after}) — moved by something else since, so what of it is ours is not known`)
+  }
+  if (problems.length > 0) return { fix: null, carried: [], refusal: `${head}: ${problems.join('; ')}. Nothing was written.` }
+  return { fix, carried }
+}
+
+/**
+ * Every move a plan writes, as stat-fix lines (222): an updated line's ruled
+ * columns that differ from the stored ones (stored → feed), a new line's
+ * non-zero ruled columns (0 → feed).
+ */
+export function fixLinesOf(plans: readonly FillWeekPlan[], before: ReadonlyMap<number, ReadonlyMap<string, StatRow>>): StatFixLine[] {
+  const out: StatFixLine[] = []
+  for (const plan of plans) {
+    const stored = before.get(plan.week) ?? new Map<string, StatRow>()
+    for (const row of plan.updates) {
+      const prior = stored.get(row.player_id)
+      for (const column of RULED_COLUMNS) {
+        const was = prior?.columns[column] ?? 0
+        const now = row.columns[column] ?? 0
+        if (was !== now) out.push({ week: plan.week, player_id: row.player_id, stat_key: column, before: was, after: now })
+      }
+    }
+    for (const row of plan.newRows) {
+      for (const column of RULED_COLUMNS) {
+        const now = row.columns[column] ?? 0
+        if (now !== 0) out.push({ week: plan.week, player_id: row.player_id, stat_key: column, before: 0, after: now })
+      }
+    }
+  }
+  return out
 }
 
 function emptyTally(): DoorTally {
@@ -656,9 +941,11 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
   const { season, weeks, apply } = opts
   if (weeks.length === 0) throw new Error('fillRuledColumns: no weeks requested')
 
+  const newColumns = opts.newColumns ?? []
   const report: FillReport = {
     season,
     mode: apply ? 'apply' : 'plan',
+    newColumns,
     ok: false,
     weeks: [],
     names: NO_NAMES,
@@ -683,6 +970,19 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
   const teamColumn = await statTeamColumn(db)
   const games = await readGames(db, season)
   const gameStatus = new Map([...games.values()].map((game) => [game.id, game.status]))
+  // Rounds 5 and 6: the weeks our written fixes filled (every ruled difference there is the provider's since) and a fix a
+  // failed run left unwritten.
+  const ours = await readOurFixes(db, season)
+  if (ours.pending.length > 0) report.pendingFix = ours.pending.map((fix) => fix.id).join(', ')
+  // Round 7: a column named new to our map that a written fix of ours already moves has been filled — it is not new.
+  const notNew = newColumns.flatMap((column) => {
+    const by = ours.held.get(column)
+    return by === undefined ? [] : [`${column}: written stat fix ${by.fix} already moves it (week ${by.week})`]
+  })
+  if (notNew.length > 0) {
+    report.refused = `refused — --new-columns names a column that is not new to our map: ${notNew.join('; ')}. Nothing was read from the provider or written.`
+    return report
+  }
 
   const before = new Map<number, Map<string, StatRow>>()
   for (const week of weeks) {
@@ -708,6 +1008,9 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
         positions,
         unsendable,
         names,
+        filled: ours.filledWeeks.has(week),
+        owed: ours.pending.flatMap((fix) => fix.lines.filter((line) => line.week === week)),
+        newColumns,
         ctx: {
           providerName: provider.name,
           gameStatus,
@@ -734,6 +1037,32 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
 
   opts.beforeWrite?.(report)
   const stamp = time.now().toISOString()
+  // 222: the fix is recorded BEFORE any write (not yet written: nothing applies from it until the checks below pass).
+  const planned = fixLinesOf(report.weeks, before)
+  // Round 5: a fix an earlier run left unwritten is FINISHED here — the moves of it that landed join this run's in one
+  // fix recorded in its place (p_supersedes withdraws it in the same transaction), landed when the first of them did.
+  const finish = finishPendingFix(ours.pending, planned, before, weeks)
+  if (finish.refusal !== undefined) {
+    report.fixRefusal = finish.refusal
+    return report
+  }
+  const lines = [...planned, ...finish.carried]
+  if (lines.length > 0) {
+    const recorded = await db.rpc('record_stat_fix', {
+      p_season: season,
+      p_reason: FILL_FIX_REASON,
+      p_lines: lines as unknown as Json,
+      p_landed_at: finish.fix?.landed_at ?? stamp,
+      ...(finish.fix ? { p_supersedes: finish.fix.id } : {}),
+    })
+    if (recorded.error) {
+      report.fixRefusal = isMissingSchemaObject(recorded.error, ['record_stat_fix'])
+        ? 'the database predates migration 222 (no record_stat_fix): a fill records its fix before it writes, so every final week it touches re-scores by itself — push 222 first. Nothing was written.'
+        : `record_stat_fix refused the fix: ${recorded.error.message}. Nothing was written.`
+      return report
+    }
+    report.fix = { id: recorded.data as string, lines: lines.length, written: false, ...(finish.fix ? { supersedes: finish.fix.id, carried: finish.carried.length } : {}) }
+  }
   const noQueue = new Set<string>()
   const noCorrections = new Map<string, MovedKey[]>()
   try {
@@ -751,7 +1080,12 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
     }
   } catch (err) {
     // A failing call's earlier batches of 500 may have landed, and a batch that fails its count checks did land: a floor, not a count.
-    report.writeFailure = `${err instanceof Error ? err.message : String(err)} — at least ${report.linesWritten} lines were written before it; re-running is safe, it diffs against what landed`
+    // Round 5: never "re-running is safe" while our fix is unwritten without saying what the re-run does with it.
+    report.writeFailure =
+      `${err instanceof Error ? err.message : String(err)} — at least ${report.linesWritten} lines were written before it` +
+      (report.fix === undefined
+        ? '; re-running is safe, it diffs against what landed'
+        : `. Stat fix ${report.fix.id} stays recorded but NOT written: nothing applies from it yet. Re-run the same command once the cause is fixed: it plans against what landed and finishes this fix (one fix holding every move, landed or not, in its place).`)
     return report
   }
 
@@ -775,6 +1109,27 @@ export async function fillRuledColumns(deps: ReingestDeps, opts: FillOptions): P
   const { stats, corrections } = report.door
   const unexpected = stats.enqueued + stats.restamped + corrections.recorded + corrections.replayed + corrections.unchangedAtWrite
   if (unexpected !== 0) report.afterProblems.push(`the door reports ${unexpected} queue rows or events; this tool sends none`)
+  if (report.fix !== undefined) {
+    if (report.afterProblems.length > 0) {
+      report.afterProblems.push(
+        `stat fix ${report.fix.id} stays recorded but NOT written: nothing applies from it yet — once the lines are explained, re-run the same command: it finishes this fix (one fix holding every move, landed or not, in its place)`,
+      )
+    } else {
+      const marked = await db.rpc('mark_stat_fix_written', { p_fix_id: report.fix.id })
+      if (!marked.error) {
+        report.fix.written = true
+      } else {
+        // An error is not "not written": the mark may have committed and only its reply been lost. Read it back.
+        const back = await db.from('stat_fixes').select('written_at').eq('id', report.fix.id)
+        if (!back.error && (back.data ?? [])[0]?.written_at) report.fix.written = true
+        else {
+          report.afterProblems.push(
+            `stat fix ${report.fix.id} could not be marked written (${marked.error.message}${back.error ? `; read-back: ${back.error.message}` : ''}): nothing applies from it yet — re-run the same command: it finishes this fix (a move a written fix holds is never recorded twice)`,
+          )
+        }
+      }
+    }
+  }
   report.ok = report.afterProblems.length === 0
   return report
 }
@@ -822,9 +1177,23 @@ export function renderFillPlan(report: FillReport): string[] {
         `unknownPlayers=${plan.unknownPlayers} empty=${plan.empty} repeats=${plan.duplicates} zeroNewLines=${plan.zeroNewLines} lateLines=${plan.lateLines.length} storedOnly=${plan.storedOnly}` +
         (byPosition === '' ? '' : ` (${byPosition})`),
     )
+    if (plan.filled) {
+      const why =
+        plan.filledByStoredLines > 0
+          ? `no written stat fix holds this week, but ${plan.filledByStoredLines} stored lines carry columns only our map writes — it read the week at ingest, or a fill wrote it before 222 recorded fills (D838)`
+          : 'a written stat fix of ours holds this week'
+      lines.push(
+        plan.updates.length + plan.newRows.length === 0
+          ? `      filled (${why}): nothing is written, recorded or paid here — every ruled difference is the provider’s since our fill`
+          : `      filled (${why}): only the moves still ours are written, recorded and paid here (an unwritten fix of ours, a --new-columns column) — every other ruled difference is the provider’s since our fill`,
+      )
+    }
     for (const row of plan.newRows) lines.push(`      new line ${row.player_id}: ${ruledValues(row).join(', ')}`)
     for (const id of plan.lateLines) lines.push(`      late line (not written, F895) ${name(id)}: no ruled value`)
     for (const move of plan.fromStoredValue) lines.push(`      from a stored value ${move.player_id} ${move.column}: stored ${move.stored} → feed ${move.feed}`)
+    for (const move of plan.providerMoves) {
+      lines.push(`      the provider’s since our fill (not written, not paid — F405) ${name(move.player_id)} ${move.column}: ${move.newLine ? 'no stored line' : `stored ${move.stored}`} → feed ${move.feed}`)
+    }
     for (const move of plan.summedMoves) lines.push(`      summed ${move.column} ${name(move.player_id)}: stored ${move.stored} → feed ${move.feed}`)
     for (const other of plan.otherDifferences) lines.push(`      other (not written) ${name(other.player_id)} ${other.key}: stored ${other.stored} → feed ${other.feed}`)
     for (const [key, count] of Object.entries(plan.contextDifferences)) lines.push(`      display-only (not written) ${key}: ${count} lines differ`)
@@ -834,6 +1203,23 @@ export function renderFillPlan(report: FillReport): string[] {
     `  all weeks: ${updated + inserted} lines (${updated} updated, ${inserted} new), ${sumMoves(totals)} moves: ${movesText(totals)}; ` +
       `${fromStored} from a non-zero stored value; ${others} other-column differences; ${late} late lines (not written)`,
   )
+  const filledGroups = [
+    { why: 'a written stat fix holds each', plans: report.weeks.filter((plan) => plan.filled && plan.filledByStoredLines === 0) },
+    { why: 'no written stat fix holds them; their stored lines carry columns only our map writes', plans: report.weeks.filter((plan) => plan.filledByStoredLines > 0) },
+  ]
+  for (const { why, plans } of filledGroups) {
+    if (plans.length === 0) continue
+    lines.push(
+      `  filled weeks ${plans.map((plan) => plan.week).join(', ')} (${why}): ` +
+        `${plans.reduce((sum, plan) => sum + plan.providerMoves.length, 0)} ruled differences listed as the provider’s since our fill — not written, recorded or paid (F405)`,
+    )
+  }
+  if (report.newColumns.length > 0) {
+    lines.push(`  new to our map since these weeks were filled (--new-columns, F899): ${report.newColumns.join(', ')} — in a filled week their moves are ours, written, recorded and paid`)
+  }
+  if (report.pendingFix !== undefined) {
+    lines.push(`  stat fix ${report.pendingFix}: an earlier run’s, recorded and never written — --apply finishes it (every move of it that landed goes into the one fix it records)`)
+  }
   // Every move on a summed column, 0 → n included: the line F890's values are compared with, value by value.
   // Ids only, so it compares with F890's text as written: names never go in a repo file. The week lines above carry the names.
   for (const column of SUMMED_RULED_COLUMNS) {
@@ -856,6 +1242,13 @@ export function renderFillWrite(report: FillReport): string[] {
         `queue rows ${report.door.stats.enqueued + report.door.stats.restamped}; events ${report.door.corrections.recorded + report.door.corrections.replayed + report.door.corrections.unchangedAtWrite}`,
     )
   }
+  if (report.fixRefusal !== undefined) lines.push(`  REFUSED: ${report.fixRefusal}`)
+  if (report.fix !== undefined) {
+    lines.push(
+      `  stat fix ${report.fix.id}: ${report.fix.lines} move(s) recorded${report.fix.written ? ' and written — the score-week pass re-scores every final league-week they touch, quietly' : ', NOT written — nothing applies from it'}` +
+        (report.fix.supersedes === undefined ? '' : ` (in place of ${report.fix.supersedes}, an earlier run’s fix never written: ${report.fix.carried} of its moves had landed)`),
+    )
+  }
   if (report.writeFailure !== undefined) lines.push(`  WRITE FAILED: ${report.writeFailure}`)
   for (const problem of report.afterProblems) lines.push(`  FAILED AFTER WRITING: ${problem}`)
   return lines
@@ -868,14 +1261,28 @@ export interface FillArgs {
   weeks: number[]
   apply: boolean
   confirmTarget?: string
+  /** Round 7 (F899): `--new-columns`, when given. */
+  newColumns?: RuledColumn[]
 }
 
 /** The one season the fill is ruled for (F890). 2025 is F872's call, not ruled. */
 export const FILL_SEASON = 2026
 
-const USAGE = `usage: npm run sync:fill-ruled -- --season ${FILL_SEASON} --weeks <1-3|1,2,4> [--apply --confirm-target <host>]`
-const VALUE_FLAGS: ReadonlySet<string> = new Set(['--season', '--weeks', '--confirm-target'])
+const USAGE = `usage: npm run sync:fill-ruled -- --season ${FILL_SEASON} --weeks <1-3|1,2,4> [--new-columns <column,…>] [--apply --confirm-target <host>]`
+const VALUE_FLAGS: ReadonlySet<string> = new Set(['--season', '--weeks', '--confirm-target', '--new-columns'])
 const seasonSchema = z.coerce.number().int().min(2000).max(2100)
+
+/** `--new-columns a,b` (round 7, F899): ruled columns, none summed, none twice. Throws by name. */
+export function parseNewColumns(raw: string): RuledColumn[] {
+  const out: RuledColumn[] = []
+  for (const name of raw.split(',').map((part) => part.trim())) {
+    if (!RULED.has(name)) throw new Error(`--new-columns ${name || '(empty)'} is not a ruled column (${RULED_COLUMNS.join(', ')}) — nothing read or written. ${USAGE}`)
+    if (SUMMED.has(name)) throw new Error(`--new-columns ${name}: the feed sums it with a part the old map stored, so it can't be new to our map — nothing read or written`)
+    if ((out as string[]).includes(name)) throw new Error(`--new-columns names ${name} twice — nothing read or written`)
+    out.push(name as RuledColumn)
+  }
+  return out
+}
 
 /** Throws, naming the argument, on anything this tool doesn't take: a stale or mistyped flag never runs. */
 export function parseFillArgs(argv: readonly string[]): FillArgs {
@@ -903,7 +1310,14 @@ export function parseFillArgs(argv: readonly string[]): FillArgs {
   if (season.data !== FILL_SEASON) {
     throw new Error(`--season ${season.data} refused: this tool fills ${FILL_SEASON} only (2025 is F872, not ruled). Nothing read or written.`)
   }
-  return { season: season.data, weeks: parseWeeks(weeksRaw), apply, confirmTarget: values.get('--confirm-target') }
+  const newColumnsRaw = values.get('--new-columns')
+  return {
+    season: season.data,
+    weeks: parseWeeks(weeksRaw),
+    apply,
+    confirmTarget: values.get('--confirm-target'),
+    newColumns: newColumnsRaw === undefined ? undefined : parseNewColumns(newColumnsRaw),
+  }
 }
 
 export interface FillCliIo {
@@ -949,10 +1363,10 @@ export async function runFillCli(argv: readonly string[], io: FillCliIo): Promis
     planPrinted = true
   }
   // An --apply that goes on to write prints its plan before the first door call.
-  const report = await fillRuledColumns(io.connect(), { season: args.season, weeks: args.weeks, apply: args.apply, beforeWrite: printPlan })
+  const report = await fillRuledColumns(io.connect(), { season: args.season, weeks: args.weeks, apply: args.apply, newColumns: args.newColumns, beforeWrite: printPlan })
   if (!planPrinted) printPlan(report)
   for (const line of renderFillWrite(report)) io.log(line)
-  if (report.refused !== undefined) {
+  if (report.refused !== undefined || report.fixRefusal !== undefined) {
     io.error('REFUSED — nothing written; see the line above')
     return 1
   }
@@ -964,7 +1378,15 @@ export async function runFillCli(argv: readonly string[], io: FillCliIo): Promis
     io.error(args.apply ? 'REFUSED — problems above; nothing written' : 'PROBLEMS above — --apply would write nothing until they are explained')
     return 1
   }
-  if (args.apply) io.log('Done — ruled columns only; no queue row, no event; K identities and row counts hold.')
-  else io.log(`Plan only — nothing written. To write it: npm run sync:fill-ruled -- --season ${args.season} --weeks ${weeks} --apply --confirm-target ${host}`)
+  // Round 5: "the fix is written" only when it is — a run that moved nothing recorded none.
+  if (args.apply) {
+    io.log(
+      `Done — ruled columns only; no queue row, no event; K identities and row counts hold; ${report.fix?.written ? 'the fix is written, so final weeks re-score by themselves.' : 'nothing moved, so no stat fix was recorded.'}`,
+    )
+  }
+  else {
+    const named = args.newColumns === undefined ? '' : ` --new-columns ${args.newColumns.join(',')}`
+    io.log(`Plan only — nothing written. To write it: npm run sync:fill-ruled -- --season ${args.season} --weeks ${weeks}${named} --apply --confirm-target ${host}`)
+  }
   return 0
 }

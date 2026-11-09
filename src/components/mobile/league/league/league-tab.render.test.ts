@@ -1153,6 +1153,37 @@ describe('League tab — @handle everywhere (gap list §4 item 12)', () => {
     expect(line).not.toMatch(/>(marcus|dalton)</)
   })
 
+  it('222 (D839 — "fixing stats should not go to some user"): a ruled re-score of a final week is a SYSTEM notice — the League pill, no ✸ Commissioner, no @handle', () => {
+    const item: CommishLogItem = {
+      id: 'ca-rs',
+      action_type: 'rescore_final_week',
+      actor: { id: 'user-opp', username: 'marcus' },
+      target_type: 'week',
+      target_id: '2099:1',
+      reason: 'Someone (product owner), 2026-09-29: the ruling',
+      before: { week_scores: [] },
+      after: { week_scores: [] },
+      metadata: { week: 1, scores_changed: 2 },
+      acting_as_team_id: null,
+      reverts_action_id: null,
+      created_at: '2099-10-11T18:00:00.000Z',
+    }
+    const html = render(
+      createElement(ActivitySubscreenRoute, { leagueId: LEAGUE, initial: { tab: 'commissioner', week: null, team: null, entry: null } }),
+      {},
+      (qc) =>
+        qc.setQueryData(commishLogKeys.list(LEAGUE, { limit: 50 }), {
+          pages: [{ items: [item], limit: 50, filters: {}, has_more: false, next_cursor: null }],
+          pageParams: [undefined],
+        }),
+    )
+    const line = html.slice(html.indexOf('data-commish-line="ca-rs"'))
+    expect(line).toMatch(/data-system="true">League</)
+    expect(line).toContain('Week 1 was re-scored after it was final (2 team scores changed)')
+    expect(line).not.toContain('✸ Commissioner')
+    expect(line).not.toMatch(/marcus|data-username-link|Reason:|product owner/)
+  })
+
   it('the commissioner log opened at one action: the note says so, and that row is drawn like the rest — no tint', () => {
     const OPENED = 'cccccccc-0000-4000-8000-0000000000a2'
     const OLDER = 'cccccccc-0000-4000-8000-0000000000a1'

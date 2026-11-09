@@ -261,6 +261,49 @@ They are columns, not keys in `advanced`: a named exception to spec §23.5. A mi
 
 ---
 
+### stat_fixes, stat_fix_lines, stat_fix_rescores
+
+Migration 222 (PROGRESS D836–D839; spec v2.16.118). A **stat fix** is a record of OUR OWN change to stored stats — our feed map, our ingestion or the engine, never a provider correction. Chris 2026-11-07: "the stats need to be correct. that should be done automatically". The score-week job applies every written fix to every eligible final league-week, quietly (no post, no notification, no member named).
+
+```sql
+CREATE TABLE stat_fixes (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  season     INTEGER NOT NULL,                  -- 2000–2100
+  reason     TEXT NOT NULL,                     -- plain words, ≤ 500
+  landed_at  TIMESTAMPTZ NOT NULL,              -- when our change reached the stats or the engine (required; a week last scored after it was scored with it)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  written_at TIMESTAMPTZ                        -- NULL = recorded, not confirmed; only a written fix is applied
+);
+
+CREATE TABLE stat_fix_lines (
+  fix_id       UUID NOT NULL REFERENCES stat_fixes(id) ON DELETE CASCADE,
+  season       INTEGER NOT NULL,
+  week         INTEGER NOT NULL,                -- 1–22
+  player_id    TEXT NOT NULL REFERENCES players(id),
+  stat_key     TEXT NOT NULL,                   -- a numeric player_stats stat column
+  before_value NUMERIC NOT NULL,                -- what our change replaced (0 for a line that had no row)
+  after_value  NUMERIC NOT NULL,                -- what it wrote; never equal to before_value
+  PRIMARY KEY (fix_id, week, player_id, stat_key)
+);
+
+CREATE TABLE stat_fix_rescores (                -- the system receipt: one per (fix, league, week)
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  fix_id          UUID NOT NULL REFERENCES stat_fixes(id),
+  league_id       UUID NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+  season          INTEGER NOT NULL,
+  week            INTEGER NOT NULL,
+  applied_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  players_changed INTEGER NOT NULL,
+  scores_changed  INTEGER NOT NULL,
+  result          JSONB NOT NULL,               -- the door's document, replayed on a second call
+  UNIQUE (fix_id, league_id, week)
+);
+```
+
+All three: RLS on with **zero policies** and every client privilege revoked (service role only); **append-only** by trigger — a fix's one change is `written_at` NULL → set, a fix applied nowhere may be withdrawn (its lines go with it), one applied anywhere may not; a line goes only with its fix and a receipt only with its league. No actor column anywhere. The receipt carries 212's archive freeze. Functions (service role only, a signed-in caller refused): `record_stat_fix(season, reason, lines, landed_at, supersedes)` (`landed_at` required; `supersedes` withdraws an unwritten fix in the same transaction — the fill finishing a failed run), `mark_stat_fix_written(fix_id)` (both refuse a move a written fix already holds — the same week, player and stat from the same before value: `already_recorded`, a move is paid once), `stat_fix_targets(owed_only, limit, league_ids)` (every written fix × league-week and its state: applied, owed, or why not — `week_scored_after_fix` reads `league_weeks.scored_at`, 216's close stamp, else `finalized_at`) and `apply_stat_fix_week(fix_id, league_id, week, teams, dry_run)` (the door). What a fix pays: for each stored starter row of a final week, `points(today's line with the fix's keys at after) − points(the same at before)` under the week's own rules (TS, the worker's scorer — `stat-fix-rescore.ts`), added to the stored points — on every team, a commissioner-overridden one's too (its score stays the commissioner's); a provider's late correction is in both terms and never paid. `league_week_player_points.source` gains `stat_fix` for a row so moved, and that table's final-week lock gains one exit: an UPDATE keeping slot and starter, while the door holds the setting naming THIS league-week's receipt. pgTAP `171_stat_fix_rescore.sql` pins it.
+
+---
+
 ### scoring_systems
 
 ```sql

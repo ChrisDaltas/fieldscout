@@ -297,6 +297,10 @@ export interface CommishLogLine {
    *  receipt: `target_id` IS the named player — `COALESCE(gain, lose)` on
    *  both, 127:1403/1421 and every later body) — each name a door. */
   players: NamedPlayer[]
+  /** 222 (D839): a system notice, not a commissioner's act — no actor is
+   *  named; the renderers draw the plain `system` chip (R895's treatment of
+   *  a post nobody wrote), never the ✸ commissioner tag. */
+  system: boolean
 }
 
 type Doc = Record<string, unknown>
@@ -398,8 +402,9 @@ function actText(
     return `set ${team(item.target_id, metadata.team_name)}’s ${weekClause(metadata)}lineup`
   }
   // A RULED RE-SCORE OF A FINAL WEEK — 161 writes {week_scores} both sides
-  // (M5 L.D3.13, D425). Not a commissioner's own act: the actor is the
-  // person whose ruling it is, and the league's post says why in plain words.
+  // (M5 L.D3.13, D425). Not a commissioner's own act. Since 222 (D839) the
+  // log never draws it as this (commishLogLines → `systemRescoreText`); this
+  // arm only answers a caller that reads the words without the log's line.
   if ('week_scores' in after) {
     const changed = num(metadata.scores_changed)
     return `re-scored ${weekClause(metadata)}after it was final${changed === null ? '' : ` (${changed} team score${changed === 1 ? '' : 's'} changed)`}`
@@ -446,6 +451,23 @@ function actText(
 }
 
 /**
+ * A ruled re-score of a final week as the log draws it since 222 (PROGRESS
+ * D839; Chris 2026-11-07, verbatim: "fixing stats should not go to some user,
+ * i'm not following"): a system notice in its own words — no actor, and not
+ * the ruling (its words quote a person) but the plain note the league was
+ * given (161's `member_note`).
+ */
+export function systemRescoreText(metadata: Doc): string {
+  const week = num(metadata.week)
+  const note = text(metadata.member_note)?.trim().replace(/\.+$/, '')
+  const changed = num(metadata.scores_changed)
+  return `${week === null ? 'A week' : `Week ${week}`} was re-scored after it was final${note ? `: ${note}` : ''}${changed === null ? '' : ` (${changed} team score${changed === 1 ? '' : 's'} changed)`}`
+}
+
+/** 222 (D839): the action types the log draws as a SYSTEM notice — no member named. */
+export const SYSTEM_ACTION_TYPES: ReadonlySet<string> = new Set(['rescore_final_week'])
+
+/**
  * The §10.3 log as lines. `memberNames` (user id → username, from the league
  * detail) lets a membership receipt name the member; without it the line says
  * what happened without the name.
@@ -483,6 +505,11 @@ export function commishLogLines(
     // under the member list (the league detail's current usernames).
     const people = item.usernames ? new Map([...Object.entries(item.usernames), ...memberNames]) : memberNames
     const sentence = actText(item, { teamNames, memberNames: people }, named, players)
+    if (SYSTEM_ACTION_TYPES.has(item.action_type)) {
+      // 222 (D839): the platform's act, never a member's — no actor, no ruling, no "(for …)".
+      const sentence = systemRescoreText(asDoc(item.metadata))
+      return { id: item.id, actor: SYSTEM_LABEL, actorUsername: null, text: sentence, marked: sentence, reason: null, createdAt: item.created_at, players: [], system: true }
+    }
     const actingFor = item.acting_as_team_id ? teamNames.get(item.acting_as_team_id) : undefined
     const marked = actingFor && !named.has(actingFor) ? `${sentence} (for ${actingFor})` : sentence
     const actorUsername = text(item.actor.username)
@@ -495,6 +522,7 @@ export function commishLogLines(
       reason: text(item.reason)?.trim() ?? null,
       createdAt: item.created_at,
       players,
+      system: false,
     }
   })
 }

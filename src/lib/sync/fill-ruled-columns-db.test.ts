@@ -9,6 +9,21 @@
  * score: a final week's line moves here, no league table does. The league exists
  * only to hold the week open, then to stop holding it.
  *
+ * 222 (PROGRESS D839) re-cut, deliberately: the fill now also RECORDS its fix —
+ * every move, before → after, through the real `record_stat_fix` BEFORE its
+ * first write, marked written (`mark_stat_fix_written`) once its checks pass —
+ * so the score-week pass re-scores every final league-week it touched. Those
+ * are platform tables (`stat_fixes`, `stat_fix_lines`), still no league table:
+ * the fill itself never scores. FR5 reads the fix off the database; FR6 records
+ * none (nothing to write). Round 6: FR7 — once FR5's written fix holds week 1,
+ * the week is FILLED, and a block and a new line the provider adds since are
+ * listed as the provider's, never written, recorded or paid. Round 7: FR8 —
+ * with FR5's fix withdrawn (a fill before 222 recorded nothing), week 1 is
+ * filled by its stored lines all the same; FR9 — a column named new to our
+ * map (`--new-columns`) is written and recorded through the real door and
+ * `record_stat_fix` in that filled week, and nothing else moves. Cleanup
+ * withdraws the 2095 fixes (applied nowhere).
+ *
  * Requires the local stack — D59(5); FAILS loudly when it is down. Fixture
  * hygiene (F199): the `vitest-frc` prefix on players / stats / games, the league
  * by name, the 2095 calendar rows; cleanup first and after. Action-id prefix
@@ -22,7 +37,7 @@ import type { ProviderPlayerWeekStats, StatsProvider } from '@/lib/leagues/stats
 import { VirtualClock } from '@/lib/leagues/time/virtual-clock'
 import type { Database, Json } from '@/types/database'
 
-import { fillRuledColumns, type FillReport } from './fill-ruled-columns'
+import { fillRuledColumns, type FillReport, type RuledColumn } from './fill-ruled-columns'
 import type { SyncClient } from './types'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
@@ -43,11 +58,14 @@ const K = `${PREFIX}-k`
 const DST = `${PREFIX}-dst`
 const WR = `${PREFIX}-wr`
 const RETURNER = `${PREFIX}-ret`
+/** Round 6: no line in FEED; FR7's feed adds one (the provider's, after our fill). */
+const LATE_RETURNER = `${PREFIX}-ret2`
 const PLAYERS = [
   { id: K, full_name: 'FRC Kicker', position: 'K', team: 'FRA', status: 'Active' },
   { id: DST, full_name: 'FRC Defense', position: 'DEF', team: 'FRA', status: 'Active' },
   { id: WR, full_name: 'FRC Receiver', position: 'WR', team: 'FRA', status: 'Active' },
   { id: RETURNER, full_name: 'FRC Returner', position: 'WR', team: 'FRB', status: 'Active' },
+  { id: LATE_RETURNER, full_name: 'FRC Late Returner', position: 'WR', team: 'FRA', status: 'Active' },
 ]
 
 const KICKOFF = '2095-09-13T17:00:00.000Z'
@@ -78,22 +96,23 @@ const FEED: ProviderPlayerWeekStats[] = [
   feedLine(RETURNER, { return_td: 1 }, { off_snaps: 4 }),
 ]
 
-const provider: StatsProvider & { calls: number } = {
+const provider: StatsProvider & { calls: number; week1: ProviderPlayerWeekStats[] } = {
   name: SOURCE,
   capabilities: new Set(['core_box']),
   calls: 0,
+  week1: FEED,
   getSchedule: async () => [],
   getGameStates: async () => [],
   async getWeekStats(_season, week) {
     provider.calls += 1
-    return week === 1 ? FEED : []
+    return week === 1 ? provider.week1 : []
   },
   getInjuries: async () => [],
   getInactives: async () => [],
 }
 
-function fill(apply: boolean, weeks: number[] = [1]): Promise<FillReport> {
-  return fillRuledColumns({ db, provider, time: new VirtualClock(NOW) }, { season: SEASON, weeks, apply })
+function fill(apply: boolean, weeks: number[] = [1], newColumns?: RuledColumn[]): Promise<FillReport> {
+  return fillRuledColumns({ db, provider, time: new VirtualClock(NOW) }, { season: SEASON, weeks, apply, newColumns })
 }
 
 async function line(playerId: string) {
@@ -108,6 +127,8 @@ async function queueAndEvents(): Promise<{ queue: unknown[] | null; events: unkn
 }
 
 async function cleanup(): Promise<void> {
+  // 222: the fixes this suite's fills recorded — applied nowhere, so they may be withdrawn (their lines go with them).
+  await must(service.from('stat_fixes').delete().eq('season', SEASON), 'cleanup stat_fixes')
   await must(service.from('stat_correction_events').delete().like('player_id', `${PREFIX}-%`), 'cleanup stat_correction_events')
   await must(service.from('score_fanout').delete().like('player_id', `${PREFIX}-%`), 'cleanup score_fanout')
   await must(service.from('player_stats').delete().like('player_id', `${PREFIX}-%`), 'cleanup player_stats')
@@ -236,6 +257,17 @@ describe('the quiet fill over the real door (167)', () => {
     expect(await line(RETURNER)).toMatchObject({ return_td: 1, source: SOURCE, is_live: false, team: 'FRA', def_yards_allowed: null, advanced: { off_snaps: 4 }, receiving_yards: 0 })
 
     expect(await queueAndEvents()).toEqual({ queue: [], events: [] })
+
+    // 222 (D839): the fix, recorded before the write and written after the checks — the moves, before → after (a new line from 0).
+    const fixes = await must(service.from('stat_fixes').select('id, season, landed_at, written_at').eq('season', SEASON), 'fixes')
+    expect(fixes).toHaveLength(1)
+    expect(report.fix).toEqual({ id: fixes![0].id, lines: 4, written: true })
+    expect(fixes![0].written_at).not.toBeNull()
+    expect(new Date(fixes![0].landed_at).toISOString()).toBe(NOW.toISOString())
+    const lines = await must(service.from('stat_fix_lines').select('week, player_id, stat_key, before_value, after_value').eq('fix_id', fixes![0].id), 'fix lines')
+    expect(lines!.map((l) => `${l.week}:${l.player_id}:${l.stat_key}:${l.before_value}→${l.after_value}`).sort()).toEqual(
+      [`1:${DST}:def_block:0→1`, `1:${K}:fg_0_39:0→2`, `1:${K}:fg_missed:0→1`, `1:${RETURNER}:return_td:0→1`].sort(),
+    )
   })
 
   it('FR6 a second run writes nothing', async () => {
@@ -245,5 +277,68 @@ describe('the quiet fill over the real door (167)', () => {
     expect(report.weeks[0].updates).toEqual([])
     expect(report.weeks[0].newRows).toEqual([])
     expect(await queueAndEvents()).toEqual({ queue: [], events: [] })
+    // 222: nothing moved, so no fix is recorded (FR5's stays the only one).
+    expect(report.fix).toBeUndefined()
+    expect(await must(service.from('stat_fixes').select('id').eq('season', SEASON), 'fixes')).toHaveLength(1)
+  })
+
+  it('FR7 round 6: FR5\'s written fix holds week 1, so it is FILLED — a second block and a new line the provider adds since are listed as its own, never written, recorded or paid', async () => {
+    provider.week1 = FEED.map((l) => (l.playerId === DST ? { ...l, stats: { ...l.stats, def_block: 2 } } : l)).concat(feedLine(LATE_RETURNER, { return_td: 1 }, { off_snaps: 3 }))
+    try {
+      const report = await fill(true)
+      expect(report.ok).toBe(true)
+      expect(report.wrote).toBe(false)
+      expect(report.fix).toBeUndefined()
+      expect(report.weeks[0].filled).toBe(true)
+      expect(report.weeks[0].providerMoves).toEqual([
+        { player_id: DST, column: 'def_block', stored: 1, feed: 2, newLine: false },
+        { player_id: LATE_RETURNER, column: 'return_td', stored: 0, feed: 1, newLine: true },
+      ])
+      expect(await line(DST)).toMatchObject({ def_block: 1 })
+      expect(await line(LATE_RETURNER)).toBeNull()
+      expect(await must(service.from('stat_fixes').select('id').eq('season', SEASON), 'fixes')).toHaveLength(1)
+      expect(await queueAndEvents()).toEqual({ queue: [], events: [] })
+    } finally {
+      provider.week1 = FEED
+    }
+  })
+
+  it('FR8 round 7: FR5\'s fix withdrawn (a fill before 222 recorded nothing) — week 1\'s stored lines carry columns only our map writes, so it is filled all the same: FR7\'s block and new line are listed, nothing written or recorded', async () => {
+    await must(service.from('stat_fixes').delete().eq('season', SEASON), 'withdraw FR5\'s fix (applied nowhere)')
+    provider.week1 = FEED.map((l) => (l.playerId === DST ? { ...l, stats: { ...l.stats, def_block: 2 } } : l)).concat(feedLine(LATE_RETURNER, { return_td: 1 }, { off_snaps: 3 }))
+    try {
+      const report = await fill(true)
+      expect(report.ok).toBe(true)
+      expect([report.wrote, report.fix, report.weeks[0].filled, report.weeks[0].filledByStoredLines]).toEqual([false, undefined, true, 3])
+      expect(report.weeks[0].providerMoves).toEqual([
+        { player_id: DST, column: 'def_block', stored: 1, feed: 2, newLine: false },
+        { player_id: LATE_RETURNER, column: 'return_td', stored: 0, feed: 1, newLine: true },
+      ])
+      expect(await line(DST)).toMatchObject({ def_block: 1 })
+      expect(await line(LATE_RETURNER)).toBeNull()
+      expect(await must(service.from('stat_fixes').select('id').eq('season', SEASON), 'fixes')).toHaveLength(0)
+      expect(await queueAndEvents()).toEqual({ queue: [], events: [] })
+    } finally {
+      provider.week1 = FEED
+    }
+  })
+
+  it('FR9 round 7: --new-columns def_2pt_return — in the filled week the D/ST\'s two-point return is written and recorded through the real door and record_stat_fix; the provider\'s second block is not', async () => {
+    provider.week1 = FEED.map((l) => (l.playerId === DST ? { ...l, stats: { ...l.stats, def_block: 2, def_2pt_return: 1 } } : l))
+    try {
+      const report = await fill(true, [1], ['def_2pt_return'])
+      expect(report.afterProblems).toEqual([])
+      expect(report.ok).toBe(true)
+      expect(report.weeks[0].providerMoves).toEqual([{ player_id: DST, column: 'def_block', stored: 1, feed: 2, newLine: false }])
+      expect(await line(DST)).toMatchObject({ def_2pt_return: 1, def_block: 1, def_sacks: 2, source: 'sleeper' })
+      expect(await queueAndEvents()).toEqual({ queue: [], events: [] })
+      const fixes = await must(service.from('stat_fixes').select('id, written_at').eq('season', SEASON), 'fixes')
+      expect(fixes).toHaveLength(1)
+      expect([report.fix?.id, report.fix?.written, fixes![0].written_at === null]).toEqual([fixes![0].id, true, false])
+      const lines = await must(service.from('stat_fix_lines').select('week, player_id, stat_key, before_value, after_value').eq('fix_id', fixes![0].id), 'fix lines')
+      expect(lines!.map((l) => `${l.week}:${l.player_id}:${l.stat_key}:${l.before_value}→${l.after_value}`)).toEqual([`1:${DST}:def_2pt_return:0→1`])
+    } finally {
+      provider.week1 = FEED
+    }
   })
 })

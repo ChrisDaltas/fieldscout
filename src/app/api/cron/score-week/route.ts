@@ -112,6 +112,13 @@ export async function GET(request: Request) {
         weeks: report.close.weeks.map((w) => ({ league_id: w.league_id, week: w.week, reason: w.reason, outcome: w.outcome, error: w.error, filled: w.filled })),
         problems: report.close.problems,
       },
+      // 222: our own stat fixes (no league names, no member — ids and counts).
+      stat_fix: report.stat_fix === null ? null : {
+        available: report.stat_fix.available,
+        applied: report.stat_fix.applied,
+        weeks: report.stat_fix.weeks,
+        problems: report.stat_fix.problems,
+      },
       alerts: report.alerts,
       infos: report.infos,
       started_at: report.started_at,

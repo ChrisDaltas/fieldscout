@@ -32,6 +32,7 @@ import type { CommishLogItem, CommishLogPage } from '@/lib/leagues/api/commish-l
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
 import { ActivityPage } from './activity-page'
+import { COMMISSIONER_LABEL } from './activity-feed-ops'
 import {
   ACTIVITY_TAB_LABELS,
   ADD_DROP_TYPES,
@@ -326,6 +327,26 @@ describe('Commissioner — the whole §10.3 log, by team and week, paged, opened
     expect(html).toContain('id="commish-log-team"')
     expect(html).toContain('id="commish-log-week"')
     expect(html).not.toContain(COMMISH_WEEK_NOTE)
+  })
+
+  it('222 (D839 — "fixing stats should not go to some user"): a ruled re-score of a final week is a SYSTEM notice — the plain chip, no ✸, no member, no ruling', () => {
+    const rescore = logItem({
+      id: 'ca-rs',
+      action_type: 'rescore_final_week',
+      actor: { id: 'user-r', username: 'rulingauthor' },
+      reason: 'Someone (product owner), 2026-09-29: the ruling',
+      target_type: 'week',
+      target_id: '2099:1',
+      before: { week_scores: [] },
+      after: { week_scores: [] },
+      metadata: { week: 1, scores_changed: 2, member_note: 'defense yards allowed were missing when it was first scored' },
+    })
+    const html = panel(render({ tab: 'commissioner' }, { log: { filters: { limit: 50 }, seed: [logPage([rescore])] } }), 'commissioner')
+    const row = html.slice(html.indexOf('data-commish-log-item="ca-rs"'))
+    expect(row).toContain('data-system')
+    expect(row).toContain('Week 1 was re-scored after it was final: defense yards allowed were missing when it was first scored (2 team scores changed)')
+    expect(row).not.toContain(COMMISSIONER_LABEL)
+    expect(row).not.toMatch(/rulingauthor|data-username-link|product owner|reason:/)
   })
 
   it('filtered by a week: F534’s sentence says what a week shows; a filter with nothing is its own empty copy', () => {

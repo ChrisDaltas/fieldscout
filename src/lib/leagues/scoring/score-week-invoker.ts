@@ -33,6 +33,16 @@
  *      close is an ALERT by name; a database without 216 is INFO. A pass that
  *      THROWS is one `CLOSE PASS ERROR` alert and the drain loop carries on
  *      (R1790) — the close never costs the minute its scoring.
+ *   2c. OUR OWN STAT FIXES (migration 222; PROGRESS D836–D839; Chris
+ *      2026-11-07: "the stats need to be correct. that should be done
+ *      automatically, we should not be doing this is as some live code
+ *      change.") — once per invocation, after the close pass: `runStatFixPass`
+ *      applies every owed (written fix × eligible league × fix week), at most
+ *      `STAT_FIX_PASS_LIMIT`, quietly (no post, no notification). A league-week
+ *      the door refuses is an ALERT by name and stays owed; an applied one is
+ *      INFO. A database without 222 is a SILENT no-op (deploy before push). A
+ *      pass that THROWS is one `STAT FIX PASS ERROR` alert and the drain loop
+ *      carries on — it never costs the minute its scoring.
  *   3. REPEAT while the budget allows: immediately when the claim came back
  *      FULL (`more`), else after `DRAIN_INTERVAL_MS`; STOP early when the
  *      queue is empty AND no game window is hot (the same table-derived
@@ -54,6 +64,7 @@
 
 import type { TimeProvider } from '../time/time-provider'
 import { type BatchReport, type CloseScoringReport, runCloseScoring, runScoreWeekBatch, type ScoreWorkerClient } from './score-week-worker'
+import { runStatFixPass, type StatFixPassReport } from './stat-fix-rescore'
 
 // ── Constants (the route pins them beside `maxDuration`) ───────────────────
 
@@ -134,6 +145,28 @@ export function classifyClose(report: CloseScoringReport): DrainVerdict {
   return { alerts, infos }
 }
 
+/** The stat-fix pass's loud surface (222): a fix a league-week refuses is never silent; a database without 222 is. */
+export function classifyStatFix(report: StatFixPassReport): DrainVerdict {
+  const alerts: string[] = []
+  const infos: string[] = []
+  if (!report.available) return { alerts, infos }
+  for (const p of report.problems) alerts.push(`STAT FIX NOT APPLIED: ${p} — no receipt, so it stays owed and the next pass tries again (D836)`)
+  for (const w of report.weeks) {
+    if (w.verdict === 'applied') {
+      infos.push(`league_id=${w.league_id} week=${w.week} stat fix ${w.fix_id} applied: ${w.players_changed} player row(s), ${w.scores_changed} team score(s), ${w.results_changed} result(s) moved`)
+    } else if (w.verdict === 'no_changes') {
+      infos.push(`league_id=${w.league_id} week=${w.week} stat fix ${w.fix_id}: nothing in the week moves — receipt written`)
+    }
+  }
+  return { alerts, infos }
+}
+
+/** The one alert a THROWN stat-fix pass becomes — the drain loop carries on. */
+export function statFixPassErrorAlert(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  return `STAT FIX PASS ERROR: ${message} — the pass stopped there; every fix it had not applied stays owed and is retried next invocation; draining continues (D836)`
+}
+
 /** R1790: the one alert a THROWN close pass becomes — the drain loop carries on. */
 export function closePassErrorAlert(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err)
@@ -155,6 +188,8 @@ export interface ScoreWeekInvokerDeps {
   drain?: typeof runScoreWeekBatch
   /** Injectable for the loop's tests; production passes nothing (runCloseScoring, F863). */
   closeWeeks?: typeof runCloseScoring
+  /** Injectable for the loop's tests; production passes nothing (runStatFixPass, 222). */
+  statFix?: typeof runStatFixPass
   leaseSeconds?: number
   batchSize?: number
   deferSeconds?: number
@@ -166,6 +201,8 @@ export interface ScoreWeekInvocationReport {
   drains: BatchReport[]
   /** The close pass's report (F863); null if the pass threw (its `CLOSE PASS ERROR` alert says why — R1790) or the invocation died before it. */
   close: CloseScoringReport | null
+  /** The stat-fix pass's report (222); null if the pass threw (its `STAT FIX PASS ERROR` alert says why) or the invocation died before it. */
+  stat_fix: StatFixPassReport | null
   alerts: string[]
   infos: string[]
   /** Why the invocation stopped. */
@@ -176,6 +213,7 @@ export async function runScoreWeekInvocation(deps: ScoreWeekInvokerDeps): Promis
   const budgetMs = deps.budgetMs ?? SCORE_WEEK_BUDGET_MS
   const drain = deps.drain ?? runScoreWeekBatch
   const closeWeeks = deps.closeWeeks ?? runCloseScoring
+  const statFix = deps.statFix ?? runStatFixPass
   const leaseSeconds = deps.leaseSeconds ?? SCORE_WEEK_LEASE_SECONDS
   const startedMs = deps.time.now().getTime()
   const report: ScoreWeekInvocationReport = {
@@ -183,6 +221,7 @@ export async function runScoreWeekInvocation(deps: ScoreWeekInvokerDeps): Promis
     finished_at: new Date(startedMs).toISOString(),
     drains: [],
     close: null,
+    stat_fix: null,
     alerts: [],
     infos: [],
     stopped: null,
@@ -213,6 +252,15 @@ export async function runScoreWeekInvocation(deps: ScoreWeekInvokerDeps): Promis
         report.infos.push(...closeVerdict.infos)
       } catch (err) {
         report.alerts.push(closePassErrorAlert(err))
+      }
+      // 222: our own stat fixes, after the close (the same never-throw rule).
+      try {
+        report.stat_fix = await statFix({ time: deps.time, db: deps.db })
+        const fixVerdict = classifyStatFix(report.stat_fix)
+        report.alerts.push(...fixVerdict.alerts)
+        report.infos.push(...fixVerdict.infos)
+      } catch (err) {
+        report.alerts.push(statFixPassErrorAlert(err))
       }
     }
 
