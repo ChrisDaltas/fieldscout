@@ -56,9 +56,12 @@ const CTA_SIZES = {
 /** v13 primary pill — "Create account" everywhere on the landing page. */
 export function CreateAccountButton({
   size = 'md',
+  tone = 'blue',
   className,
 }: {
   size?: keyof typeof CTA_SIZES
+  /** `ink` is for the green end zone, where the blue pill would clash. */
+  tone?: 'blue' | 'ink'
   className?: string
 }) {
   return (
@@ -66,7 +69,10 @@ export function CreateAccountButton({
       href="/signup"
       scroll={false} // opens a modal over the page — keep the page where it is
       className={cn(
-        'inline-flex flex-none items-center whitespace-nowrap rounded-pill bg-fs-blue font-semibold text-white transition-colors hover:bg-fs-blue-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fs-blue',
+        'inline-flex flex-none items-center whitespace-nowrap rounded-pill font-semibold text-white transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2',
+        tone === 'blue'
+          ? 'bg-fs-blue hover:bg-fs-blue-hover focus-visible:outline-fs-blue'
+          : 'bg-fs-ink hover:bg-fs-ink-3 focus-visible:outline-fs-ink',
         CTA_SIZES[size],
         className,
       )}
@@ -101,5 +107,38 @@ export function CheckDisc({ size = 18, muted = false }: { size?: number; muted?:
     >
       ✓
     </span>
+  )
+}
+
+/**
+ * Sideline down marker above a section heading — the page reads as one drive
+ * down the field ("1st & 10" … "1st & goal" … the end zone). The down sits in
+ * an ink chip; the label names the section.
+ */
+export function DownMarker({
+  down,
+  label,
+  onGreen = false,
+  className,
+}: {
+  down: string
+  label: string
+  /** In the end zone: a translucent chip instead of the white one. */
+  onGreen?: boolean
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'inline-flex h-[30px] items-center gap-2 rounded-pill pl-1 pr-3.5 text-[13px] font-semibold',
+        onGreen ? 'bg-white/40 text-fs-ink' : 'bg-white text-fs-text-2 shadow-fs-ring',
+        className,
+      )}
+    >
+      <span className="inline-flex h-[22px] items-center rounded-pill bg-fs-ink px-2.5 text-[11px] font-bold uppercase tracking-[.05em] text-white">
+        {down}
+      </span>
+      {label}
+    </div>
   )
 }

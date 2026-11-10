@@ -3,9 +3,11 @@
 import { CheckDisc, PosTag, ScoutDot } from '@/components/landing/landing-bits'
 import {
   FIND_RESULTS,
-  FIND_SCRIPT,
+  SAMPLE_WEEK,
   SIT_FACTORS,
   SIT_SCRIPT,
+  findScript,
+  seasonCount,
   type DemoScript,
 } from '@/components/landing/landing-data'
 import { useDemoClock } from '@/hooks/use-demo-clock'
@@ -162,20 +164,23 @@ export function ScriptedPrompt({
  */
 export function ScoutAIDemo({
   mode,
+  week = SAMPLE_WEEK,
   playing = true,
   onDone,
 }: {
   mode: 'find' | 'sit'
+  /** The NFL week the demo is set in (see landing-data). */
+  week?: number
   playing?: boolean
   onDone?: () => void
 }) {
-  const script = mode === 'find' ? FIND_SCRIPT : SIT_SCRIPT
+  const script = mode === 'find' ? findScript(week) : SIT_SCRIPT
   const { t, typed, result } = useScript(script, playing, onDone)
 
   return (
     <DemoWindow
       label={mode === 'find' ? 'Find players' : 'Weekly projections'}
-      context="Week 4 · your league"
+      context={`Week ${week} · your league`}
     >
       <ScriptedPrompt
         script={script}
@@ -185,13 +190,13 @@ export function ScoutAIDemo({
         thinkingLabel="Scout AI is thinking"
         summary={`Thought for ${((result - typed) / 1000).toFixed(1)}s · ${script.steps.length} checks`}
       >
-        {mode === 'find' ? <FindResult t={t - result} /> : <SitResult />}
+        {mode === 'find' ? <FindResult t={t - result} week={week} /> : <SitResult />}
       </ScriptedPrompt>
     </DemoWindow>
   )
 }
 
-function FindResult({ t }: { t: number }) {
+function FindResult({ t, week }: { t: number; week: number }) {
   return (
     <div className="mt-3.5 overflow-hidden rounded-[16px] shadow-fs-inset">
       <div>
@@ -218,7 +223,7 @@ function FindResult({ t }: { t: number }) {
                 <span className="truncate text-[15px] font-semibold sm:text-[16px]">{r.name}</span>
                 <span className="hidden text-[13px] font-medium text-fs-text-3 sm:inline">{r.team}</span>
               </div>
-              <span className="text-right text-[17px] font-bold text-fs-blue">{r.tgt}</span>
+              <span className="text-right text-[17px] font-bold text-fs-blue">{seasonCount(r.tgt, week)}</span>
               <span className="hidden text-right text-[14px] font-semibold sm:block">{r.share}</span>
               <span className="hidden text-right text-[14px] font-medium text-fs-text-3 sm:block">{r.rost}</span>
             </div>

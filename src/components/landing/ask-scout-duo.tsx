@@ -21,7 +21,7 @@ const PANELS = [
  * reaches its answer the carousel waits 3s and moves to the other. Clicking
  * the dimmed panel or a dot switches straight away.
  */
-export function AskScoutDuo() {
+export function AskScoutDuo({ week }: { week?: number }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(1200)
   const [active, setActive] = useState<0 | 1>(0)
@@ -121,9 +121,9 @@ export function AskScoutDuo() {
                   style={narrow ? { width: pw } : { width: W, transform: `scale(${scale})` }}
                 >
                   {i === 0 ? (
-                    <ScoutAIDemo mode="sit" playing={on && inView} onDone={() => queueFlip(0)} />
+                    <ScoutAIDemo mode="sit" week={week} playing={on && inView} onDone={() => queueFlip(0)} />
                   ) : (
-                    <LineupDemo playing={on && inView} onDone={() => queueFlip(1)} />
+                    <LineupDemo week={week} playing={on && inView} onDone={() => queueFlip(1)} />
                   )}
                 </div>
               </div>

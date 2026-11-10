@@ -6,6 +6,10 @@ const title = 'FieldScout — AI powered fantasy football'
 const description =
   'Full leagues, live drafts, expert and consensus rankings, waiver wire reports, start or sit and advanced stats. All powered by Scout AI.'
 
+// The landing page shows the current NFL week; re-render it hourly (still a
+// static page — no per-request work).
+export const revalidate = 3600
+
 export const metadata: Metadata = {
   title,
   description,
