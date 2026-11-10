@@ -61,7 +61,8 @@ export interface ProviderPlayerWeekStats {
   advanced: Partial<Record<string, number>>
   /** F916 (migration 223): the provider's line exactly as sent, for
    *  `player_stat_lines` — every stat key, mapped or not. Absent on a
-   *  provider that has no raw line to keep (synthetic, fixtures). */
+   *  provider that has no raw line to keep (synthetic), in a fixture (the
+   *  recorder leaves it out), and on a row the adapter could not read it from. */
   sourceLine?: ProviderSourceLine
 }
 

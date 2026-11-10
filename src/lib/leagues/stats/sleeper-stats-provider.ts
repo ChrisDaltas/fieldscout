@@ -254,6 +254,16 @@ interface SleeperWeeklyStatsRow {
   [field: string]: unknown
 }
 
+/** F916: the raw line can only ever cost the raw-line step — a row it cannot
+ *  be built from carries no `sourceLine`, never a failed stats poll. */
+function keptSourceLine(row: SleeperWeeklyStatsRow, position: string): { sourceLine?: ProviderSourceLine } {
+  try {
+    return { sourceLine: sleeperSourceLine(row, position) }
+  } catch {
+    return {}
+  }
+}
+
 /** A string field of a Sleeper row, or null (never a guessed value). */
 function sleeperString(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null
@@ -271,7 +281,7 @@ export function sleeperSourceLine(row: SleeperWeeklyStatsRow, position: string):
     if (key === 'stats' || key === 'player') continue
     meta[key] = value
   }
-  const updated = Number(row.updated_at ?? NaN)
+  const updated = new Date(Number(row.updated_at ?? NaN)) // a value past Date's range is Invalid Date, never a throw
   const date = sleeperString(row.date)
   return {
     source: 'sleeper',
@@ -283,7 +293,7 @@ export function sleeperSourceLine(row: SleeperWeeklyStatsRow, position: string):
     opponent: sleeperString(row.opponent),
     gameId: sleeperString(row.game_id),
     gameDate: date !== null && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
-    updatedAt: Number.isFinite(updated) && updated > 0 ? new Date(updated).toISOString() : null,
+    updatedAt: Number.isFinite(updated.getTime()) && updated.getTime() > 0 ? updated.toISOString() : null,
   }
 }
 
@@ -468,7 +478,7 @@ export class SleeperStatsProvider implements StatsProvider {
           // Box-score tier — tracking/charted never present here; the F578
           // usage keys (snaps, red zone, FG long) are the only advanced keys.
           advanced: mapUsageKeys(row.stats),
-          sourceLine: sleeperSourceLine(row, position), // F916 — the line as sent
+          ...keptSourceLine(row, position), // F916 — the line as sent
         })
       }
     }

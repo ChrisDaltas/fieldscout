@@ -33,12 +33,16 @@
 -- says so and keeps nothing (deploy before push); it never fails the poll.
 --
 -- READ: everyone, like `player_stats` (005: public NFL data, read by the
--- public player pages). No write policy for any role; INSERT / UPDATE /
--- DELETE / TRUNCATE revoked from PUBLIC, anon and authenticated.
+-- public player pages). WRITE: the service role only — RLS with NO write
+-- policy for any role is the wall (a client INSERT is refused, an UPDATE or
+-- DELETE matches nothing); the house pattern keeps the default grants and
+-- revokes TRUNCATE only (136 / 198, pgTAP 081 C3), since TRUNCATE skips RLS.
 --
 -- MIGRATION CHECKLIST (tasks-M* §4.4)
 --   New: 1 table, its PK, 1 index, 1 policy, comments. No function, trigger,
---   cron row or change to any existing object. Time: no column default (the
+--   cron row or change to any existing object. pgTAP: 045's census
+--   100 → 101 (unreachable from a mock); 081's sweeps hold (TRUNCATE revoked,
+--   the other grants default). Time: no column default (the
 --   writer stamps from its injected clock). Typegen: the new table is added
 --   to src/types/database.ts by hand in the same PR. Realtime: none.
 --   DEGRADE-BEFORE-PUSH: main ships first; until 223 is on the database the
@@ -75,7 +79,7 @@ CREATE TABLE public.player_stat_lines (
 CREATE INDEX player_stat_lines_player_idx ON public.player_stat_lines (player_id, season, week);
 
 COMMENT ON TABLE public.player_stat_lines IS
-  'Every weekly stat line the provider sends, kept verbatim — 223 (PROGRESS F916 / D849). One row per (source, season, season_type, week, player). `stats` = the provider''s stats object exactly as sent (every key, mapped or not; Sleeper''s pts_* / pos_rank_* are the SOURCE''s numbers, never a league value); `meta` = the rest of the provider''s row (game id, date, team, opponent, timestamps, …) minus its embedded player block. Never a scoring input: league points read player_stats. Written ONLY by the stats poll (ingestWeek) as service_role, diff-aware on line_hash; readable by everyone like player_stats; no write policy for any role.';
+  'Every weekly stat line the provider sends, kept verbatim — 223 (PROGRESS F916 / D849). One row per (source, season, season_type, week, player). `stats` = the provider''s stats object exactly as sent (every key, mapped or not; Sleeper''s pts_* / pos_rank_* are the SOURCE''s numbers, never a league value); `meta` = the rest of the provider''s row (game id, date, team, opponent, timestamps, …) minus its embedded player block. Never a scoring input: league points read player_stats. Written ONLY by the stats poll (ingestWeek) as service_role, diff-aware on line_hash; readable by everyone like player_stats; no write policy for any role (TRUNCATE revoked; RLS refuses every client write).';
 COMMENT ON COLUMN public.player_stat_lines.source IS
   'The provider the line came from (''sleeper'').';
 COMMENT ON COLUMN public.player_stat_lines.player_id IS
@@ -102,4 +106,4 @@ ALTER TABLE public.player_stat_lines ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Stat lines are viewable by everyone"
   ON public.player_stat_lines FOR SELECT USING (true);
 
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.player_stat_lines FROM PUBLIC, anon, authenticated;
+REVOKE TRUNCATE ON public.player_stat_lines FROM PUBLIC, anon, authenticated;

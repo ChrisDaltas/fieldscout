@@ -274,6 +274,21 @@ describe('SleeperStatsProvider', () => {
     ])
   })
 
+  it('F916: an updated_at past Date\'s range reads as no instant — the raw line never fails the poll', async () => {
+    stubFetch((url) => {
+      if (url.includes('/stats/nfl/')) {
+        const position = /position\[\]=(\w+)/.exec(url)?.[1]
+        return ok(position === 'QB' ? [{ ...QB_ROW, updated_at: 1e16 }, { ...QB_ROW, player_id: '4882', updated_at: '1790000000000' }] : [])
+      }
+      return undefined
+    })
+    const rows = await new SleeperStatsProvider(frozenTime).getWeekStats(2026, 2)
+    expect(rows.map((r) => [r.playerId, r.sourceLine?.updatedAt])).toEqual([
+      ['4881', null],
+      ['4882', new Date(1790000000000).toISOString()],
+    ])
+  })
+
   it('drops malformed weekly rows without a string player_id (R13 — unvalidated cast guard)', async () => {
     stubFetch((url) => {
       if (url.includes('/stats/nfl/')) {

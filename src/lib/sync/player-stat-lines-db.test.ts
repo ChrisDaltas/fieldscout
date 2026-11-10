@@ -1,9 +1,10 @@
 /**
  * F916 / migration 223 against the local stack: `player_stat_lines` keeps the
  * provider's lines verbatim — readable by everyone (like `player_stats`, 005),
- * written by the service role only (no write policy; INSERT / UPDATE / DELETE
- * revoked), and `keepStatLines` writes, skips an unchanged line and rewrites a
- * changed one with its first_seen_at kept. Rows live under a test-only source
+ * written by the service role only (RLS with no write policy is the wall: a
+ * client INSERT is refused, an UPDATE / DELETE matches nothing; the house
+ * pattern revokes TRUNCATE only — 081 C3), and `keepStatLines` writes, skips an
+ * unchanged line and rewrites a changed one with its first_seen_at kept. Rows live under a test-only source
  * and are removed after.
  */
 import { createClient } from '@supabase/supabase-js'
@@ -94,7 +95,7 @@ describe('player_stat_lines (migration 223, F916)', () => {
     expect(new Date(after!.updated_at).toISOString()).toBe('2026-12-27T21:07:00.000Z')
   })
 
-  it('S2 everyone can read; nobody but the service role can write (no write policy; INSERT / UPDATE / DELETE revoked)', async () => {
+  it('S2 everyone can read; nobody but the service role can write (RLS, no write policy: INSERT refused, UPDATE / DELETE match nothing)', async () => {
     const { data, error } = await anon.from(STAT_LINES_TABLE).select('player_id, stats').eq('source', SOURCE)
     expect(error).toBeNull()
     expect(data).toEqual([{ player_id: 'f916-kr', stats: { kr: 3, kr_yd: 77, gp: 1, pts_ppr: 0 } }])
@@ -106,9 +107,9 @@ describe('player_stat_lines (migration 223, F916)', () => {
     const insert = await anon.from(STAT_LINES_TABLE).insert(row)
     expect(insert.error?.code).toBe('42501')
     const update = await anon.from(STAT_LINES_TABLE).update({ stats: { kr: 99 } }).eq('source', SOURCE).select('player_id')
-    expect(update.error?.code).toBe('42501')
+    expect([update.error, update.data]).toEqual([null, []])
     const remove = await anon.from(STAT_LINES_TABLE).delete().eq('source', SOURCE).select('player_id')
-    expect(remove.error?.code).toBe('42501')
+    expect([remove.error, remove.data]).toEqual([null, []])
     const { data: still } = await service.from(STAT_LINES_TABLE).select('stats').eq('source', SOURCE).single()
     expect(still!.stats).toEqual({ kr: 3, kr_yd: 77, gp: 1, pts_ppr: 0 })
   })
