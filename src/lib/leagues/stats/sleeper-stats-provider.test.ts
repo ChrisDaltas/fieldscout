@@ -47,7 +47,7 @@ const DEF_ROW = {
   player_id: 'PHI',
   stats: { sack: 4, int: 2, fum_rec: 1, def_td: 1, safe: 1, pts_allow: 17 },
 }
-// Rows the adapter must skip: nothing canonical / null stats.
+// Rows with nothing canonical / null stats: kept as EMPTY lines (F915 — they clear a stored line; ingestWeek never makes a row from one).
 const NOISE_ROW = { player_id: '1049', stats: { pts_ppr: 0.5 } }
 const NULL_STATS_ROW = { player_id: '2216', stats: null }
 
@@ -203,7 +203,7 @@ describe('SleeperStatsProvider', () => {
     }
   })
 
-  it('maps trimmed-real weekly rows to canonical payloads and drops non-canonical noise', async () => {
+  it('maps trimmed-real weekly rows to canonical payloads; a row with nothing canonical is an EMPTY line, never dropped (F915)', async () => {
     stubHappyPath()
     const provider = new SleeperStatsProvider(frozenTime)
     const rows = await provider.getWeekStats(2026, 2)
@@ -213,6 +213,8 @@ describe('SleeperStatsProvider', () => {
         stats: { pass_yards: 304, pass_tds: 3, interceptions: 1, qb_sack_taken: 2, pass_2pt: 1, rush_yards: 42, rush_tds: 1 },
         advanced: {},
       },
+      { playerId: '1049', season: 2026, week: 2, stats: {}, advanced: {} },
+      { playerId: '2216', season: 2026, week: 2, stats: {}, advanced: {} },
       {
         playerId: '9509', season: 2026, week: 2,
         stats: { rush_attempts: 22, rush_yards: 118, rush_tds: 1, receptions: 4, receiving_yards: 33, rec_2pt: 1, fumbles_lost: 1 },
@@ -393,7 +395,7 @@ describe('R1150 — Sleeper omits zero-valued stats; `yds_allow_0_100: 1` with n
     expect(readZeroOmittedYardsAllowed(null, {})).toEqual({})
   })
 
-  it('Z3 getWeekStats: the indicator-only live ARI row is STILL no line (unchanged); a constructed ARI-with-a-sack row delivers 0 yards', async () => {
+  it('Z3 getWeekStats: the indicator-only live ARI row is an EMPTY line — never a delivered 0 (F915); a constructed ARI-with-a-sack row delivers 0 yards', async () => {
     const withSack = { ...DEF_FIXTURE.week3_live[0], player_id: 'ARZ', stats: { ...DEF_FIXTURE.week3_live[0].stats, sack: 1 } }
     stubFetch((url) => {
       if (url.includes('/stats/nfl/')) {
@@ -403,7 +405,10 @@ describe('R1150 — Sleeper omits zero-valued stats; `yds_allow_0_100: 1` with n
       return undefined
     })
     const rows = await new SleeperStatsProvider(frozenTime).getWeekStats(2026, 3)
-    expect(rows.map((r) => [r.playerId, r.stats])).toEqual([['ARZ', { def_sack: 1, def_yards_allowed: 0 }]])
+    expect(rows.map((r) => [r.playerId, r.stats])).toEqual([
+      ['ARI', {}],
+      ['ARZ', { def_sack: 1, def_yards_allowed: 0 }],
+    ])
   })
 
   it('Z4 the PROJECTIONS map is untouched: mapToCanonicalKeys never reads the indicator (the season feed carries a constant yds_allow_0_100: 1)', () => {

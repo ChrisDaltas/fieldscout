@@ -879,12 +879,13 @@ describe('new rows: every non-ruled stat column must be empty', () => {
     expect(world.stored('13075', 3).advanced).toEqual({ off_snaps: 4 })
   })
 
-  it('a new line with every column empty is counted and not inserted (D833 (a)): a display-only key alone makes it no late line', async () => {
+  it('a new line with every column empty is counted and not inserted (D833 (a)): a display-only key alone is no stat line at all (F915: counted empty), never a late line', async () => {
     const world = worldWith(ALL_LINES)
     world.players.push({ id: 'wr-snaps', position: 'WR' })
     const report = await run(world, [...ALL_LINES, line('wr-1', 8, { receptions: 0 }), line('wr-snaps', 8, {}, { off_snaps: 3 })], { apply: true })
     expect(report.ok).toBe(true)
-    expect(report.weeks[3].zeroNewLines).toBe(2)
+    expect(report.weeks[3].zeroNewLines).toBe(1)
+    expect(report.weeks[3].empty).toBe(1)
     expect(report.weeks[3].lateLines).toEqual([])
     expect(report.weeks[3].otherDifferences).toEqual([])
     expect(world.stats.find((r) => r.week === 8 && ['wr-1', 'wr-snaps'].includes(String(r.player_id)))).toBeUndefined()

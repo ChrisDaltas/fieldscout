@@ -330,9 +330,10 @@ export function mapToCanonicalKeys(
  * not an absent value. Any other shape without `yds_allow` (no indicator,
  * or a non-zero tier's) stays absent — NULL, pending (F390 / D380(4)).
  *
- * Applied in `getWeekStats` AFTER the "nothing canonical → noise" check, so
- * an indicator-only row (the live ARI row, 2026 wk3 — `gp`, returns and the
- * indicators, no canonical stat) is still no line at all, exactly as before.
+ * Applied in `getWeekStats` only to a line that already carries a canonical
+ * stat, so an indicator-only row (the live ARI row, 2026 wk3 — `gp`, returns
+ * and the indicators, no canonical stat) is still an EMPTY line (`stats: {}`,
+ * F915): it clears a stored line, it never makes one with a 0 in it.
  * NOT applied in `mapToCanonicalKeys`: the season projections carry a
  * constant `yds_allow_0_100: 1` on every D/ST (D380(2)) — an indicator
  * there is not a value, and the projections path never reads this.
@@ -412,12 +413,18 @@ export class SleeperStatsProvider implements StatsProvider {
           continue
         }
         const mapped = mapToCanonicalKeys(row.stats, { feed: 'actuals' })
-        if (Object.keys(mapped).length === 0) continue // nothing canonical → noise
+        // F915: a line with nothing canonical on it is still Sleeper's line for
+        // this player — kept as an EMPTY line (`stats: {}`), never dropped. When
+        // Sleeper takes back a player's only stat (a catch ruled incomplete), the
+        // line stays with snaps and flags alone; dropped as noise, the importer
+        // never heard it and the stored stat stayed for good. `ingestWeek`
+        // clears a stored line from an empty one and never creates a row from it.
+        const canonical = Object.keys(mapped).length > 0
         out.push({
           playerId: row.player_id, // players.id is Sleeper-keyed (§23.1)
           season,
           week,
-          stats: readZeroOmittedYardsAllowed(row.stats, mapped), // R1150 — actuals only
+          stats: canonical ? readZeroOmittedYardsAllowed(row.stats, mapped) : {}, // R1150 — actuals only
           ...(typeof row.team === 'string' && row.team !== '' ? { team: row.team } : {}),
           ...(typeof row.opponent === 'string' && row.opponent !== '' ? { opponent: row.opponent } : {}),
 

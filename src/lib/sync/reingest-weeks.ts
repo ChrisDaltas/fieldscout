@@ -250,7 +250,7 @@ export function renderReingest(report: ReingestReport): string[] {
       `  week ${w.week} ${w.problems.length === 0 ? 'OK  ' : 'FAIL'}${w.completed ? '' : ' (IN PROGRESS — the live poll covers it too)'} ` +
         `rows: inserted=${s.inserted} updated=${s.updated} metaOnly=${s.metaOnly} unchanged=${s.unchanged} ` +
         `D/ST yards filled/changed=${w.dstYardsChanged} ` +
-        `unknownIds=${s.unknownPlayer} empty=${s.empty} | deltas enqueued=${s.enqueued} restamped=${s.restamped} | ` +
+        `unknownIds=${s.unknownPlayer} empty=${s.empty} cleared=${s.cleared} storedWithoutLine=${s.storedWithoutLine} | deltas enqueued=${s.enqueued} restamped=${s.restamped} | ` +
         `D/ST yards: ${w.dstWithYards}/${w.dstRows}${w.dstWithoutYards.length > 0 ? ` — NULL: ${w.dstWithoutYards.join(', ')}` : ''}`,
     )
     for (const r of w.ingest.reasons) lines.push(`      ${r}`)

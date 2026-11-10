@@ -28,6 +28,17 @@
  *      provenance, the synthetic gate's zero-real-data instrument),
  *      `updated_at` from the INJECTED clock (D12).
  *
+ * A TAKEN-BACK STAT (F915, 2026-11-09). The diff walks the provider's lines,
+ * so a stored line changes only when the answer carries a line for that
+ * player. Sleeper keeps a player's line when it takes his only stat back (a
+ * catch ruled incomplete): the line stays, with snaps and flags alone. Such a
+ * line carries no stat and never makes a row — but over a STORED line it
+ * clears it (`clearedStatRow`: every box column to its absent value), which
+ * the diff then treats like any other move (written, queued, a correction
+ * when the game was final before the poll). A stored line whose player has NO
+ * line in the answer is left exactly as stored and counted
+ * (`stats.storedWithoutLine`): absence is not proof of anything.
+ *
  * THE INGEST DOOR (M6 L.E2.1, migration 167 — F267 taken, tasks-M6 TD2 /
  * TD3). `ingest_write_batch(p_rows, p_now)` writes a batch's lines, their
  * `stat_correction_events` and their `score_fanout` enqueue in ONE
@@ -163,8 +174,18 @@ export interface IngestStatsReport {
   seen: number
   /** Rows for a player_id the `players` table does not know (FK target). */
   unknownPlayer: number
-  /** Rows carrying neither a mapped box column nor a canonical advanced key. */
+  /** Rows carrying neither a mapped box column nor a scoring advanced key
+   *  (display-only usage keys alone don't count), for a player with no stored
+   *  line — nothing to store, nothing to clear (F915). */
   empty: number
+  /** F915: stored lines CLEARED this poll — the provider's line for the player
+   *  is in the answer but now carries no stat (Sleeper took it back), so every
+   *  box column goes to its absent value. Counted only when that moved the
+   *  stored line (a line already clear is `unchanged`). */
+  cleared: number
+  /** F915: stored lines whose player has NO line at all in this answer — left
+   *  exactly as stored (a missing line is not proof a stat was taken back). */
+  storedWithoutLine: number
   /** Advanced keys dropped because they are not registry-canonical (D33). */
   droppedAdvancedKeys: number
   /** Rows dropped as byte-identical repeats of a line already in this answer
@@ -496,12 +517,34 @@ export interface ToStatRowResult {
 
 /**
  * Provider stat line → table row over the whole column surface. Returns a
- * null row when the line carries nothing storable (no mapped box key, no
- * canonical advanced key). `is_live` = the player's game is OPEN (scheduled
- * or live — not `final`, and not `postponed`, R710); falls back to the week
- * when the tier carries no game id.
+ * null row when the line carries no stat (no mapped box key, no scoring
+ * advanced key): display-only usage keys alone — snaps, red zone, FG long —
+ * are not a stat line and never make a row (F915: Sleeper's line for a player
+ * with nothing but snaps; `ingestWeek` clears a stored line from such a line
+ * with `clearedStatRow`, never creates one). `is_live` = the player's game is
+ * OPEN (scheduled or live — not `final`, and not `postponed`, R710); falls
+ * back to the week when the tier carries no game id.
  */
 export function toStatRow(stats: ProviderPlayerWeekStats, ctx: ToStatRowContext): ToStatRowResult {
+  const built = buildStatRow(stats, ctx)
+  return { row: built.carriesStats ? built.row : null, droppedAdvancedKeys: built.droppedAdvancedKeys }
+}
+
+/**
+ * F915 — the row a line that carries NO stat writes over a stored line: every
+ * box column at its absent value (0; NULL for a `NULL_IS_PENDING_COLUMNS`
+ * column), the line's display-only advanced keys as delivered, its metadata
+ * as `toStatRow` derives it. The provider took the player's stats back, so the
+ * stored ones go — never left standing because the line has nothing left.
+ */
+export function clearedStatRow(stats: ProviderPlayerWeekStats, ctx: ToStatRowContext): StatRow {
+  return buildStatRow({ ...stats, stats: {} }, ctx).row
+}
+
+function buildStatRow(
+  stats: ProviderPlayerWeekStats,
+  ctx: ToStatRowContext,
+): { row: StatRow; droppedAdvancedKeys: number; carriesStats: boolean } {
   const mapped = toStatColumns(stats.stats)
   const advanced: Record<string, number> = {}
   let droppedAdvancedKeys = 0
@@ -510,9 +553,8 @@ export function toStatRow(stats: ProviderPlayerWeekStats, ctx: ToStatRowContext)
     if (ADVANCED_KEYS.has(key)) advanced[key] = value
     else droppedAdvancedKeys += 1
   }
-  if (Object.keys(mapped).length === 0 && Object.keys(advanced).length === 0) {
-    return { row: null, droppedAdvancedKeys }
-  }
+  const scoredAdvanced = scoringAdvanced(advanced) // display-only usage keys alone carry no stat (F915)
+  const carriesStats = Object.keys(mapped).length > 0 || Object.keys(scoredAdvanced).length > 0
   const columns: Record<string, number | null> = {}
   for (const column of STAT_COLUMN_SURFACE) columns[column] = mapped[column] ?? absentValue(column)
 
@@ -535,6 +577,7 @@ export function toStatRow(stats: ProviderPlayerWeekStats, ctx: ToStatRowContext)
       advanced,
     },
     droppedAdvancedKeys,
+    carriesStats,
   }
 }
 
@@ -1043,6 +1086,8 @@ function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degr
       seen: 0,
       unknownPlayer: 0,
       empty: 0,
+      cleared: 0,
+      storedWithoutLine: 0,
       droppedAdvancedKeys: 0,
       duplicates: 0,
       inserted: 0,
@@ -1354,6 +1399,8 @@ async function ingestAnswer(
 
   report.stats.seen = lines.length
   const statRows: StatRow[] = []
+  // F915: players whose line is in this answer but carries no stat, over a stored line.
+  const clearing = new Set<string>()
   for (const line of lines) {
     if (!known.has(line.playerId)) {
       report.stats.unknownPlayer += 1
@@ -1361,9 +1408,22 @@ async function ingestAnswer(
     }
     const { row, droppedAdvancedKeys } = toStatRow(line, ctx)
     report.stats.droppedAdvancedKeys += droppedAdvancedKeys
-    if (row === null) report.stats.empty += 1
-    else statRows.push(row)
+    if (row !== null) {
+      statRows.push(row)
+    } else if (existingStats.has(line.playerId)) {
+      // F915: the provider's line is here and carries nothing now — it took the
+      // stats back (a catch ruled incomplete). The stored line is cleared, and the
+      // diff below treats that like any other move: written, queued, and a
+      // correction when the game was final before this poll (TD2).
+      statRows.push(clearedStatRow(line, ctx))
+      clearing.add(line.playerId)
+    } else {
+      report.stats.empty += 1
+    }
   }
+  const answered = new Set(lines.map((line) => line.playerId))
+  const withoutLine = [...existingStats.keys()].filter((id) => !answered.has(id))
+  report.stats.storedWithoutLine = withoutLine.length
   const unique = collapseIdenticalRows(statRows)
   report.stats.duplicates = unique.collapsed
   // F831 (Chris 2026-10-27, "Skip it, retry next update"): an answer that
@@ -1457,6 +1517,7 @@ async function ingestAnswer(
 
   report.stats.inserted = statDiff.inserts.length
   report.stats.updated = statDiff.updates.length
+  report.stats.cleared = statDiff.updates.filter((row) => clearing.has(row.player_id)).length
   report.stats.metaOnly = statDiff.metaOnly.length
   report.stats.unchanged = statDiff.unchanged
 
@@ -1464,6 +1525,16 @@ async function ingestAnswer(
   if (report.stats.duplicates > 0) {
     report.reasons.push(
       `player_stats: ${report.stats.duplicates} repeated provider row(s) — identical copies of a line already in this answer — written once (§23.2 idempotent; F830)`,
+    )
+  }
+  if (report.stats.cleared > 0) {
+    report.reasons.push(
+      `player_stats: ${report.stats.cleared} stored line(s) cleared — the provider's line for the player now carries no stat (taken back), so the stored stats go to 0 (F915)`,
+    )
+  }
+  if (withoutLine.length > 0) {
+    report.reasons.push(
+      `player_stats: ${withoutLine.length} stored line(s) have no line at all in the provider's answer — left as stored; a missing line is not proof a stat was taken back (F915): ${withoutLine.slice(0, 5).join(', ')}${withoutLine.length > 5 ? ', …' : ''}`,
     )
   }
   if (heldRows.length > 0) {
