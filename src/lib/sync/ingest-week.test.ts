@@ -705,6 +705,12 @@ class World {
   players: Row[]
   stats = new Map<string, Row>()
   queue = new Map<string, Row>()
+  /** F916: player_stat_lines by `source|season_type|player_id`. */
+  lines = new Map<string, Row>()
+  /** F916: what a read of player_stat_lines answers instead of rows (null = the table is there). */
+  linesReadError: Row | null = null
+  /** F916: what an upsert into player_stat_lines answers (null = it writes). */
+  linesWriteError: Row | null = null
   doorCalls: Array<{ fn: string; p_rows: DoorElement[]; p_now: string }> = []
   /** The error the door answers with (null = 167 is pushed). */
   doorError: Row | null = null
@@ -725,6 +731,7 @@ class World {
     if (table === 'players') return this.players
     if (table === 'player_stats') return [...this.stats.values()]
     if (table === 'score_fanout') return [...this.queue.values()]
+    if (table === 'player_stat_lines') return [...this.lines.values()]
     throw new Error(`world: unexpected table ${table}`)
   }
 
@@ -753,6 +760,14 @@ class World {
   }
 
   private run(table: string, op: Op, filters: Array<[string, unknown]>) {
+    if (table === 'player_stat_lines') {
+      if (op.kind === 'upsert') {
+        if (this.linesWriteError !== null) return { data: null, error: this.linesWriteError }
+        for (const row of op.rows) this.lines.set(`${row.source}|${row.season_type}|${row.player_id}`, { ...row })
+        return { data: op.rows, error: null }
+      }
+      if (this.linesReadError !== null) return { data: null, error: this.linesReadError }
+    }
     if (op.kind === 'upsert') {
       for (const row of op.rows) {
         if (table === 'nfl_games') this.games.set(String(row.id), { ...row })
@@ -1070,6 +1085,78 @@ describe('L.E2.1 — TD2: what a correction is, poll after poll through the real
     expect(report.reasons).toContain(
       "player_stats: 1 stored line(s) have no line at all in the provider's answer — left as stored; a missing line is not proof a stat was taken back (F915): p-gone",
     )
+  })
+
+  it('F916 L1–L4 — every line the provider sends is kept verbatim (an empty line, an unknown player too), once per player; an unchanged line is not rewritten; a changed one keeps its first_seen_at', async () => {
+    const world = new World(['p-wr'])
+    const { state, provider } = scripted('sleeper+nflverse')
+    const clock = new VirtualClock(new Date('2026-09-20T18:00:00Z'))
+    const deps = { db: world.client(), degradation: new DegradationTracker(), season: 2026, week: 2 }
+    const src = (playerId: string, stats: Record<string, unknown>, position = 'WR') => ({
+      source: 'sleeper', seasonType: 'regular', position, stats, meta: { player_id: playerId, game_id: '202610201' },
+      team: 'DAL', opponent: 'PHI', gameId: '202610201', gameDate: '2026-09-20', updatedAt: '2026-09-20T17:59:00.000Z',
+    })
+    state.games = [wk2Game(WK2_G1, 'live'), wk2Game(WK2_G3, 'scheduled')]
+    state.lines = [
+      { ...wk2Line('p-wr', undefined, { receptions: 2, receiving_yards: 30 }), sourceLine: src('p-wr', { rec: 2, rec_yd: 30, rec_air_yd: 41 }) },
+      { ...wk2Line('p-wr', undefined, { receptions: 2, receiving_yards: 30 }), sourceLine: src('p-wr', { rec: 2, rec_yd: 30, rec_air_yd: 41 }, 'TE') },
+      { ...wk2Line('p-kr', undefined, {}), sourceLine: src('p-kr', { kr: 2, kr_yd: 51, gp: 1 }) }, // a returner, not in players
+    ]
+    // L1 — first poll: both players' lines kept (p-kr is unknown to players and has no mapped stat), the repeat once.
+    const l1 = await ingestWeek(provider, clock, deps)
+    expect(l1.lines).toEqual({ status: 'kept', seen: 3, written: 2, unchanged: 0, repeats: 1 })
+    expect(world.lines.get('sleeper|regular|p-kr')).toMatchObject({
+      season: 2026, week: 2, position: 'WR', stats: { kr: 2, kr_yd: 51, gp: 1 }, game_id: '202610201', game_date: '2026-09-20',
+      first_seen_at: '2026-09-20T18:00:00.000Z', updated_at: '2026-09-20T18:00:00.000Z',
+    })
+    expect(world.lines.get('sleeper|regular|p-wr')!.position).toBe('WR') // the first list it was served under
+    expect(world.stats.has('p-kr')).toBe(false) // never a player_stats row
+
+    // L2 — the same answer again: nothing rewritten.
+    clock.advanceTo(new Date('2026-09-20T18:01:00Z'))
+    const l2 = await ingestWeek(provider, clock, deps)
+    expect(l2.lines).toEqual({ status: 'kept', seen: 3, written: 0, unchanged: 2, repeats: 1 })
+
+    // L3 — one line changes: rewritten, its first_seen_at kept.
+    state.lines[2] = { ...state.lines[2], sourceLine: src('p-kr', { kr: 3, kr_yd: 77, gp: 1 }) }
+    clock.advanceTo(new Date('2026-09-20T18:02:00Z'))
+    const l3 = await ingestWeek(provider, clock, deps)
+    expect(l3.lines.written).toBe(1)
+    expect(world.lines.get('sleeper|regular|p-kr')).toMatchObject({
+      stats: { kr: 3, kr_yd: 77, gp: 1 }, first_seen_at: '2026-09-20T18:00:00.000Z', updated_at: '2026-09-20T18:02:00.000Z',
+    })
+
+    // L4 — a provider with no raw lines (synthetic, fixtures): nothing read or written.
+    const synthetic = scripted()
+    synthetic.state.games = state.games
+    synthetic.state.lines = [wk2Line('p-wr', undefined, { receptions: 2, receiving_yards: 30 })]
+    const l4 = await ingestWeek(synthetic.provider, clock, deps)
+    expect(l4.lines).toEqual({ status: 'none', seen: 0, written: 0, unchanged: 0, repeats: 0 })
+  })
+
+  it('F916 L5–L6 — the table not on the database yet (deploy before push) and a failed write are said, never a failed poll: the stats are written either way', async () => {
+    const line = { ...wk2Line('p-wr', undefined, { receptions: 1 }), sourceLine: { source: 'sleeper', seasonType: 'regular', position: 'WR', stats: { rec: 1 }, meta: { player_id: 'p-wr' }, team: null, opponent: null, gameId: null, gameDate: null, updatedAt: null } }
+
+    const absent = new World(['p-wr'])
+    absent.linesReadError = { code: 'PGRST205', message: "Could not find the table 'public.player_stat_lines' in the schema cache", hint: null }
+    const a = scripted('sleeper+nflverse')
+    a.state.games = [wk2Game(WK2_G1, 'live')]
+    a.state.lines = [line]
+    const l5 = await ingestWeek(a.provider, new VirtualClock(new Date('2026-09-20T18:00:00Z')), { db: absent.client(), degradation: new DegradationTracker(), season: 2026, week: 2 })
+    expect([l5.ok, l5.lines.status, l5.lines.written]).toEqual([true, 'absent', 0])
+    expect(absent.stats.get('p-wr')).toMatchObject({ receptions: 1 })
+    expect(l5.reasons).toContain("player_stat_lines: the table is not on this database yet (migration 223) — the provider's 1 line(s) not kept this poll; scores and stats unaffected (F916)")
+
+    const failing = new World(['p-wr'])
+    failing.linesWriteError = { code: '23514', message: 'new row violates check constraint', hint: null }
+    const f = scripted('sleeper+nflverse')
+    f.state.games = [wk2Game(WK2_G1, 'live')]
+    f.state.lines = [line]
+    const degradation = new DegradationTracker()
+    const l6 = await ingestWeek(f.provider, new VirtualClock(new Date('2026-09-20T18:00:00Z')), { db: failing.client(), degradation, season: 2026, week: 2 })
+    expect([l6.ok, l6.lines.status, degradation.consecutiveFailures]).toEqual([true, 'failed', 0])
+    expect(failing.stats.get('p-wr')).toMatchObject({ receptions: 1 })
+    expect(l6.reasons.some((r) => r.startsWith('player_stat_lines: write FAILED (player_stat_lines (2026 week 2) upsert failed: new row violates check constraint)'))).toBe(true)
   })
 
   it('F1 a missing door (the measured pre-167 PGRST202) is a PLAIN failure since F508 — the poll throws by name and writes nothing', async () => {

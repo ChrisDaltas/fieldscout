@@ -206,7 +206,12 @@ describe('SleeperStatsProvider', () => {
   it('maps trimmed-real weekly rows to canonical payloads; a row with nothing canonical is an EMPTY line, never dropped (F915)', async () => {
     stubHappyPath()
     const provider = new SleeperStatsProvider(frozenTime)
-    const rows = await provider.getWeekStats(2026, 2)
+    // F916's sourceLine (the row verbatim) has its own test below.
+    const rows = (await provider.getWeekStats(2026, 2)).map((row) => {
+      const copy: Partial<typeof row> = { ...row }
+      delete copy.sourceLine
+      return copy
+    })
     expect(rows).toEqual([
       {
         playerId: '4881', season: 2026, week: 2,
@@ -235,6 +240,37 @@ describe('SleeperStatsProvider', () => {
         stats: { def_sack: 4, def_int: 2, def_fumble_rec: 1, def_td: 1, def_safety: 1, def_points_allowed: 17 },
         advanced: {},
       },
+    ])
+  })
+
+  it('F916: every line carries the row VERBATIM — every stats key (mapped or not), the rest of the row minus the embedded player block, the position it was served under', async () => {
+    const full = {
+      ...QB_ROW,
+      stats: { ...QB_ROW.stats, pass_air_yd: 211, rec_ypr: 0 },
+      team: 'BUF', opponent: 'MIA', game_id: '202610201', date: '2026-09-20', season_type: 'regular',
+      updated_at: 1790000000000, last_modified: 1790000000000, company: 'sportradar',
+      player: { first_name: 'X', injury_status: 'Questionable' },
+    }
+    stubFetch((url) => {
+      if (url.includes('/stats/nfl/')) {
+        const position = /position\[\]=(\w+)/.exec(url)?.[1]
+        return ok(position === 'QB' ? [full, NOISE_ROW, NULL_STATS_ROW] : [])
+      }
+      return undefined
+    })
+    const rows = await new SleeperStatsProvider(frozenTime).getWeekStats(2026, 2)
+    expect(rows.map((r) => r.sourceLine)).toEqual([
+      {
+        source: 'sleeper', seasonType: 'regular', position: 'QB',
+        stats: { pass_yd: 304, pass_td: 3, pass_int: 1, pass_2pt: 1, pass_sack: 2, rush_yd: 42, rush_td: 1, pts_ppr: 32.5, pass_air_yd: 211, rec_ypr: 0 },
+        meta: {
+          player_id: '4881', team: 'BUF', opponent: 'MIA', game_id: '202610201', date: '2026-09-20', season_type: 'regular',
+          updated_at: 1790000000000, last_modified: 1790000000000, company: 'sportradar',
+        },
+        team: 'BUF', opponent: 'MIA', gameId: '202610201', gameDate: '2026-09-20', updatedAt: new Date(1790000000000).toISOString(),
+      },
+      { source: 'sleeper', seasonType: 'regular', position: 'QB', stats: { pts_ppr: 0.5 }, meta: { player_id: '1049' }, team: null, opponent: null, gameId: null, gameDate: null, updatedAt: null },
+      { source: 'sleeper', seasonType: 'regular', position: 'QB', stats: {}, meta: { player_id: '2216' }, team: null, opponent: null, gameId: null, gameDate: null, updatedAt: null },
     ])
   })
 

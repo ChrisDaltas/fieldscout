@@ -110,16 +110,20 @@
  * the entry point (the cron route / the gate harness), never in here.
  */
 
+import { createHash } from 'node:crypto'
+
 import type { DegradationTracker } from '@/lib/leagues/stats/degradation'
 import { NULL_IS_PENDING_KEYS, STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
 import type {
   ProviderGame,
   ProviderPlayerWeekStats,
+  ProviderSourceLine,
   StatsProvider,
 } from '@/lib/leagues/stats/stats-provider'
 import { weekReleaseFloor } from '@/lib/leagues/time/release-floor'
 import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
+import { isMissingSchemaObject } from '@/lib/supabase/postgrest-errors'
 
 import { STAT_COLUMN_BY_KEY, toStatColumns } from './live-stats'
 import { fetchKnownPlayerIds } from './projections'
@@ -251,6 +255,23 @@ export interface IngestCorrectionsReport {
   reason: string
 }
 
+/** F916 (migration 223): the provider's lines kept verbatim in `player_stat_lines`. */
+export interface IngestLinesReport {
+  /** `none` — the answer carried no raw line (a provider with none to keep);
+   *  `kept` — every changed line written (or none had changed); `absent` — the
+   *  table is not on this database yet (deploy before push); `failed` — a read
+   *  or write error, in `error`. Never fails the poll: scores and stats stand. */
+  status: 'none' | 'kept' | 'absent' | 'failed'
+  /** Lines in the answer carrying the provider's raw line. */
+  seen: number
+  /** New or changed lines written this poll. */
+  written: number
+  unchanged: number
+  /** Further copies of one player's line (served under two positions) — kept once. */
+  repeats: number
+  error?: string
+}
+
 export interface IngestReport {
   provider: string
   season: number
@@ -267,6 +288,7 @@ export interface IngestReport {
   stats: IngestStatsReport
   write: IngestWriteReport
   corrections: IngestCorrectionsReport
+  lines: IngestLinesReport
   /** Why a section wrote nothing — never an empty success by default. */
   reasons: string[]
 }
@@ -1070,6 +1092,121 @@ async function upsertCounted(
   }
 }
 
+// ── The provider's lines, verbatim (F916, migration 223) ───────────────────
+
+export const STAT_LINES_TABLE = 'player_stat_lines'
+
+/** The diff key of one kept line: md5 of its canonical JSON. */
+export function statLineHash(line: ProviderSourceLine): string {
+  return createHash('md5').update(canonicalJson({ position: line.position, stats: line.stats, meta: line.meta })).digest('hex')
+}
+
+interface StoredLineKey {
+  source: string
+  season_type: string
+  player_id: string
+  line_hash: string
+  first_seen_at: string
+}
+
+/**
+ * F916 — keep the provider's lines exactly as sent in `player_stat_lines`,
+ * every line in the answer (a player we don't know yet, a line with no mapped
+ * stat, every stat key), diff-aware on `line_hash`. Never throws and never
+ * fails the poll: a missing table (deploy before push) or an error is said on
+ * `report.lines` and in `report.reasons`; the scores and stats already
+ * written stand, and the next poll writes what this one could not.
+ */
+export async function keepStatLines(
+  db: SyncClient,
+  season: number,
+  week: number,
+  lines: readonly ProviderPlayerWeekStats[],
+  stamp: string,
+  report: IngestReport,
+): Promise<void> {
+  const out = report.lines
+  try {
+    const byKey = new Map<string, { playerId: string; line: ProviderSourceLine; hash: string }>()
+    for (const l of lines) {
+      if (l.sourceLine === undefined) continue
+      out.seen += 1
+      const key = `${l.sourceLine.source}|${l.sourceLine.seasonType}|${l.playerId}`
+      if (byKey.has(key)) {
+        out.repeats += 1
+        continue
+      }
+      byKey.set(key, { playerId: l.playerId, line: l.sourceLine, hash: statLineHash(l.sourceLine) })
+    }
+    if (byKey.size === 0) return
+
+    const stored = new Map<string, StoredLineKey>()
+    for (let offset = 0; ; offset += BATCH_READ) {
+      const { data, error } = await db
+        .from(STAT_LINES_TABLE)
+        .select('source, season_type, player_id, line_hash, first_seen_at')
+        .eq('season', season)
+        .eq('week', week)
+        .order('source')
+        .order('season_type')
+        .order('player_id')
+        .range(offset, offset + BATCH_READ - 1)
+      if (error) {
+        if (isMissingSchemaObject(error, [STAT_LINES_TABLE])) {
+          out.status = 'absent'
+          report.reasons.push(
+            `player_stat_lines: the table is not on this database yet (migration 223) — the provider's ${byKey.size} line(s) not kept this poll; scores and stats unaffected (F916)`,
+          )
+          return
+        }
+        throw new Error(`read failed: ${error.message}`)
+      }
+      const page = (data ?? []) as StoredLineKey[]
+      for (const row of page) stored.set(`${row.source}|${row.season_type}|${row.player_id}`, row)
+      if (page.length < BATCH_READ) break
+    }
+
+    const rows: Array<Record<string, unknown>> = []
+    for (const [key, { playerId, line, hash }] of byKey) {
+      const prior = stored.get(key)
+      if (prior?.line_hash === hash) {
+        out.unchanged += 1
+        continue
+      }
+      rows.push({
+        source: line.source,
+        season,
+        season_type: line.seasonType,
+        week,
+        player_id: playerId,
+        position: line.position,
+        team: line.team,
+        opponent: line.opponent,
+        game_id: line.gameId,
+        game_date: line.gameDate,
+        stats: line.stats,
+        meta: line.meta,
+        line_hash: hash,
+        source_updated_at: line.updatedAt,
+        first_seen_at: prior?.first_seen_at ?? stamp,
+        updated_at: stamp,
+      })
+    }
+    await upsertCounted(db, STAT_LINES_TABLE, rows, 'source,season,season_type,week,player_id', 'player_id', `player_stat_lines (${season} week ${week})`)
+    out.written = rows.length
+    out.status = 'kept'
+  } catch (err) {
+    out.status = 'failed'
+    out.error = err instanceof Error ? err.message : String(err)
+    report.reasons.push(
+      `player_stat_lines: write FAILED (${out.error}) — the provider's lines were not all kept this poll; scores and stats are written; the next poll writes what is missing (F916)`,
+    )
+  }
+}
+
+/** The kept-lines read's page — PostgREST's cap, so a full page means "read on". */
+const BATCH_READ = 1000
+
 // ── The poll ───────────────────────────────────────────────────────────────
 
 function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degraded: boolean): IngestReport {
@@ -1110,6 +1247,7 @@ function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degr
       keys: [],
       reason: 'nothing written — no line to classify',
     },
+    lines: { status: 'none', seen: 0, written: 0, unchanged: 0, repeats: 0 },
     reasons: [],
   }
 }
@@ -1514,6 +1652,9 @@ async function ingestAnswer(
     report.weeks.updated += 1
   }
   report.corrections.reason = correctionsReason(report, deltas.length, statWrites.length)
+
+  // F916: the provider's lines as sent — last, and never failing the poll.
+  await keepStatLines(db, season, week, lines, stamp, report)
 
   report.stats.inserted = statDiff.inserts.length
   report.stats.updated = statDiff.updates.length
