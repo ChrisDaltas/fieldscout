@@ -229,6 +229,21 @@ describe('diffSnapshots — names every final-game change', () => {
     expect(d.vanished).toEqual([{ playerId: '9509', name: 'Test Back', team: 'SF' }])
   })
 
+  it('C6b (F915) a line still in the answer with no stat left is a TAKE-BACK — the ingest clears it, so every key moves to 0; not vanished', () => {
+    const takenBack = { playerId: '9509', stats: {}, advanced: { off_snaps: 30 } }
+    const events: ProductionEvent[] = [
+      { playerId: '9509', statKey: 'rush_attempts', oldValue: 20, newValue: 0, detectedAt: '2031-09-30T16:00:00Z', weekState: 'open', gameId: null },
+    ]
+    const d = diffSnapshots(snap('final', recording({ t: T1, lines: [LONDON, ROB] }), META1), snap('window-end', recording({ t: T2, lines: [LONDON, takenBack] }), META1), { events })
+    expect(d.vanished).toEqual([])
+    expect(d.changes.map((c) => [c.playerId, c.statKey, c.old, c.new])).toEqual([
+      ['9509', 'rush_yards', 88, 0], // registry order
+      ['9509', 'rush_tds', 1, 0],
+      ['9509', 'rush_attempts', 20, 0],
+    ])
+    expect(d.productionOnly).toEqual([])
+  })
+
   it('C7 production events: a matching event is named with the change; an unmatched one is production-only', () => {
     const events: ProductionEvent[] = [
       { playerId: '8112', statKey: 'receiving_yards', oldValue: 100, newValue: 94, detectedAt: '2031-10-01T01:00:00Z', weekState: 'open', gameId: null },
