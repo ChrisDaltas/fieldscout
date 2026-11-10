@@ -1,10 +1,14 @@
 import { PosTag, ScoutDot } from '@/components/landing/landing-bits'
+import { SAMPLE_WEEK, seasonCount, seasonRecord } from '@/components/landing/landing-data'
 import { YouBadge } from '@/components/landing/league-home-preview'
 import { cn } from '@/lib/utils'
 
 /**
- * "The future is finally here" — six tools as a horizontal snap-scroll row
- * of cards (Claude Design FieldScout Landing v13). Static illustrations.
+ * "Everything your league needs" — Scout AI and the six tools around it.
+ * From tablet up it is a grid that shows every card at once (it was a
+ * sideways-scrolling row that hid four of the seven), with Scout AI and
+ * Advanced stats as the wide tiles. Phones keep the swipeable row.
+ * Card contents are the v13 design's; static illustrations.
  */
 
 type Tone = 'ink' | 'white' | 'green'
@@ -13,43 +17,74 @@ function Card({
   tone,
   eyebrow,
   title,
+  wide,
   children,
 }: {
   tone: Tone
   eyebrow: React.ReactNode
   title: string
+  /** Two columns wide from this breakpoint up: heading left, widget right. */
+  wide?: 'md' | 'xl'
   children: React.ReactNode
 }) {
   return (
     <article
       className={cn(
-        'relative flex h-[460px] w-[min(360px,82vw)] flex-none snap-start flex-col overflow-hidden rounded-fs-xl p-8',
+        'relative flex min-h-[400px] w-[82vw] max-w-[360px] flex-none snap-start flex-col overflow-hidden rounded-fs-xl p-6 sm:p-8 md:min-h-[340px] md:w-auto md:max-w-none',
+        wide === 'md' && 'md:col-span-2 md:flex-row md:items-end md:gap-10',
+        wide === 'xl' && 'xl:col-span-2 xl:flex-row xl:items-end xl:gap-10',
         tone === 'ink' && 'bg-fs-ink text-white',
         tone === 'white' && 'bg-white text-fs-ink shadow-fs-ring',
         tone === 'green' && 'bg-fs-green text-fs-ink',
       )}
     >
+      <div className={cn(wide === 'md' && 'md:flex-1 md:self-start', wide === 'xl' && 'xl:flex-1 xl:self-start')}>
+        <div
+          className={cn(
+            'flex items-center gap-2 text-[14px] font-semibold',
+            tone === 'ink' && 'text-fs-on-ink-2',
+            tone === 'white' && 'text-fs-text-3',
+          )}
+        >
+          {eyebrow}
+        </div>
+        <h3
+          className={cn(
+            'mt-2 text-[26px] font-bold leading-[1.15] tracking-[-0.03em]',
+            wide === 'md' && 'md:max-w-[380px] md:text-[36px] md:leading-[1.08]',
+            wide === 'xl' && 'xl:max-w-[300px]',
+          )}
+        >
+          {title}
+        </h3>
+      </div>
       <div
         className={cn(
-          'flex items-center gap-2 text-[14px] font-semibold',
-          tone === 'ink' && 'text-fs-on-ink-2',
-          tone === 'white' && 'text-fs-text-3',
+          'mt-auto pt-8',
+          wide === 'md' && 'md:mt-0 md:w-[320px] md:flex-none md:pt-0',
+          wide === 'xl' && 'xl:mt-0 xl:w-[340px] xl:flex-none xl:pt-0',
         )}
       >
-        {eyebrow}
+        {children}
       </div>
-      <h3 className="mt-2 text-[26px] font-bold leading-[1.15] tracking-[-0.03em]">{title}</h3>
-      <div className="mt-auto">{children}</div>
     </article>
   )
 }
 
 const inset = 'rounded-[16px] bg-fs-page px-4 py-1'
 
-export function ToolCards() {
+export function ToolCards({ week = SAMPLE_WEEK }: { week?: number }) {
   return (
-    <div className="mt-11 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 pb-5 [scroll-padding-left:16px] sm:px-[clamp(24px,11vw,160px)] sm:[scroll-padding-left:clamp(24px,11vw,160px)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div
+      className={cn(
+        // Phones: a swipeable row that bleeds to the screen edges.
+        '-mx-4 mt-9 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 [scroll-padding-left:16px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+        // Tablet and up: a grid showing every card.
+        'md:mx-auto md:mt-11 md:grid md:max-w-[1120px] md:grid-cols-2 md:gap-5 md:overflow-visible md:px-0 md:pb-0 xl:grid-cols-3',
+      )}
+    >
       <Card
+        wide="md"
         tone="ink"
         eyebrow={
           <span className="flex items-center gap-2 text-fs-on-ink-3">
@@ -77,9 +112,9 @@ export function ToolCards() {
       <Card tone="white" eyebrow="Full leagues" title="Run your whole league on FieldScout.">
         <div className={inset}>
           {[
-            { n: 1, name: 'Gridiron Gurus', rec: '3–0' },
-            { n: 2, name: 'Your team', rec: '2–1', you: true },
-            { n: 3, name: 'Bijan Mustard', rec: '2–1' },
+            { n: 1, name: 'Gridiron Gurus', rec: seasonRecord(3, week) },
+            { n: 2, name: 'Your team', rec: seasonRecord(2, week), you: true },
+            { n: 3, name: 'Bijan Mustard', rec: seasonRecord(2, week) },
           ].map((r, i) => (
             <div
               key={r.name}
@@ -135,8 +170,8 @@ export function ToolCards() {
       <Card tone="green" eyebrow="Waiver wire reports" title="Who to add and who to watch, every Tuesday morning.">
         <div className="flex flex-col gap-2">
           {[
-            { act: 'Add', name: "Wan'Dale Robinson", stat: '29 tgts' },
-            { act: 'Add', name: 'Jalen Coker', stat: '26 tgts' },
+            { act: 'Add', name: "Wan'Dale Robinson", stat: `${seasonCount(29, week)} tgts` },
+            { act: 'Add', name: 'Jalen Coker', stat: `${seasonCount(26, week)} tgts` },
             { act: 'Watch', name: 'Harold Fannin Jr.' },
           ].map((r) => (
             <div
@@ -178,7 +213,7 @@ export function ToolCards() {
         </div>
       </Card>
 
-      <Card tone="white" eyebrow="Advanced stats & metrics" title="The numbers that matter, readable at a glance.">
+      <Card wide="xl" tone="white" eyebrow="Advanced stats & metrics" title="The numbers that matter, readable at a glance.">
         <div className="rounded-[16px] bg-fs-page p-5">
           <div className="text-[15px] font-bold">Puka Nacua</div>
           {[
@@ -198,8 +233,6 @@ export function ToolCards() {
           ))}
         </div>
       </Card>
-
-      <div className="w-[140px] flex-none" aria-hidden="true" />
     </div>
   )
 }

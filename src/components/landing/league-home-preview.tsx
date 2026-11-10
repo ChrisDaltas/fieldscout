@@ -1,5 +1,6 @@
 import { LogoTile, Wordmark } from '@/components/landing/fieldscout-logo'
 import { ScoutDot, WindowBar } from '@/components/landing/landing-bits'
+import { SAMPLE_WEEK, seasonCount, seasonPoints, seasonRecord } from '@/components/landing/landing-data'
 import { cn } from '@/lib/utils'
 
 /**
@@ -9,23 +10,25 @@ import { cn } from '@/lib/utils'
  */
 
 const NAV = ['League home', 'My team', 'Matchups', 'Players', 'Draft room', 'Scout AI']
+// Records are wins out of the sample's three games and points-for is the
+// three-game total; both are scaled to the week shown (see landing-data).
 const LEAGUES = [
-  { name: 'Gridiron Gurus', record: '2–1', on: true },
-  { name: 'Work league', record: '1–2' },
-  { name: 'Dynasty', record: '3–0' },
+  { name: 'Gridiron Gurus', wins: 2, on: true },
+  { name: 'Work league', wins: 1 },
+  { name: 'Dynasty', wins: 3 },
 ]
 const STANDINGS = [
-  { name: 'Gridiron Gurus', record: '3–0', pf: '402.1' },
-  { name: 'Your team', record: '2–1', pf: '388.4', you: true },
-  { name: 'Bijan Mustard', record: '2–1', pf: '371.0' },
-  { name: 'Puka Shells', record: '2–1', pf: '365.2' },
-  { name: 'Mahomes Alone', record: '1–2', pf: '344.8' },
+  { name: 'Gridiron Gurus', wins: 3, pf: 402.1 },
+  { name: 'Your team', wins: 2, pf: 388.4, you: true },
+  { name: 'Bijan Mustard', wins: 2, pf: 371.0 },
+  { name: 'Puka Shells', wins: 2, pf: 365.2 },
+  { name: 'Mahomes Alone', wins: 1, pf: 344.8 },
 ]
 const ACTIVITY = [
   { text: "Puka Shells added Wan'Dale Robinson", when: '2h', dot: 'bg-fs-green' },
   { text: 'Bijan Mustard and Mahomes Alone made a trade', when: 'Yesterday', dot: 'bg-fs-blue' },
   { text: "This week's waiver wire report is out", when: 'Tue 8 AM', dot: 'bg-fs-text-5' },
-  { text: 'Week 3 recap: you won 121.4 to 98.7', when: 'Mon', dot: 'bg-fs-text-5' },
+  { text: 'recap', when: 'Mon', dot: 'bg-fs-text-5' },
 ]
 
 export function YouBadge() {
@@ -36,7 +39,7 @@ export function YouBadge() {
   )
 }
 
-export function LeagueHomePreview() {
+export function LeagueHomePreview({ week = SAMPLE_WEEK }: { week?: number }) {
   return (
     <div className="mx-auto mt-14 max-w-[1120px] overflow-hidden rounded-[22px] bg-white shadow-fs-float">
       <WindowBar title="League home" />
@@ -70,7 +73,7 @@ export function LeagueHomePreview() {
               >
                 <span className={cn('size-5 rounded-[6px]', l.on ? 'bg-fs-green' : 'bg-fs-fill')} />
                 {l.name}
-                <span className="ml-auto text-[12px] text-fs-text-3">{l.record}</span>
+                <span className="ml-auto text-[12px] text-fs-text-3">{seasonRecord(l.wins, week)}</span>
               </div>
             ))}
           </aside>
@@ -79,7 +82,7 @@ export function LeagueHomePreview() {
             <div className="flex items-end gap-4">
               <div>
                 <div className="text-[24px] font-bold tracking-[-0.03em] sm:text-[28px]">Gridiron Gurus</div>
-                <div className="mt-0.5 text-[14px] font-medium text-fs-text-3">12 teams · PPR · Week 4</div>
+                <div className="mt-0.5 text-[14px] font-medium text-fs-text-3">12 teams · PPR · Week {week}</div>
               </div>
               <div className="ml-auto hidden h-[34px] sm:inline-flex items-center gap-2 rounded-pill bg-fs-page px-3.5 text-[13.5px] font-semibold">
                 <ScoutDot size={7} />
@@ -91,13 +94,13 @@ export function LeagueHomePreview() {
               <div className="flex min-w-0 flex-col gap-4">
                 <div className="rounded-fs-lg bg-white p-4 shadow-fs-ring sm:p-[22px]">
                   <div className="flex items-center">
-                    <span className="text-[13px] font-semibold text-fs-text-3">Your matchup · Week 4</span>
+                    <span className="text-[13px] font-semibold text-fs-text-3">Your matchup · Week {week}</span>
                     <span className="ml-auto text-[12px] font-medium text-fs-text-3">Sun 1:00 PM</span>
                   </div>
                   <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4">
-                    <TeamScore name="Your team" meta="2–1 · 2nd" score="118.6" lead />
+                    <TeamScore name="Your team" meta={`${seasonRecord(2, week)} · 2nd`} score="118.6" lead />
                     <div className="text-[13px] font-semibold text-fs-text-5">vs</div>
-                    <TeamScore name="Bijan Mustard" meta="2–1 · 3rd" score="109.2" right />
+                    <TeamScore name="Bijan Mustard" meta={`${seasonRecord(2, week)} · 3rd`} score="109.2" right />
                   </div>
                   <div className="mt-4 flex justify-between text-[12.5px] font-semibold">
                     <span className="text-fs-blue">Win prob 63%</span>
@@ -126,8 +129,8 @@ export function LeagueHomePreview() {
                         {s.name}
                         {s.you && <YouBadge />}
                       </span>
-                      <span className="text-right text-[14px] font-semibold">{s.record}</span>
-                      <span className="text-right text-[13.5px] font-medium text-fs-text-3">{s.pf}</span>
+                      <span className="text-right text-[14px] font-semibold">{seasonRecord(s.wins, week)}</span>
+                      <span className="text-right text-[13.5px] font-medium text-fs-text-3">{seasonPoints(s.pf, week)}</span>
                     </div>
                   ))}
                 </div>
@@ -148,7 +151,7 @@ export function LeagueHomePreview() {
                   <div className="mt-4 flex items-center gap-2.5 border-t-1 border-fs-ink-3 pt-3.5">
                     <span className="whitespace-nowrap text-[13px] font-medium text-fs-on-ink-2">Waiver add</span>
                     <span className="text-[14px] font-semibold">Wan&apos;Dale Robinson</span>
-                    <span className="ml-auto whitespace-nowrap text-[12.5px] font-semibold text-fs-green">29 tgts</span>
+                    <span className="ml-auto whitespace-nowrap text-[12.5px] font-semibold text-fs-green">{seasonCount(29, week)} tgts</span>
                   </div>
                 </div>
 
@@ -157,7 +160,9 @@ export function LeagueHomePreview() {
                   {ACTIVITY.map((a) => (
                     <div key={a.text} className="flex gap-3 border-t-1 border-fs-line py-3">
                       <span className={cn('mt-1.5 size-2 flex-none rounded-full', a.dot)} />
-                      <div className="min-w-0 flex-1 text-[14px] font-medium leading-snug">{a.text}</div>
+                      <div className="min-w-0 flex-1 text-[14px] font-medium leading-snug">
+                        {a.text === 'recap' ? `Week ${week - 1} recap: you won 121.4 to 98.7` : a.text}
+                      </div>
                       <span className="whitespace-nowrap text-[12px] font-medium text-fs-text-3">{a.when}</span>
                     </div>
                   ))}

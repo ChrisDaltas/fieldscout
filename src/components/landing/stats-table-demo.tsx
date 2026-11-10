@@ -4,10 +4,13 @@ import { useEffect, useRef, useState } from 'react'
 
 import { PosTag, WindowBar } from '@/components/landing/landing-bits'
 import {
+  SAMPLE_WEEK,
   STAT_ADDS,
   STAT_BASE,
   STAT_COLUMNS,
   STAT_ROWS,
+  seasonCount,
+  weeksPlayedLabel,
   type StatKey,
 } from '@/components/landing/landing-data'
 import { useDemoClock } from '@/hooks/use-demo-clock'
@@ -55,7 +58,7 @@ const inOrder = (keys: StatKey[]) => ORDER.filter((k) => keys.includes(k))
  * (Customize, a column checkbox, a header sort) it hands over and stays
  * manual. Static demo data, not live stats.
  */
-export function StatsTableDemo() {
+export function StatsTableDemo({ week = SAMPLE_WEEK }: { week?: number }) {
   const reduced = usePrefersReducedMotion()
   const [manual, setManual] = useState<null | Omit<View, 'pressCustomize' | 'pressDone'>>(null)
   const [sortKey, setSortKey] = useState<StatKey>('tgt')
@@ -188,14 +191,14 @@ export function StatsTableDemo() {
                     v.fresh.includes(c.key) ? 'bg-fs-blue-wash' : 'bg-transparent',
                   )}
                 >
-                  {c.fmt(r.v[c.i])}
+                  {c.fmt(c.counting ? seasonCount(r.v[c.i], week) : r.v[c.i])}
                 </span>
               ))}
             </div>
           ))}
         </div>
       </div>
-      <div className="px-6 py-3.5 text-[12.5px] font-medium text-fs-text-3">Top 10 of 128 WRs · Weeks 1–3</div>
+      <div className="px-6 py-3.5 text-[12.5px] font-medium text-fs-text-3">Top 10 of 128 WRs · {weeksPlayedLabel(week)}</div>
 
       {/* Column picker — a popover over the table, so it rests on its shadow. */}
       <div

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { PosTag } from '@/components/landing/landing-bits'
 import {
   POSITION_LABELS,
+  SAMPLE_WEEK,
   TICKER_POSITIONS,
   tickerItems,
   type Pos,
@@ -13,17 +14,17 @@ import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion'
 import { cn } from '@/lib/utils'
 
 /**
- * Week 4 projections ticker under the landing header. Scrolls one position
+ * This week's projections ticker under the landing header (sample numbers). Scrolls one position
  * group across, then moves to the next (QB → RB → WR → TE). The filter
  * button picks a group directly. Reduced motion: a static, scrollable row.
  */
-export function WeekTicker() {
+export function WeekTicker({ week = SAMPLE_WEEK }: { week?: number }) {
   const [pos, setPos] = useState<Pos>('QB')
   const [run, setRun] = useState(0) // bumps to restart the scroll animation
   const [open, setOpen] = useState(false)
   const reduced = usePrefersReducedMotion()
   const menuRef = useRef<HTMLDivElement>(null)
-  const items = tickerItems(pos)
+  const items = tickerItems(pos, week)
 
   useEffect(() => {
     if (!open) return
@@ -48,7 +49,7 @@ export function WeekTicker() {
   return (
     <div className="relative z-40 flex h-10 items-center gap-2.5 border-b-1 border-black/[.08] bg-white px-4 sm:px-10">
       <span className="inline-flex h-6 flex-none items-center rounded-pill bg-fs-ink px-2.5 text-[12px] font-bold text-white">
-        Week 4
+        Week {week}
       </span>
 
       <div ref={menuRef} className="relative flex h-6 flex-none items-center">
@@ -104,7 +105,7 @@ export function WeekTicker() {
           'ml-1.5 min-w-0 flex-1 [mask-image:linear-gradient(to_right,transparent,#000_24px,#000_calc(100%-24px),transparent)]',
           reduced ? 'overflow-x-auto' : 'overflow-hidden',
         )}
-        aria-label={`Week 4 projections, ${POSITION_LABELS[pos]}`}
+        aria-label={`Week ${week} projections, ${POSITION_LABELS[pos]}`}
       >
         <div
           key={`${pos}-${run}`}

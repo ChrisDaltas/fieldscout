@@ -7,6 +7,37 @@
 
 export type Pos = 'QB' | 'RB' | 'WR' | 'TE'
 
+/* ---- The week the demos are set in ----
+ * The sample content was written for Week 4 (three games played). During the
+ * regular season the page shows the real NFL week instead, and season-long
+ * numbers (records, points, target counts) are scaled to the games played so
+ * they stay believable. The names and numbers are still illustrative. */
+
+export const SAMPLE_WEEK = 4
+const SAMPLE_GAMES = SAMPLE_WEEK - 1
+
+/** Weeks already played going into `week`, as text: "Weeks 1–9" / "Week 1". */
+export function weeksPlayedLabel(week: number): string {
+  return week - 1 <= 1 ? 'Week 1' : `Weeks 1–${week - 1}`
+}
+
+/** A season-to-date count from the Week 4 sample, scaled to `week`. */
+export function seasonCount(sample: number, week: number): number {
+  return Math.round((sample * (week - 1)) / SAMPLE_GAMES)
+}
+
+/** A W–L record from the Week 4 sample (wins out of 3), scaled to `week`. */
+export function seasonRecord(sampleWins: number, week: number): string {
+  const games = week - 1
+  const wins = Math.round((sampleWins * games) / SAMPLE_GAMES)
+  return `${wins}–${games - wins}`
+}
+
+/** Season points-for from the Week 4 sample, scaled to `week`. */
+export function seasonPoints(sample: number, week: number): string {
+  return ((sample * (week - 1)) / SAMPLE_GAMES).toFixed(1)
+}
+
 export const TICKER_POSITIONS: Pos[] = ['QB', 'RB', 'WR', 'TE']
 
 export const POSITION_LABELS: Record<Pos, string> = {
@@ -43,11 +74,13 @@ export interface TickerItem {
   proj: string
 }
 
-export function tickerItems(pos: Pos): TickerItem[] {
+export function tickerItems(pos: Pos, week: number = SAMPLE_WEEK): TickerItem[] {
   return TICKER_NAMES[pos].map(([name, team], i) => ({
     code: `${pos}.${i + 1}`,
     name,
-    opp: `${team} ${OPPONENT[team] ?? ''}`.trim(),
+    // The sample matchups are Week 4's; any other week shows the team alone
+    // rather than an opponent that isn't on that week's schedule.
+    opp: week === SAMPLE_WEEK ? `${team} ${OPPONENT[team] ?? ''}`.trim() : team,
     proj: (TOP_PROJ[pos] - i * PROJ_DROP[pos] - (i % 3) * 0.05).toFixed(1),
   }))
 }
@@ -62,17 +95,19 @@ export interface DemoScript {
   steps: [text: string, detail: string][]
 }
 
-export const FIND_SCRIPT: DemoScript = {
-  prompt: 'List of available WRs with the most targets through Week 3',
-  typeMs: 2600,
-  stepMs: 800,
-  holdMs: 7500,
-  steps: [
-    ['Finding WRs available in your league', '41 on waivers'],
-    ['Counting targets, Weeks 1–3', 'Play-by-play'],
-    ['Adding target share and roster %', ''],
-    ['Sorting by total targets', ''],
-  ],
+export function findScript(week: number): DemoScript {
+  return {
+    prompt: `List of available WRs with the most targets through Week ${week - 1}`,
+    typeMs: 2600,
+    stepMs: 800,
+    holdMs: 7500,
+    steps: [
+      ['Finding WRs available in your league', '41 on waivers'],
+      [`Counting targets, ${weeksPlayedLabel(week)}`, 'Play-by-play'],
+      ['Adding target share and roster %', ''],
+      ['Sorting by total targets', ''],
+    ],
+  }
 }
 
 export const SIT_SCRIPT: DemoScript = {
@@ -90,17 +125,19 @@ export const SIT_SCRIPT: DemoScript = {
   ],
 }
 
-export const LINEUP_SCRIPT: DemoScript = {
-  prompt: 'Swap J. Addison for Justin Jefferson in my lineup if Jefferson is ruled out',
-  typeMs: 3000,
-  stepMs: 1000,
-  holdMs: 7500,
-  steps: [
-    ['Finding Justin Jefferson in your lineup', 'WR · MIN'],
-    ['Checking Jordan Addison on your bench', 'Bench · MIN'],
-    ['Watching the Week 4 injury report', 'Jefferson: Questionable'],
-    ['Setting the swap for inactives', 'Sun 11:30 AM ET'],
-  ],
+export function lineupScript(week: number): DemoScript {
+  return {
+    prompt: 'Swap J. Addison for Justin Jefferson in my lineup if Jefferson is ruled out',
+    typeMs: 3000,
+    stepMs: 1000,
+    holdMs: 7500,
+    steps: [
+      ['Finding Justin Jefferson in your lineup', 'WR · MIN'],
+      ['Checking Jordan Addison on your bench', 'Bench · MIN'],
+      [`Watching the Week ${week} injury report`, 'Jefferson: Questionable'],
+      ['Setting the swap for inactives', 'Sun 11:30 AM ET'],
+    ],
+  }
 }
 
 export const FIND_RESULTS: { name: string; team: string; tgt: number; share: string; rost: string }[] = [
@@ -141,8 +178,15 @@ const one = (v: number) => v.toFixed(1)
 const two = (v: number) => v.toFixed(2)
 const int = (v: number) => String(v)
 
-export const STAT_COLUMNS: { key: StatKey; label: string; group: string; fmt: (v: number) => string }[] = [
-  { key: 'tgt', label: 'Targets', group: 'Usage', fmt: int },
+export const STAT_COLUMNS: {
+  key: StatKey
+  label: string
+  group: string
+  fmt: (v: number) => string
+  /** A season-to-date count (scaled to the games played), not a rate. */
+  counting?: boolean
+}[] = [
+  { key: 'tgt', label: 'Targets', group: 'Usage', fmt: int, counting: true },
   { key: 'share', label: 'Tgt %', group: 'Usage', fmt: pct },
   { key: 'tprr', label: 'TPRR', group: 'Usage', fmt: two },
   { key: 'air', label: 'Air yds %', group: 'Usage', fmt: pct },
@@ -152,7 +196,7 @@ export const STAT_COLUMNS: { key: StatKey; label: string; group: string; fmt: (v
   { key: 'yprr', label: 'YPRR', group: 'Efficiency', fmt: two },
   { key: 'catch', label: 'Catch %', group: 'Efficiency', fmt: pct },
   { key: 'yac', label: 'YAC/rec', group: 'Efficiency', fmt: one },
-  { key: 'rz', label: 'RZ tgts', group: 'Scoring', fmt: int },
+  { key: 'rz', label: 'RZ tgts', group: 'Scoring', fmt: int, counting: true },
   { key: 'fpg', label: 'FP/G', group: 'Scoring', fmt: one },
 ]
 

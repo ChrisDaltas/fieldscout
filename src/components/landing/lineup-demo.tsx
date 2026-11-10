@@ -1,7 +1,7 @@
 'use client'
 
 import { PosTag, ScoutDot } from '@/components/landing/landing-bits'
-import { LINEUP_ROSTER, LINEUP_SCRIPT } from '@/components/landing/landing-data'
+import { LINEUP_ROSTER, SAMPLE_WEEK, lineupScript, seasonRecord } from '@/components/landing/landing-data'
 import { DemoWindow, ScriptedPrompt, useScript } from '@/components/landing/scout-ai-demo'
 import { cn } from '@/lib/utils'
 
@@ -9,24 +9,33 @@ import { cn } from '@/lib/utils'
  * Lineup-adjustment demo (Claude Design LineupDemo): Scout AI arms a
  * conditional swap. Scripted marketing demo, not live.
  */
-export function LineupDemo({ playing = true, onDone }: { playing?: boolean; onDone?: () => void }) {
-  const { t, typed, result } = useScript(LINEUP_SCRIPT, playing, onDone)
+export function LineupDemo({
+  week = SAMPLE_WEEK,
+  playing = true,
+  onDone,
+}: {
+  week?: number
+  playing?: boolean
+  onDone?: () => void
+}) {
+  const script = lineupScript(week)
+  const { t, typed, result } = useScript(script, playing, onDone)
   const cardOn = t >= result + 300
 
   return (
-    <DemoWindow label="Lineup adjustments" context="Week 4 · your team">
+    <DemoWindow label="Lineup adjustments" context={`Week ${week} · your team`}>
       <ScriptedPrompt
-        script={LINEUP_SCRIPT}
+        script={script}
         t={t}
         typed={typed}
         result={result}
         thinkingLabel="Scout AI is setting it up"
-        summary={`Agent Scout move added · ${LINEUP_SCRIPT.steps.length} checks`}
+        summary={`Agent Scout move added · ${script.steps.length} checks`}
       >
         <div className="mt-3 overflow-hidden rounded-[16px] shadow-fs-inset">
           <div className="flex items-baseline gap-2.5 px-4 pb-2.5 pt-3">
             <span className="text-[16px] font-bold">Your team</span>
-            <span className="text-[12.5px] font-medium text-fs-text-3">Gridiron Gurus · 2–1</span>
+            <span className="text-[12.5px] font-medium text-fs-text-3">Gridiron Gurus · {seasonRecord(2, week)}</span>
           </div>
 
           <div
