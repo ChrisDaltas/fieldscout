@@ -30,13 +30,16 @@
  * snapshots that disagree on what they are, THROW — a missing read is never
  * an empty diff (CLAUDE.md "nothing happened ≠ it worked"). A change on a
  * game that was not final at snapshot 1 is listed apart (an in-game change,
- * not a correction); a line the provider dropped is listed apart (the ingest
- * never deletes a stored line). Nothing is hidden and nothing is merged.
+ * not a correction). A line still in the answer that now carries no stat is
+ * a TAKE-BACK, diffed against an all-absent line exactly as the ingest clears
+ * it (F915, `clearedStatRow`); a line missing from the answer altogether is
+ * listed apart (the ingest leaves that stored line as it is). Nothing is
+ * hidden and nothing is merged.
  */
 import type { FixtureEntry, FixtureMethod, FixtureRecording } from '../src/lib/leagues/stats/fixtures/fixture-format'
 import { STAT_KEYS, type ScoringSurface } from '../src/lib/leagues/stats/stat-keys'
 import type { ProviderGame, ProviderGameState, ProviderPlayerWeekStats } from '../src/lib/leagues/stats/stats-provider'
-import { movedStatKeys, SETTLE_GRACE_MS, toStatRow, type StatRow } from '../src/lib/sync/ingest-week'
+import { clearedStatRow, movedStatKeys, SETTLE_GRACE_MS, toStatRow, type StatRow } from '../src/lib/sync/ingest-week'
 
 // ── Inputs ─────────────────────────────────────────────────────────────────
 
@@ -234,13 +237,21 @@ function readSnapshot(snap: Snapshot): ReadSnapshot {
 
 const IN_WEEK: ReadonlySet<string> = new Set(['scheduled', 'live', 'final'])
 
-function rowsOf(snap: ReadSnapshot, provider: string): Map<string, { row: StatRow; line: ProviderPlayerWeekStats }> {
+/** A snapshot's rows as the ingest would hold them. With `prior` (snapshot 1's rows), a line that carries
+ *  no stat over a player who had one is the ingest's clear (F915: `clearedStatRow`), not a vanished line. */
+function rowsOf(
+  snap: ReadSnapshot,
+  provider: string,
+  prior?: ReadonlyMap<string, unknown>,
+): Map<string, { row: StatRow; line: ProviderPlayerWeekStats }> {
   const inWeek = [...snap.status.values()].filter((s) => IN_WEEK.has(s))
   const anyGameOpen = inWeek.some((s) => s !== 'final')
+  const ctx = { providerName: provider, gameStatus: snap.status, anyGameOpen }
   const out = new Map<string, { row: StatRow; line: ProviderPlayerWeekStats }>()
   for (const line of snap.stats) {
-    const { row } = toStatRow(line, { providerName: provider, gameStatus: snap.status, anyGameOpen })
+    const { row } = toStatRow(line, ctx)
     if (row !== null) out.set(line.playerId, { row, line })
+    else if (prior?.has(line.playerId)) out.set(line.playerId, { row: clearedStatRow(line, ctx), line })
   }
   return out
 }
@@ -313,7 +324,7 @@ export function diffSnapshots(first: Snapshot, second: Snapshot, opts: DiffOptio
   }
 
   const rows1 = rowsOf(s1, h1.provider)
-  const rows2 = rowsOf(s2, h2.provider)
+  const rows2 = rowsOf(s2, h2.provider, rows1)
   const changes: SnapshotChange[] = []
   const notFinal: SnapshotChange[] = []
   let unchanged = 0
@@ -543,7 +554,7 @@ export function renderSnapshotDiff(d: SnapshotDiff): string[] {
     d.notFinal.forEach((c, i) => out.push(...renderChange(c, i)))
   }
   if (d.vanished.length > 0) {
-    out.push(`VANISHED LINES (in "${d.first.label}", not in "${d.second.label}" — the ingest keeps a stored line): ${d.vanished.length}`)
+    out.push(`VANISHED LINES (in "${d.first.label}", no line at all in "${d.second.label}" — the ingest leaves such a stored line as it is): ${d.vanished.length}`)
     for (const v of d.vanished) out.push(`  - ${v.name ?? `player ${v.playerId}`} (${v.team ?? 'team unknown'}; id ${v.playerId})`)
   }
   if (d.eventsCompared) {

@@ -19,6 +19,7 @@ import {
   CONTEXT_ADVANCED_KEYS,
   movedStatKeys,
   classifyCorrectionsWithSettle,
+  clearedStatRow,
   collapseIdenticalRows,
   conflictingPlayers,
   diffGames,
@@ -398,6 +399,20 @@ describe('toStatRow (§23.5 advanced; F13 provenance; the whole column surface)'
   it('a line with nothing storable is a null row (counted as empty upstream); one storable advanced key alone is enough', () => {
     expect(toStatRow({ ...QB_LINE, stats: { def_pa_1_6: 1 }, advanced: {} }, CTX).row).toBeNull()
     expect(toStatRow({ ...QB_LINE, stats: {}, advanced: { example_charted_yards: 12 } }, CTX).row).not.toBeNull()
+  })
+
+  it('F915 a line with display-only usage keys alone (snaps, red zone, FG long) is no stat line — a null row, never a row of zeros', () => {
+    expect(toStatRow({ ...QB_LINE, stats: {}, advanced: { off_snaps: 41, rush_rz_att: 2 } }, CTX).row).toBeNull()
+    expect(toStatRow({ ...QB_LINE, stats: {}, advanced: {} }, CTX).row).toBeNull()
+  })
+
+  it('F915 clearedStatRow: every box column at its absent value (NULL for yards allowed), the display-only keys as delivered, the metadata as toStatRow derives it', () => {
+    const row = clearedStatRow({ ...QB_LINE, stats: { pass_yards: 9 }, advanced: { off_snaps: 41 } }, CTX)
+    for (const column of STAT_COLUMN_SURFACE) {
+      expect(row.columns[column], column).toBe(NULL_IS_PENDING_COLUMNS.has(column) ? null : 0)
+    }
+    expect(row.advanced).toEqual({ off_snaps: 41 })
+    expect([row.player_id, row.game_id, row.is_live, row.source]).toEqual(['syn-g1-qb', '2026-wk02-DAL@PHI', true, 'synthetic'])
   })
 })
 
@@ -968,6 +983,93 @@ describe('L.E2.1 — TD2: what a correction is, poll after poll through the real
       { player_id: 'p-rb', stat_key: 'rush_yards', old: 33, new: 31 },
       { player_id: 'p-rb', stat_key: 'rush_tds', old: 0, new: 1 },
     ])
+  })
+
+  it('F915 T1–T3 — a stat the provider TAKES BACK (the line stays, with snaps alone): the stored line is cleared, queued, and a correction once the week was final; a re-poll writes nothing', async () => {
+    const world = new World(['p-wr'])
+    const { state, provider } = scripted('sleeper+nflverse')
+    const clock = new VirtualClock(new Date('2026-09-20T18:00:00Z'))
+    const deps = { db: world.client(), degradation: new DegradationTracker(), season: 2026, week: 2 }
+    const poll = async (iso: string) => {
+      clock.advanceTo(new Date(iso))
+      return ingestWeek(provider, clock, deps)
+    }
+    // T1 — during the games: one catch for 7 yards.
+    state.games = [wk2Game(WK2_G1, 'live'), wk2Game(WK2_G3, 'scheduled')]
+    state.lines = [{ ...wk2Line('p-wr', undefined, { targets: 1, receptions: 1, receiving_yards: 7 }), advanced: { off_snaps: 30 } }]
+    await poll('2026-09-20T18:00:00Z')
+    expect(world.stats.get('p-wr')).toMatchObject({ receptions: 1, receiving_yards: 7, targets: 1 })
+
+    // T2 — Tuesday, every game final before this poll: the catch is ruled incomplete. Sleeper keeps the
+    // line with snaps and flags alone (`stats: {}` from the adapter) — production's 2026 wk4 shape.
+    state.games = [wk2Game(WK2_G1, 'final'), wk2Game(WK2_G3, 'final')]
+    await poll('2026-09-21T04:00:00Z') // the poll that first sees the week final: metadata only
+    state.lines = [{ ...wk2Line('p-wr', undefined, {}), advanced: { off_snaps: 30 } }]
+    const t2 = await poll('2026-09-22T16:00:00Z')
+    expect(lastSent(world)).toEqual({
+      'p-wr': {
+        enqueue: true,
+        corrections: [
+          { stat_key: 'receptions', column: 'receptions' },
+          { stat_key: 'receiving_yards', column: 'receiving_yards' },
+          { stat_key: 'targets', column: 'targets' },
+        ],
+      },
+    })
+    expect(world.stats.get('p-wr')).toMatchObject({ receptions: 0, receiving_yards: 0, targets: 0, is_live: false })
+    expect(world.stats.get('p-wr')!.advanced).toEqual({ off_snaps: 30 })
+    expect([t2.stats.cleared, t2.stats.updated, t2.stats.empty, t2.stats.storedWithoutLine]).toEqual([1, 1, 0, 0])
+    expect(t2.corrections.keys).toEqual([
+      { player_id: 'p-wr', stat_key: 'receptions', old: 1, new: 0 },
+      { player_id: 'p-wr', stat_key: 'receiving_yards', old: 7, new: 0 },
+      { player_id: 'p-wr', stat_key: 'targets', old: 1, new: 0 },
+    ])
+    expect(t2.reasons).toContain(
+      "player_stats: 1 stored line(s) cleared — the provider's line for the player now carries no stat (taken back), so the stored stats go to 0 (F915)",
+    )
+
+    // T3 — the same empty line again: the stored line is already clear — nothing written, nothing counted cleared.
+    const calls = world.doorCalls.length
+    const t3 = await poll('2026-09-22T17:00:00Z')
+    expect(world.doorCalls.length).toBe(calls)
+    expect([t3.stats.cleared, t3.stats.unchanged]).toEqual([0, 1])
+  })
+
+  it('F915 T4 — taken back DURING the game: cleared and queued like any live move, no correction', async () => {
+    const world = new World(['p-rb'])
+    const { state, provider } = scripted('sleeper+nflverse')
+    const clock = new VirtualClock(new Date('2026-09-20T18:00:00Z'))
+    const deps = { db: world.client(), degradation: new DegradationTracker(), season: 2026, week: 2 }
+    state.games = [wk2Game(WK2_G1, 'live'), wk2Game(WK2_G3, 'scheduled')]
+    state.lines = [wk2Line('p-rb', undefined, { rush_attempts: 1, rush_yards: 4 })]
+    await ingestWeek(provider, clock, deps)
+    state.lines = [wk2Line('p-rb', undefined, {})]
+    clock.advanceTo(new Date('2026-09-20T18:01:00Z'))
+    const report = await ingestWeek(provider, clock, deps)
+    expect(lastSent(world)).toEqual({ 'p-rb': { enqueue: true, corrections: [] } })
+    expect(world.stats.get('p-rb')).toMatchObject({ rush_attempts: 0, rush_yards: 0, is_live: true })
+    expect(report.stats.cleared).toBe(1)
+  })
+
+  it('F915 T5–T6 — an empty or snaps-only line for a player with NO stored line makes no row (counted empty); a stored line whose player has NO line at all is left as stored and named', async () => {
+    const world = new World(['p-te', 'p-snaps', 'p-gone'])
+    const { state, provider } = scripted('sleeper+nflverse')
+    const clock = new VirtualClock(new Date('2026-09-20T18:00:00Z'))
+    const deps = { db: world.client(), degradation: new DegradationTracker(), season: 2026, week: 2 }
+    state.games = [wk2Game(WK2_G1, 'live'), wk2Game(WK2_G3, 'scheduled')]
+    state.lines = [wk2Line('p-gone', undefined, { receptions: 2, receiving_yards: 15 })]
+    await ingestWeek(provider, clock, deps)
+
+    // T5 / T6 — p-te's line is empty, p-snaps carries snaps alone, p-gone's line is missing altogether.
+    state.lines = [wk2Line('p-te', undefined, {}), { ...wk2Line('p-snaps', undefined, {}), advanced: { off_snaps: 12 } }]
+    clock.advanceTo(new Date('2026-09-20T18:01:00Z'))
+    const report = await ingestWeek(provider, clock, deps)
+    expect([...world.stats.keys()]).toEqual(['p-gone'])
+    expect(world.stats.get('p-gone')).toMatchObject({ receptions: 2, receiving_yards: 15 })
+    expect([report.stats.empty, report.stats.cleared, report.stats.storedWithoutLine]).toEqual([2, 0, 1])
+    expect(report.reasons).toContain(
+      "player_stats: 1 stored line(s) have no line at all in the provider's answer — left as stored; a missing line is not proof a stat was taken back (F915): p-gone",
+    )
   })
 
   it('F1 a missing door (the measured pre-167 PGRST202) is a PLAIN failure since F508 — the poll throws by name and writes nothing', async () => {
