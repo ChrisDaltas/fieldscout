@@ -59,6 +59,32 @@ export interface ProviderPlayerWeekStats {
   /** tracking/charted values, canonical keys. A missing key means
    *  not-yet-reported — renders as pending, never 0 (§23.5). */
   advanced: Partial<Record<string, number>>
+  /** F916 (migration 223): the provider's line exactly as sent, for
+   *  `player_stat_lines` — every stat key, mapped or not. Absent on a
+   *  provider that has no raw line to keep (synthetic), in a fixture (the
+   *  recorder leaves it out), and on a row the adapter could not read it from. */
+  sourceLine?: ProviderSourceLine
+}
+
+/** F916 — one provider line verbatim (`player_stat_lines`). Never a scoring input. */
+export interface ProviderSourceLine {
+  /** The provider the line came from ('sleeper') — not the wrapped provider's name. */
+  source: string
+  seasonType: string
+  /** The position list the line was served under. */
+  position: string | null
+  /** The provider's stats object exactly as sent (`{}` for a null one). */
+  stats: Record<string, unknown>
+  /** The rest of the provider's row exactly as sent, minus `stats` and any embedded player block. */
+  meta: Record<string, unknown>
+  team: string | null
+  opponent: string | null
+  /** The provider's own game id (not nfl_games.id). */
+  gameId: string | null
+  /** YYYY-MM-DD as the provider sent it. */
+  gameDate: string | null
+  /** The provider's own last-modified instant (ISO), when it sent one. */
+  updatedAt: string | null
 }
 
 export interface ProviderInjury {

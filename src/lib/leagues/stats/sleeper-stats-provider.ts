@@ -32,6 +32,7 @@ import type {
   ProviderInactives,
   ProviderInjury,
   ProviderPlayerWeekStats,
+  ProviderSourceLine,
   StatsProvider,
 } from './stats-provider'
 
@@ -248,6 +249,52 @@ interface SleeperWeeklyStatsRow {
    *  verbatim in fixtures/sleeper-def-yards-allowed-2026.json). F589. */
   team?: unknown
   opponent?: unknown
+  /** Every other field Sleeper sends (game_id, date, updated_at, the
+   *  embedded `player` block, …) — kept verbatim by F916's sourceLine. */
+  [field: string]: unknown
+}
+
+/** F916: the raw line can only ever cost the raw-line step — a row it cannot
+ *  be built from carries no `sourceLine`, never a failed stats poll. */
+function keptSourceLine(row: SleeperWeeklyStatsRow, position: string): { sourceLine?: ProviderSourceLine } {
+  try {
+    return { sourceLine: sleeperSourceLine(row, position) }
+  } catch {
+    return {}
+  }
+}
+
+/** A string field of a Sleeper row, or null (never a guessed value). */
+function sleeperString(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+/**
+ * F916 (migration 223) — the row exactly as Sleeper sent it, for
+ * `player_stat_lines`: its `stats` object (every key, mapped or not) and the
+ * rest of the row minus the embedded `player` block (a roster snapshot that
+ * changes with every injury note — it is the players sync's, not a stat).
+ */
+export function sleeperSourceLine(row: SleeperWeeklyStatsRow, position: string): ProviderSourceLine {
+  const meta: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(row)) {
+    if (key === 'stats' || key === 'player') continue
+    meta[key] = value
+  }
+  const updated = new Date(Number(row.updated_at ?? NaN)) // a value past Date's range is Invalid Date, never a throw
+  const date = sleeperString(row.date)
+  return {
+    source: 'sleeper',
+    seasonType: sleeperString(row.season_type) ?? 'regular',
+    position,
+    stats: row.stats && typeof row.stats === 'object' ? { ...row.stats } : {},
+    meta,
+    team: sleeperString(row.team),
+    opponent: sleeperString(row.opponent),
+    gameId: sleeperString(row.game_id),
+    gameDate: date !== null && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
+    updatedAt: Number.isFinite(updated.getTime()) && updated.getTime() > 0 ? updated.toISOString() : null,
+  }
 }
 
 /** Per-position weekly actuals — migrated from live-stats.ts in L.A0.2b;
@@ -431,6 +478,7 @@ export class SleeperStatsProvider implements StatsProvider {
           // Box-score tier — tracking/charted never present here; the F578
           // usage keys (snaps, red zone, FG long) are the only advanced keys.
           advanced: mapUsageKeys(row.stats),
+          ...keptSourceLine(row, position), // F916 — the line as sent
         })
       }
     }

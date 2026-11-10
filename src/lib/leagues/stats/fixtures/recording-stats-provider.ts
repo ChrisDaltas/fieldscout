@@ -55,13 +55,18 @@ export class RecordingStatsProvider implements StatsProvider {
     this.capabilities = inner.capabilities
   }
 
-  private async record<T>(method: FixtureMethod, args: number[], call: () => Promise<T>): Promise<T> {
+  private async record<T>(
+    method: FixtureMethod,
+    args: number[],
+    call: () => Promise<T>,
+    recordAs: (body: T) => unknown = (body) => body,
+  ): Promise<T> {
     const t = this.time.now().toISOString()
     try {
       const body = await call()
       // Serialize now so the entry is a faithful JSON snapshot even if the
       // caller later mutates the returned object.
-      this.sink.write({ t, method, args, ok: true, status: null, body: JSON.parse(JSON.stringify(body)) })
+      this.sink.write({ t, method, args, ok: true, status: null, body: JSON.parse(JSON.stringify(recordAs(body))) })
       return body
     } catch (err) {
       this.sink.write({
@@ -87,8 +92,20 @@ export class RecordingStatsProvider implements StatsProvider {
   }
 
   getWeekStats(season: number, week: number): Promise<ProviderPlayerWeekStats[]> {
-    return this.record('getWeekStats', [season, week], () =>
-      this.inner.getWeekStats(season, week),
+    // F916: a fixture keeps the canonical §23.1 payload — the provider's raw
+    // line (`sourceLine`, ~6× the canonical line; `player_stat_lines` keeps it)
+    // is left out, so an all-day live capture stays the size it always was.
+    // The caller still gets the line whole.
+    return this.record(
+      'getWeekStats',
+      [season, week],
+      () => this.inner.getWeekStats(season, week),
+      (lines) =>
+        lines.map((line) => {
+          const recorded: Partial<ProviderPlayerWeekStats> = { ...line }
+          delete recorded.sourceLine
+          return recorded
+        }),
     )
   }
 

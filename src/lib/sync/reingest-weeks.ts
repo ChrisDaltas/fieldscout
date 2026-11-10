@@ -216,6 +216,8 @@ export async function reingestWeeks(deps: ReingestDeps, opts: ReingestOptions): 
     const after = await readDefenseYards(db, season, week, defenseIds)
     const problems: string[] = []
     if (!ingest.ok) problems.push(`ingest failed: ${ingest.error ?? 'unknown'} — nothing written for week ${week} (§23.2)`)
+    // F916: a re-poll is also how past weeks' lines are kept — a failed write is a failed run.
+    if (ingest.ok && ingest.lines.status === 'failed') problems.push(`the provider's lines were not kept for week ${week}: ${ingest.lines.error ?? 'unknown'} (player_stat_lines, F916)`)
 
     const dstYardsChanged = after.filter((r) => !before.has(r.player_id) || before.get(r.player_id) !== r.def_yards_allowed).length
     const dstWithoutYards = after.filter((r) => r.def_yards_allowed === null).map((r) => r.player_id)
@@ -250,7 +252,8 @@ export function renderReingest(report: ReingestReport): string[] {
       `  week ${w.week} ${w.problems.length === 0 ? 'OK  ' : 'FAIL'}${w.completed ? '' : ' (IN PROGRESS — the live poll covers it too)'} ` +
         `rows: inserted=${s.inserted} updated=${s.updated} metaOnly=${s.metaOnly} unchanged=${s.unchanged} ` +
         `D/ST yards filled/changed=${w.dstYardsChanged} ` +
-        `unknownIds=${s.unknownPlayer} empty=${s.empty} cleared=${s.cleared} storedWithoutLine=${s.storedWithoutLine} | deltas enqueued=${s.enqueued} restamped=${s.restamped} | ` +
+        `unknownIds=${s.unknownPlayer} empty=${s.empty} cleared=${s.cleared} storedWithoutLine=${s.storedWithoutLine} | ` +
+        `lines kept: ${w.ingest.lines.status} written=${w.ingest.lines.written} unchanged=${w.ingest.lines.unchanged} | deltas enqueued=${s.enqueued} restamped=${s.restamped} | ` +
         `D/ST yards: ${w.dstWithYards}/${w.dstRows}${w.dstWithoutYards.length > 0 ? ` — NULL: ${w.dstWithoutYards.join(', ')}` : ''}`,
     )
     for (const r of w.ingest.reasons) lines.push(`      ${r}`)

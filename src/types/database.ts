@@ -3668,6 +3668,63 @@ export type Database = {
           },
         ]
       }
+      player_stat_lines: {
+        Row: {
+          first_seen_at: string
+          game_date: string | null
+          game_id: string | null
+          line_hash: string
+          meta: Json
+          opponent: string | null
+          player_id: string
+          position: string | null
+          season: number
+          season_type: string
+          source: string
+          source_updated_at: string | null
+          stats: Json
+          team: string | null
+          updated_at: string
+          week: number
+        }
+        Insert: {
+          first_seen_at: string
+          game_date?: string | null
+          game_id?: string | null
+          line_hash: string
+          meta: Json
+          opponent?: string | null
+          player_id: string
+          position?: string | null
+          season: number
+          season_type: string
+          source: string
+          source_updated_at?: string | null
+          stats: Json
+          team?: string | null
+          updated_at: string
+          week: number
+        }
+        Update: {
+          first_seen_at?: string
+          game_date?: string | null
+          game_id?: string | null
+          line_hash?: string
+          meta?: Json
+          opponent?: string | null
+          player_id?: string
+          position?: string | null
+          season?: number
+          season_type?: string
+          source?: string
+          source_updated_at?: string | null
+          stats?: Json
+          team?: string | null
+          updated_at?: string
+          week?: number
+        }
+        Relationships: []
+      }
       player_stats: {
         Row: {
           advanced: Json

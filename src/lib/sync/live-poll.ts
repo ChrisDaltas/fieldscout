@@ -454,7 +454,8 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
         // loud (F228: a kickoff-less tier writes no nfl_games — never quiet).
         for (const reason of poll.reasons) {
           // F830 / R1716: a repeated provider row is written once, and said out loud.
-          if (reason.startsWith('nfl_games untouched') || reason.startsWith('provider returned zero games') || poll.stats.duplicates > 0 && reason.startsWith('player_stats: ')) {
+          // F916: the provider's lines not kept (a write error) is said out loud too — the scores stand.
+          if (reason.startsWith('nfl_games untouched') || reason.startsWith('provider returned zero games') || poll.stats.duplicates > 0 && reason.startsWith('player_stats: ') || reason.startsWith('player_stat_lines: write FAILED')) {
             report.problems.push(`week ${week}: ${reason}`)
           }
         }

@@ -203,6 +203,26 @@ describe('record → replay round trip (D6)', () => {
   })
 })
 
+describe('F916: the recorder keeps the canonical payload, never the raw line', () => {
+  it('a getWeekStats body is recorded WITHOUT sourceLine; the caller still gets it whole', async () => {
+    const raw = { source: 'sleeper', seasonType: 'regular', position: 'RB', stats: { rush_yd: 12, kr_yd: 40 }, meta: { player_id: 'stub-rb' }, team: null, opponent: null, gameId: null, gameDate: null, updatedAt: null }
+    const inner: StatsProvider = {
+      name: 'stub',
+      capabilities: new Set(['core_box']),
+      getSchedule: async () => [],
+      getGameStates: async () => [],
+      getWeekStats: async (season, week) => [{ playerId: 'stub-rb', season, week, stats: { rush_yards: 12 }, advanced: {}, sourceLine: raw }],
+      getInjuries: async () => [],
+      getInactives: async () => [],
+    }
+    const sink = new MemoryFixtureSink()
+    const recorder = new RecordingStatsProvider(inner, sink, new VirtualClock(new Date('2026-09-20T17:00:00Z')))
+    const lines = await recorder.getWeekStats(2026, 2)
+    expect(lines[0].sourceLine).toEqual(raw)
+    expect(sink.entries[0].body).toEqual([{ playerId: 'stub-rb', season: 2026, week: 2, stats: { rush_yards: 12 }, advanced: {} }])
+  })
+})
+
 describe('latest-response-≤-virtual-now semantics (D6)', () => {
   it('serves the previous poll until the exact instant the next one was captured', async () => {
     const { recording } = await recordStubSession()
