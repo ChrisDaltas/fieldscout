@@ -4,13 +4,24 @@ import { NflverseProvider, withNflverseCalendar } from '@/lib/leagues/stats/nflv
 import { SleeperStatsProvider } from '@/lib/leagues/stats/sleeper-stats-provider'
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createTypedAdminClient } from '@/lib/supabase/admin'
-import { LIVE_POLL_BUDGET_MS, runLivePollInvocation } from '@/lib/sync/live-poll'
+import { parseSweepMode, runLivePollInvocation } from '@/lib/sync/live-poll'
 import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
  * In-season live ingestion — the production `sync-live-stats` job (spec §14
- * / §23.2 / §23.3). SCHEDULED EVERY MINUTE BY pg_cron + pg_net, migration
- * 124's `sync-live-ping` job (`SELECT public.cron_ping_route('/api/cron/
+ * / §23.2 / §23.3). WOKEN BY THE DATABASE since migration 224 (Chris
+ * 2026-11-14 — "why are we looking constantly all the time?", "every 30
+ * seconds during games", "once a day on none day games", "once the score is
+ * final the game is over"): pg_cron's `sync-live-ping` job runs every 30 s
+ * and calls `?sweep=none` ONLY while a game window is open
+ * (`public.live_game_window_open` — the HOT rule below, in SQL); the
+ * `sync-live-sweep` job calls `?sweep=daily` once a day at 11:00Z. Each
+ * invocation does ONE round and exits (`runLivePollInvocation`) — no 20 s
+ * sleep loop, because a sleeping function is billed for the wait (the Hobby
+ * pause of 2026-11-11). No `sweep` parameter = the pre-224 hourly sweep, the
+ * fallback while 124's per-minute ping is still the caller (merge deploys
+ * before db push). HISTORY: SCHEDULED EVERY MINUTE BY pg_cron + pg_net,
+ * migration 124's `sync-live-ping` job (`SELECT public.cron_ping_route('/api/cron/
  * sync-live')`) — Q43 ANSWERED with its option (c). Vercel Hobby refuses
  * any cron finer than daily at deploy time (PROGRESS R884), and the daily
  * stopgap that stood alone turned a 20-minute miss into a day of stale
@@ -34,12 +45,13 @@ import { isCronAuthorized } from '@/lib/auth/cron-secret'
  *     `player_stats.source` carries `sleeper+nflverse` (F13);
  *   * the week comes from `nfl_weeks` and `nfl_games`, never wall-clock math
  *     or an external "state" call (§23.3 — F216(b)); the plan is HOT
- *     (poll every 20 s for the invocation's budget) while an in-week game
- *     is within 15 min of kickoff or has kicked off and not been OBSERVED
- *     final (the window closes on observation — R711 — and that observing
- *     poll is the ONLY writer of `nfl_weeks.last_game_ends_at`, F238), a
- *     SWEEP once an hour (schedule refresh; also whenever the season has no
- *     game rows at all — F228), IDLE otherwise (no provider call);
+ *     (one poll per wake) while an in-week game is within 15 min of kickoff
+ *     or has kicked off and not been OBSERVED final (the window closes on
+ *     observation — R711 — and that observing poll is the ONLY writer of
+ *     `nfl_weeks.last_game_ends_at`, F238), a SWEEP when the caller's
+ *     `sweep` mode says one is due (schedule refresh; also whenever the
+ *     season has no game rows at all — F228), IDLE otherwise (no provider
+ *     call);
  *   * `stats_degraded` and the per-week last-poll instant persist in
  *     `system_flags` (122 — F217); the worker's orphan escape reads the
  *     latter.
@@ -48,16 +60,20 @@ import { isCronAuthorized } from '@/lib/auth/cron-secret'
  * `maxDuration` must exceed the invocation budget (pinned in route.test.ts).
  */
 
-// The invocation budget (LIVE_POLL_BUDGET_MS, 45 s) must sit below this
-// hard timeout — route.test.ts pins the inequality (a route module may
-// export only Next's own fields, so the pin lives in the test).
+// The hard timeout over ONE round. A round is no longer looped, but the daily
+// sweep reads several weeks (the current one, the open correction windows,
+// TD5's final weeks) and each is a provider read — 60 s keeps the headroom
+// the old loop had. Billing follows the time actually used, not this bound.
 export const maxDuration = 60
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 export async function GET(request: Request) {
   if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const sweep = parseSweepMode(new URL(request.url).searchParams.get('sweep'))
+  if (sweep === null) {
+    return NextResponse.json({ error: 'sweep must be "daily" or "none" (or absent)' }, { status: 400 })
   }
 
   const season = Number(process.env.NEXT_PUBLIC_NFL_SEASON ?? 2026)
@@ -71,14 +87,14 @@ export async function GET(request: Request) {
       db: createTypedAdminClient(),
       provider,
       time: systemTime,
-      sleep,
       season,
-      budgetMs: LIVE_POLL_BUDGET_MS,
+      planOptions: { sweep },
     })
     for (const problem of report.problems) console.warn('[sync-live]', problem)
     if (report.flag?.degraded) console.error('[sync-live] ALERT stats_degraded is RAISED (§23.2/E45):', JSON.stringify(report.flag))
     const summary = {
       season,
+      sweep,
       reason: report.reason,
       rounds: report.rounds.map((r) => ({
         mode: r.plan.mode,

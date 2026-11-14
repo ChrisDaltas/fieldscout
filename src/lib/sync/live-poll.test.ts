@@ -5,8 +5,8 @@
  *
  * The plan is decided from the tables and an injected instant; every
  * literal below is a stored instant and the boundaries are D146 pairs
- * (kickoff − lead exactly ⇒ hot; one second earlier ⇒ idle). The loop is
- * driven with a fake `ingest`, a fake tracker store and a fake `sleep`
+ * (kickoff − lead exactly ⇒ hot; one second earlier ⇒ idle). The single
+ * round (224) is driven with a fake `ingest` and a fake tracker store
  * over an in-memory calendar — no stack, no clock.
  */
 import { describe, expect, it } from 'vitest'
@@ -24,12 +24,12 @@ import {
   FINAL_WEEK_REPOLL_DAYS,
   FINAL_WEEK_REPOLL_UTC_HOUR,
   finalWeeksForRepoll,
-  LIVE_POLL_BUDGET_MS,
+  LIVE_WAKE_SECONDS,
   planLivePoll,
   weeksInCorrectionWindow,
-  POLL_CADENCE_MS,
   POLL_LEAD_MS,
   runLivePollInvocation,
+  type SweepMode,
   withScheduleMemo,
 } from './live-poll'
 
@@ -101,7 +101,7 @@ describe('planLivePoll — hot / sweep / idle from the tables', () => {
     const sweep = planLivePoll(games, WEEKS, new Date('2026-09-11T15:00:30Z'))
     expect(sweep.mode).toBe('sweep')
     expect(sweep.weeks).toEqual([1])
-    expect(sweep.reasons[0]).toMatch(/top-of-hour schedule refresh of week 1/)
+    expect(sweep.reasons[0]).toMatch(/hourly schedule refresh of week 1/)
     const idle = planLivePoll(games, WEEKS, new Date('2026-09-11T15:01:00Z'))
     expect(idle.mode).toBe('idle')
   })
@@ -129,13 +129,55 @@ describe('planLivePoll — hot / sweep / idle from the tables', () => {
   })
 })
 
-// ── The loop ───────────────────────────────────────────────────────────────
+describe('224 — the sweep modes (Chris 2026-11-14: "once a day on none day games")', () => {
+  const weeks: CalendarWeek[] = [
+    { season: 2026, week: 1, starts_at: '2026-09-09T04:00:00Z', correction_window_ends_at: '2026-09-18T00:15:00.000Z' },
+    { season: 2026, week: 2, starts_at: '2026-09-16T04:00:00Z', correction_window_ends_at: '2026-09-25T00:15:00Z' },
+    { season: 2026, week: 3, starts_at: '2026-09-23T04:00:00Z', correction_window_ends_at: '2026-10-02T00:15:00Z' },
+  ]
+  const quiet = [game(1, TNF, 'final'), game(2, SNF, 'final')]
+
+  it('`daily`: the sweep is due whenever the daily job calls — the current week, the open-window weeks AND TD5’s final weeks, whatever the minute', () => {
+    const onTime = planLivePoll(quiet, weeks, new Date('2026-09-24T11:00:30Z'), { sweep: 'daily' })
+    expect([onTime.mode, onTime.weeks]).toEqual(['sweep', [3, 2, 1]])
+    expect(onTime.reasons[0]).toMatch(/^sweep: nothing due; daily schedule refresh of week 3/)
+    // A late wake still sweeps, final weeks included (the hourly fallback keyed on the minute and the hour).
+    const late = planLivePoll(quiet, weeks, new Date('2026-09-24T11:03:10Z'), { sweep: 'daily' })
+    expect([late.mode, late.weeks]).toEqual(['sweep', [3, 2, 1]])
+  })
+
+  it('`none`: never a sweep — not on minute 0, not at 11:00Z, not on an empty calendar; idle names the daily run', () => {
+    for (const at of ['2026-09-24T11:00:30Z', '2026-09-24T15:00:00Z']) {
+      const p = planLivePoll(quiet, weeks, new Date(at), { sweep: 'none' })
+      expect([p.mode, p.weeks]).toEqual(['idle', []])
+      expect(p.reasons[0]).toMatch(/next sweep at the daily 11:00Z run — no provider call$/)
+    }
+    expect(planLivePoll([], weeks, new Date('2026-09-24T15:00:00Z'), { sweep: 'none' }).mode).toBe('idle')
+    // …and a game window still runs on it.
+    expect(planLivePoll([game(3, '2026-09-24T15:10:00Z')], weeks, new Date('2026-09-24T15:00:00Z'), { sweep: 'none' }).mode).toBe('hot')
+  })
+
+  it('"once the score is final the game is over": a final game never keeps a window open, in any mode, however recent its kickoff', () => {
+    for (const sweep of ['none', 'daily', 'hourly'] as const) {
+      const p = planLivePoll([game(3, '2026-09-24T15:10:00Z', 'final')], weeks, new Date('2026-09-24T15:20:00Z'), { sweep })
+      expect(p.mode).not.toBe('hot')
+      expect(p.dueGames).toBe(0)
+    }
+  })
+
+  it('no mode named = the pre-224 hourly fallback (124’s per-minute ping, until 224 is pushed): minute 0 sweeps, TD5 only at 11:00Z', () => {
+    expect(planLivePoll(quiet, weeks, new Date('2026-09-24T15:00:30Z')).weeks).toEqual([3, 2])
+    expect(planLivePoll(quiet, weeks, new Date('2026-09-24T11:00:30Z')).weeks).toEqual([3, 2, 1])
+    expect(planLivePoll(quiet, weeks, new Date('2026-09-24T15:01:00Z')).mode).toBe('idle')
+  })
+})
+
+// ── The invocation ─────────────────────────────────────────────────────────
 
 interface FakeWorld {
   games: CalendarGame[]
   polls: Array<{ week: number; at: string; failures: number }>
   flag: StatsDegradedFlag
-  sleeps: number[]
   scheduleReads: number
   /** The calendar the fake db serves (default WEEKS). */
   weeks?: CalendarWeek[]
@@ -199,7 +241,6 @@ function makeWorld(games: CalendarGame[]): FakeWorld {
     games,
     polls: [],
     flag: { degraded: false, consecutive_failures: 0, last_failure_at: null, last_success_at: null, last_error: null, provider: null },
-    sleeps: [],
     scheduleReads: 0,
   }
 }
@@ -207,18 +248,14 @@ function makeWorld(games: CalendarGame[]): FakeWorld {
 function run(
   world: FakeWorld,
   clock: VirtualClock,
-  opts: { failPolls?: boolean; onPoll?: (week: number) => void; budgetMs?: number; mutate?: (r: IngestReport) => IngestReport } = {},
+  opts: { failPolls?: boolean; onPoll?: (week: number) => void; sweep?: SweepMode; mutate?: (r: IngestReport) => IngestReport } = {},
 ) {
   return runLivePollInvocation({
     db: fakeDb(world),
     provider: fakeProvider(world),
     time: clock,
     season: 2026,
-    budgetMs: opts.budgetMs,
-    sleep: async (ms) => {
-      world.sleeps.push(ms)
-      clock.advanceBy(ms)
-    },
+    planOptions: opts.sweep ? { sweep: opts.sweep } : undefined,
     ingest: async (provider, time, io) => {
       await provider.getSchedule(io.season) // what the real ingestWeek does first — the memo is measured through it
       const ok = !opts.failPolls
@@ -243,7 +280,7 @@ function run(
   })
 }
 
-describe('runLivePollInvocation — the minute-invocation loop', () => {
+describe('runLivePollInvocation — ONE round per invocation (224: the database wakes it every 30 s in a window; no sleep loop)', () => {
   it('IDLE: no provider call, no poll, the reason named', async () => {
     const world = makeWorld([game(1, TNF, 'final')])
     const report = await run(world, new VirtualClock(new Date('2026-09-11T15:01:00Z')))
@@ -254,23 +291,16 @@ describe('runLivePollInvocation — the minute-invocation loop', () => {
     expect(report.problems).toEqual([expect.stringMatching(/^polled nothing: idle/)])
   })
 
-  it('HOT: polls at the cadence for the budget — 45 s budget ⇒ three rounds 20 s apart (0 s, 20 s, 40 s); one schedule read per round (the memo); stops before a round would start past the budget', async () => {
+  it('HOT: exactly ONE poll, at the wake instant, and the invocation is over — no second round, no wait (the cadence is 224’s 30-second schedule)', async () => {
     const world = makeWorld([game(1, TNF, 'live')])
     const clock = new VirtualClock(new Date('2026-09-10T01:07:00Z'))
     const report = await run(world, clock)
     expect(report.reason).toBeNull()
-    expect(report.rounds).toHaveLength(3)
-    expect(world.polls.map((p) => p.at)).toEqual(['2026-09-10T01:07:00.000Z', '2026-09-10T01:07:20.000Z', '2026-09-10T01:07:40.000Z'])
-    expect(world.sleeps).toEqual([POLL_CADENCE_MS, POLL_CADENCE_MS])
-    expect(world.scheduleReads).toBe(3)
-    expect([POLL_CADENCE_MS, LIVE_POLL_BUDGET_MS]).toEqual([20_000, 45_000])
-    // D146 at the budget: a budget of exactly 40 s + cadence admits the 40 s round; one millisecond less does not.
-    const three = makeWorld([game(1, TNF, 'live')])
-    await run(three, new VirtualClock(new Date('2026-09-10T01:07:00Z')), { budgetMs: 40_000 + 1 })
-    expect(three.polls).toHaveLength(3)
-    const two = makeWorld([game(1, TNF, 'live')])
-    await run(two, new VirtualClock(new Date('2026-09-10T01:07:00Z')), { budgetMs: 40_000 })
-    expect(two.polls).toHaveLength(2)
+    expect(report.rounds).toHaveLength(1)
+    expect(world.polls.map((p) => p.at)).toEqual(['2026-09-10T01:07:00.000Z'])
+    expect(world.scheduleReads).toBe(1)
+    expect(report.finished_at).toBe('2026-09-10T01:07:00.000Z') // nothing slept: the virtual clock never moved
+    expect(LIVE_WAKE_SECONDS).toBe(30)
   })
 
   it('HOT with two due weeks: both polled in ONE round sharing ONE schedule read', async () => {
@@ -278,30 +308,25 @@ describe('runLivePollInvocation — the minute-invocation loop', () => {
     const clock = new VirtualClock(new Date(new Date(SNF).getTime() + 7 * 60_000)) // off the sweep minute
     const report = await run(world, clock)
     expect(report.rounds[0].polls.map((p) => p.week)).toEqual([1, 2])
-    expect(world.scheduleReads).toBe(3) // three rounds, one read each — not six
+    expect(world.scheduleReads).toBe(1) // one read for both weeks
   })
 
-  it('the window closes on OBSERVATION mid-invocation: the first poll sees the last game final ⇒ the re-plan is idle and the loop ends after ONE round (the observing poll is the one that stamps last_game_ends_at — F238)', async () => {
+  it('the window closes on OBSERVATION: the poll that sees the last game final is the invocation’s one round (it stamps last_game_ends_at — F238); the NEXT wake plans idle', async () => {
     const world = makeWorld([game(1, TNF, 'live')])
-    const clock = new VirtualClock(new Date('2026-09-10T04:07:00Z')) // off the sweep minute
-    const report = await run(world, clock, { onPoll: () => (world.games = [game(1, TNF, 'final')]) })
-    expect(report.rounds).toHaveLength(1)
-    expect(world.sleeps).toEqual([POLL_CADENCE_MS]) // slept once, re-planned idle, stopped
-    expect(report.reason).toBeNull() // something WAS polled — not an empty invocation
-    // On the sweep minute the same observation is followed by ONE sweep round, then the loop ends.
-    const sweepWorld = makeWorld([game(1, TNF, 'live')])
-    const swept = await run(sweepWorld, new VirtualClock(new Date('2026-09-10T04:00:00Z')), { onPoll: () => (sweepWorld.games = [game(1, TNF, 'final')]) })
-    expect(swept.rounds.map((r) => r.plan.mode)).toEqual(['hot', 'sweep'])
+    const report = await run(world, new VirtualClock(new Date('2026-09-10T04:07:00Z')), { onPoll: () => (world.games = [game(1, TNF, 'final')]) })
+    expect([report.rounds.length, report.reason]).toEqual([1, null])
+    const next = await run(world, new VirtualClock(new Date('2026-09-10T04:07:30Z')), { sweep: 'none' })
+    expect(next.reason).toBe('idle') // Chris 2026-11-14: "once the score is final the game is over"
   })
 
-  it('SWEEP: exactly one poll, no sleep', async () => {
+  it('SWEEP: exactly one poll', async () => {
     const world = makeWorld([])
     const report = await run(world, new VirtualClock(new Date('2026-09-11T15:07:00Z')))
     expect(report.rounds).toHaveLength(1)
     expect(report.rounds[0].plan.mode).toBe('sweep')
     expect(world.polls).toHaveLength(1)
-    expect(world.sleeps).toEqual([])
   })
+
 
   it('F217: the failure count PERSISTS across invocations — three failed polls in three separate invocations raise the flag; the next success clears it', async () => {
     const world = makeWorld([game(1, TNF, 'live')])
@@ -312,8 +337,6 @@ describe('runLivePollInvocation — the minute-invocation loop', () => {
         provider: fakeProvider(world),
         time: clock,
         season: 2026,
-        budgetMs: 1, // one round per invocation
-        sleep: async () => {},
         ingest: async (_p, time, io) => {
           io.degradation.recordPollResult(false)
           return fakeReport(io.season, io.week, time.now().toISOString(), false, io.degradation.degraded)
@@ -328,7 +351,7 @@ describe('runLivePollInvocation — the minute-invocation loop', () => {
       expect(world.flag.degraded).toBe(i >= 3)
       expect(report.problems[0]).toMatch(i >= 3 ? /stats_degraded RAISED/ : /consecutive failures/)
     }
-    const recovered = await run(world, new VirtualClock(new Date('2026-09-10T01:04:00Z')), { budgetMs: 1 })
+    const recovered = await run(world, new VirtualClock(new Date('2026-09-10T01:04:00Z')))
     expect(world.flag).toMatchObject({ degraded: false, consecutive_failures: 0, last_success_at: '2026-09-10T01:04:00.000Z', last_error: null })
     expect(recovered.problems).toEqual([])
   })
@@ -339,13 +362,11 @@ describe('M7 L.F2.3 — what a poll that misbehaves does to the round (F830 / R1
     const world = makeWorld([game(1, TNF, 'live')])
     const reason = 'player_stats: 2 repeated provider row(s) — identical copies of a line already in this answer — written once (§23.2 idempotent; F830)'
     const report = await run(world, new VirtualClock(new Date('2026-09-10T01:07:00Z')), {
-      budgetMs: 1,
       mutate: (r) => ({ ...r, stats: { ...r.stats, duplicates: 2 }, reasons: [...r.reasons, reason] }),
     })
     expect(report.problems).toEqual([`week 1: ${reason}`])
     // No repeats ⇒ no line (the reason text alone never promotes itself).
     const quiet = await run(makeWorld([game(1, TNF, 'live')]), new VirtualClock(new Date('2026-09-10T01:07:00Z')), {
-      budgetMs: 1,
       mutate: (r) => ({ ...r, reasons: [...r.reasons, reason] }),
     })
     expect(quiet.problems).toEqual([])
@@ -360,8 +381,6 @@ describe('M7 L.F2.3 — what a poll that misbehaves does to the round (F830 / R1
       provider: fakeProvider(world),
       time: clock,
       season: 2026,
-      budgetMs: 1,
-      sleep: async () => {},
       ingest: async (_p, time, io) => {
         if (io.week === 1) throw new Error('ingest_write_batch failed (2026 week 1, lines 1–3): a database error')
         io.degradation.recordPollResult(true)
@@ -401,8 +420,6 @@ describe('M7 L.F2.3 — what a poll that misbehaves does to the round (F830 / R1
         provider: fakeProvider(world),
         time: new VirtualClock(new Date(new Date(SNF).getTime() + (7 + i) * 60_000)),
         season: 2026,
-        budgetMs: 1,
-        sleep: async () => {},
         ingest: async (_p, time, io) => {
           if (io.week === failing) throw new Error(`week ${failing} fails every time`)
           io.degradation.recordPollResult(true)
@@ -432,10 +449,10 @@ describe('M7 L.F2.3 — what a poll that misbehaves does to the round (F830 / R1
   it('R1740: two failed weeks in one round are ONE failed instant (counted once), and an all-success round clears the count', async () => {
     const world = makeWorld([game(1, TNF, 'live'), game(2, SNF, 'scheduled')])
     world.flag = { ...world.flag, consecutive_failures: 1 }
-    const report = await run(world, new VirtualClock(new Date(new Date(SNF).getTime() + 7 * 60_000)), { budgetMs: 1, failPolls: true })
+    const report = await run(world, new VirtualClock(new Date(new Date(SNF).getTime() + 7 * 60_000)), { failPolls: true })
     expect(world.flag.consecutive_failures).toBe(2)
     expect(report.problems[1]).toMatch(/^week 2: provider poll FAILED again in the same round \(boom\) — counted once per round toward stats_degraded \(R1740\)$/)
-    await run(world, new VirtualClock(new Date(new Date(SNF).getTime() + 8 * 60_000)), { budgetMs: 1 })
+    await run(world, new VirtualClock(new Date(new Date(SNF).getTime() + 8 * 60_000)))
     expect(world.flag.consecutive_failures).toBe(0)
   })
 
@@ -462,8 +479,6 @@ describe('M7 L.F2.3 — what a poll that misbehaves does to the round (F830 / R1
         provider,
         time: new VirtualClock(new Date(`2026-09-10T01:0${i}:00Z`)),
         season: 2026,
-        budgetMs: 1,
-        sleep: async () => {},
         ingest: (p, time, io) => ingestWeek(p, time, { ...io, db: ingestDb as unknown as typeof io.db }),
         loadTracker: async () => new DegradationTracker(world.flag.consecutive_failures),
         persist: async (_db, tracker, r) => {
@@ -605,7 +620,7 @@ describe('F509 — a game that never flips to final no longer stops the sweep an
   it('P1 the plan: HOT on the stuck week; on the sweep minute it carries the current week (and open-window weeks); at 11:00Z the final weeks too; off the minute nothing extra', () => {
     const hourly = planLivePoll(games, weeks, new Date('2026-09-24T15:00:30Z'))
     expect([hourly.mode, hourly.weeks, hourly.sweepWeeks]).toEqual(['hot', [2], [3]]) // week 2 is hot AND in-window — never twice
-    expect(hourly.reasons[1]).toMatch(/^sweep carried on the hot minute \(F509\): week\(s\) 3 /)
+    expect(hourly.reasons[1]).toMatch(/^sweep carried on a hot invocation \(F509\): week\(s\) 3 /)
     const daily = planLivePoll(games, weeks, new Date('2026-09-24T11:00:30Z'))
     expect([daily.mode, daily.weeks, daily.sweepWeeks]).toEqual(['hot', [2], [3, 1]]) // TD5's final week 1 too
     const off = planLivePoll(games, weeks, new Date('2026-09-24T11:01:00Z'))
@@ -615,32 +630,27 @@ describe('F509 — a game that never flips to final no longer stops the sweep an
     expect([p.mode, p.weeks, p.sweepWeeks]).toEqual(['hot', [1], [3, 2]])
   })
 
-  it('P2 the loop: the 11:00Z invocation polls the stuck week every round and the sweep weeks ONCE (the first round only)', async () => {
+  it('P2 the invocation: the 11:00Z wake polls the stuck week and the sweep weeks in its ONE round', async () => {
     const world = { ...makeWorld(games), weeks }
     const report = await run(world, new VirtualClock(new Date('2026-09-24T11:00:00Z')))
-    expect(report.rounds.map((r) => r.plan.mode)).toEqual(['hot', 'hot', 'hot'])
+    expect(report.rounds.map((r) => r.plan.mode)).toEqual(['hot'])
     expect(world.polls.map((p) => [p.week, p.at])).toEqual([
       [2, '2026-09-24T11:00:00.000Z'],
       [3, '2026-09-24T11:00:00.000Z'],
       [1, '2026-09-24T11:00:00.000Z'],
-      [2, '2026-09-24T11:00:20.000Z'],
-      [2, '2026-09-24T11:00:40.000Z'],
     ])
   })
 
-  it('P3 the stuck game is observed final mid-invocation: the sweep it already carried is not run again', async () => {
-    const world = { ...makeWorld(games), weeks }
-    await run(world, new VirtualClock(new Date('2026-09-24T15:00:00Z')), {
-      onPoll: (w) => {
-        if (w === 2) world.games = [game(1, TNF, 'final'), { ...stuck, status: 'final' }]
-      },
-    })
-    expect(world.polls.map((p) => p.week)).toEqual([2, 3]) // round 2 plans a sweep — already done, so the loop ends
+  it('P3 224: the daily job carries the sweep on a hot invocation; the 30-second game-window wake (`none`) never does', async () => {
+    const daily = planLivePoll(games, weeks, new Date('2026-09-24T11:00:30Z'), { sweep: 'daily' })
+    expect([daily.mode, daily.weeks, daily.sweepWeeks]).toEqual(['hot', [2], [3, 1]])
+    const wake = planLivePoll(games, weeks, new Date('2026-09-24T11:00:30Z'), { sweep: 'none' })
+    expect([wake.mode, wake.weeks, wake.sweepWeeks]).toEqual(['hot', [2], []])
   })
 
   it('P4 one instant, one failure (R1314): the round that carries the sweep counts a provider blip once', async () => {
     const world = { ...makeWorld(games), weeks }
-    const report = await run(world, new VirtualClock(new Date('2026-09-24T11:00:00Z')), { failPolls: true, budgetMs: 1 })
+    const report = await run(world, new VirtualClock(new Date('2026-09-24T11:00:00Z')), { failPolls: true })
     expect(world.polls.map((p) => p.week)).toEqual([2, 3, 1])
     expect(world.flag.consecutive_failures).toBe(1)
     expect(report.problems).toHaveLength(3)

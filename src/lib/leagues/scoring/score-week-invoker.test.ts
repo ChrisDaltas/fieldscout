@@ -1,8 +1,8 @@
 /**
  * score-week-invoker.test.ts — the PURE half of the score-week wiring
  * (L.D2.3; spec §14 / §22.3 / §24.1; PROGRESS F263(f), R873 / R874 / R875;
- * D322). The loop runs over a fake drain and a fake `sleep` on a
- * VirtualClock; the classifier is pinned on hand-built reports.
+ * D322). The single pass runs over a fake drain on a VirtualClock (224: no
+ * sleep — the database wakes it); the classifier is pinned on hand-built reports.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -13,7 +13,7 @@ import {
   classifyStatFix,
   CLOCK_SKEW_SECONDS,
   closePassErrorAlert,
-  DRAIN_INTERVAL_MS,
+  DRAIN_RESERVE_MS,
   runScoreWeekInvocation,
   SCORE_WEEK_BUDGET_MS,
   SCORE_WEEK_LEASE_SECONDS,
@@ -153,28 +153,23 @@ describe('classifyClose (F863)', () => {
   })
 })
 
-describe('runScoreWeekInvocation — the minute-invocation loop', () => {
+describe('runScoreWeekInvocation — ONE pass per invocation (224: the database wakes it every 30 s; no sleep loop)', () => {
   function harness(
     drains: BatchReport[],
-    hot: boolean,
     closeReport: CloseScoringReport | (() => Promise<CloseScoringReport>) = emptyClose,
     fixReport: StatFixPassReport | (() => Promise<StatFixPassReport>) = emptyFix,
+    budgetMs?: number,
   ) {
     let closes = 0
     let fixes = 0
     const clock = new VirtualClock(new Date('2099-09-13T20:00:00.000Z'))
     const calls: string[] = []
-    const sleeps: number[] = []
     let i = 0
     const promise = runScoreWeekInvocation({
       db: {} as never,
       time: clock,
-      sleep: async (ms) => {
-        sleeps.push(ms)
-        clock.advanceBy(ms)
-      },
       lastPollCompletedAt: async () => null,
-      isHot: async () => hot,
+      budgetMs,
       closeWeeks: async () => {
         closes += 1
         return typeof closeReport === 'function' ? closeReport() : closeReport
@@ -191,30 +186,35 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
         return r
       },
     })
-    return { promise, calls, sleeps, closes: () => closes, fixes: () => fixes }
+    return { promise, calls, clock, closes: () => closes, fixes: () => fixes }
   }
 
-  it('an empty queue outside a game window ends the invocation after ONE drain — one claim RPC per idle minute', async () => {
-    const h = harness([report({ reason: 'queue_empty' })], false)
+  it('an empty queue ends the invocation after ONE drain — no idle wait, whatever the game window', async () => {
+    const h = harness([report({ reason: 'queue_empty' })])
     const out = await h.promise
     expect(out.drains).toHaveLength(1)
-    expect(out.stopped).toBe('queue_empty_idle')
-    expect(h.sleeps).toEqual([])
+    expect(out.stopped).toBe('drained')
     expect(h.calls).toEqual([`${SCORE_WEEK_LEASE_SECONDS}/500/30`]) // the lease + batch + defer the route passes
+    // The whole invocation is the drain's own second — nothing waited (the 2026-11-11 Hobby pause: a sleeping function is billed for the wait).
+    expect(h.clock.now().toISOString()).toBe('2099-09-13T20:00:01.000Z')
   })
 
-  it('F863: the close pass runs exactly once per invocation, even on an idle stop', async () => {
-    const idle = harness([report({ reason: 'queue_empty' })], false)
-    expect((await idle.promise).close).toBe(emptyClose)
-    expect(idle.closes()).toBe(1)
-    const hot = harness([report({ reason: 'queue_empty' })], true)
-    const out = await hot.promise
-    expect(out.drains.length).toBeGreaterThan(1)
-    expect(hot.closes()).toBe(1)
+  it('a claim that is not full ends it too, after its one drain (the work it claimed is the pass)', async () => {
+    const out = await harness([report({ claimed: 3, drained: 3 }), report({ reason: 'queue_empty' })]).promise
+    expect([out.drains.length, out.stopped]).toEqual([1, 'drained'])
+  })
+
+  it('F863: the close pass runs exactly once per invocation', async () => {
+    const h = harness([report({ reason: 'queue_empty' })])
+    expect((await h.promise).close).toBe(emptyClose)
+    expect(h.closes()).toBe(1)
+    const full = harness([report({ claimed: 500, more: true, drained: 500 }), report({ reason: 'queue_empty' })])
+    expect((await full.promise).drains).toHaveLength(2)
+    expect(full.closes()).toBe(1)
   })
 
   it('F863: a week the pass cannot close is an ALERT by name on the invocation', async () => {
-    const h = harness([report({ reason: 'queue_empty' })], false, {
+    const h = harness([report({ reason: 'queue_empty' })], {
       ...emptyClose,
       failed: 1,
       weeks: [{ league_id: 'L', season: 2099, week: 9, reason: 'never_closed', outcome: 'failed', error: 'snapshot_missing' }],
@@ -224,16 +224,15 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
   })
 
   // R1790: before the fix a throwing close pass rejected the whole invocation
-  // after its FIRST drain (the route answered 500) — in a game window scoring
-  // fell from every 5 s to once a minute for as long as the cause lasted.
-  it('R1790: a close pass that THROWS is one alert; a hot window keeps draining for the whole budget', async () => {
+  // after its FIRST drain (the route answered 500). It is one alert; a backlog
+  // still drains.
+  it('R1790: a close pass that THROWS is one alert; a full backlog keeps draining', async () => {
     const timeout = new Error('league_weeks_to_close: canceling statement due to statement timeout')
-    const h = harness([report({ reason: 'queue_empty' })], true, async () => {
+    const h = harness([report({ claimed: 500, more: true, drained: 500 }), report({ reason: 'queue_empty' })], async () => {
       throw timeout
     })
     const out = await h.promise
-    expect(out.drains).toHaveLength(8) // the same 8 drains as the no-error hot window below
-    expect(out.stopped).toBe('budget')
+    expect([out.drains.length, out.stopped]).toEqual([2, 'drained'])
     expect(h.closes()).toBe(1) // tried once per invocation, not once per drain
     expect(out.close).toBeNull()
     expect(out.alerts).toEqual([closePassErrorAlert(timeout)])
@@ -249,11 +248,7 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
     const out = await runScoreWeekInvocation({
       db: {} as never,
       time: clock,
-      sleep: async (ms) => {
-        clock.advanceBy(ms)
-      },
       lastPollCompletedAt: async () => null,
-      isHot: async () => true,
       closeWeeks: (deps) => runCloseScoring({ ...deps, db: timingOut }),
       statFix: async () => emptyFix,
       drain: async () => {
@@ -262,45 +257,53 @@ describe('runScoreWeekInvocation — the minute-invocation loop', () => {
         return report({ reason: 'queue_empty' })
       },
     })
-    expect(drains).toBe(8)
+    expect(drains).toBe(1)
     expect(out.alerts).toEqual(['CLOSE PASS ERROR: league_weeks_to_close: canceling statement due to statement timeout — the pass stopped there; any week it had not closed stays held (scores_owed) and is retried next invocation; draining continues (F863 / R1790)'])
   })
 
-  it('R1790: idle, a throwing pass still ends the invocation normally after one drain', async () => {
-    const h = harness([report({ reason: 'queue_empty' })], false, async () => {
+  it('R1790: a throwing pass still ends the invocation normally after one drain', async () => {
+    const h = harness([report({ reason: 'queue_empty' })], async () => {
       throw new Error('league_week_close_stamp (L week 9): connection reset')
     })
     const out = await h.promise
-    expect([out.drains.length, out.stopped, out.close]).toEqual([1, 'queue_empty_idle', null])
+    expect([out.drains.length, out.stopped, out.close]).toEqual([1, 'drained', null])
     expect(out.alerts).toHaveLength(1)
     expect(out.alerts[0]).toMatch(/^CLOSE PASS ERROR: league_week_close_stamp \(L week 9\): connection reset/)
   })
 
-  it('an empty queue INSIDE a game window keeps draining every 5 s for the budget (§14: 5–10 s)', async () => {
-    const h = harness([report({ reason: 'queue_empty' })], true)
-    const out = await h.promise
-    expect(out.stopped).toBe('budget')
-    expect(h.sleeps.every((ms) => ms === DRAIN_INTERVAL_MS)).toBe(true)
-    // 50 s budget, 1 s per drain + 5 s sleep ⇒ 8 drains (t = 0, 6, 12, …, 42), the 9th would overrun.
-    expect(out.drains).toHaveLength(8)
-  })
-
-  it('a FULL claim (`more`) drains again immediately, no sleep', async () => {
-    const h = harness([report({ claimed: 500, more: true, drained: 500 }), report({ claimed: 500, more: true, drained: 500 }), report({ reason: 'queue_empty' })], false)
+  it('a FULL claim (`more`) drains again immediately — the only repeat a pass makes', async () => {
+    const h = harness([report({ claimed: 500, more: true, drained: 500 }), report({ claimed: 500, more: true, drained: 500 }), report({ reason: 'queue_empty' })])
     const out = await h.promise
     expect(out.drains).toHaveLength(3)
-    expect(h.sleeps).toEqual([]) // two full claims back-to-back, then the empty one ends it
-    expect(out.stopped).toBe('queue_empty_idle')
+    expect(out.stopped).toBe('drained')
+    expect(h.clock.now().toISOString()).toBe('2099-09-13T20:00:03.000Z') // three drains back-to-back, no wait between them
+  })
+
+  it('a backlog that outruns the budget stops while DRAIN_RESERVE_MS is still left — the next 30-second wake carries on (D146 at the reserve)', async () => {
+    // 50 s budget, 1 s per drain, every claim full: a drain starts only while elapsed + 5 s <= 50 s ⇒ drains at t = 0 … 45 ⇒ 46 drains.
+    const out = await harness([report({ claimed: 500, more: true, drained: 500 })]).promise
+    expect([out.drains.length, out.stopped]).toEqual([46, 'budget'])
+    expect([DRAIN_RESERVE_MS, SCORE_WEEK_BUDGET_MS]).toEqual([5_000, 50_000])
+    // One millisecond either side of the reserve: a 7 s budget admits the drain at t = 2 s (2 + 5 = 7, not > 7) and stops after t = 3 s.
+    const edge = await harness([report({ claimed: 500, more: true, drained: 500 })], emptyClose, emptyFix, 7_000).promise
+    expect(edge.drains).toHaveLength(3)
+    const under = await harness([report({ claimed: 500, more: true, drained: 500 })], emptyClose, emptyFix, 6_999).promise
+    expect(under.drains).toHaveLength(2)
   })
 
   it('alerts and infos accumulate across drains', async () => {
-    const h = harness([report({ claimed: 1, drained: 0, ack_missed: { restamped: 0, lease_lost: 0, gone: 1 } }), report({ reason: 'all_deferred' }), report({ reason: 'queue_empty' })], false)
+    const h = harness([
+      report({ claimed: 500, more: true, drained: 499, ack_missed: { restamped: 0, lease_lost: 0, gone: 1 } }),
+      report({ claimed: 500, more: true, reason: 'all_deferred' }),
+      report({ reason: 'queue_empty' }),
+    ])
     const out = await h.promise
     expect(out.alerts).toHaveLength(1)
     expect(out.alerts[0]).toMatch(/gone 1/)
     expect(out.infos).toEqual(['drain claimed nothing: all_deferred (R875 — informational)'])
   })
 })
+
 
 // ---------------------------------------------------------------------------
 // 222 (D836 — Chris 2026-11-07: "the stats need to be correct. that should be
@@ -313,9 +316,7 @@ describe('the stat-fix pass (222) on the invocation', () => {
     runScoreWeekInvocation({
       db: {} as never,
       time: clock(),
-      sleep: async () => {},
       lastPollCompletedAt: async () => null,
-      isHot: async () => false,
       closeWeeks: async () => emptyClose,
       statFix,
       drain: async () => report({ reason: 'queue_empty' }),
@@ -338,7 +339,7 @@ describe('the stat-fix pass (222) on the invocation', () => {
       throw boom
     })
     expect(out.stat_fix).toBeNull()
-    expect(out.stopped).toBe('queue_empty_idle')
+    expect(out.stopped).toBe('drained')
     expect(out.alerts).toEqual([statFixPassErrorAlert(boom)])
     expect(out.alerts[0]).toBe(
       'STAT FIX PASS ERROR: stat_fix_targets: canceling statement due to statement timeout — the pass stopped there; every fix it had not applied stays owed and is retried next invocation; draining continues (D836)',

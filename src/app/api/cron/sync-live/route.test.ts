@@ -1,6 +1,11 @@
 /**
- * GET /api/cron/sync-live — auth and the budget pin (L.D2.3, F216).
+ * GET /api/cron/sync-live — auth, the `?sweep=` contract and the cadence pins
+ * (L.D2.3, F216; migration 224 — one round per invocation, the database
+ * wakes it every 30 s in a game window and once a day at 11:00Z).
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -9,9 +14,11 @@ vi.mock('@/lib/supabase/admin', () => ({
   },
 }))
 
-import { LIVE_POLL_BUDGET_MS, POLL_CADENCE_MS } from '@/lib/sync/live-poll'
+import { FINAL_WEEK_REPOLL_UTC_HOUR, LIVE_WAKE_SECONDS, parseSweepMode, POLL_LEAD_MS } from '@/lib/sync/live-poll'
 
 import { GET, maxDuration } from './route'
+
+const MIGRATION_224 = readFileSync(join(process.cwd(), 'supabase/migrations/224_wake_vercel_only_for_games.sql'), 'utf8')
 
 describe('GET /api/cron/sync-live', () => {
   it('refuses without a secret and with the wrong one (401), before any client is built', async () => {
@@ -28,14 +35,35 @@ describe('GET /api/cron/sync-live', () => {
     }
   })
 
-  it('a round starts strictly inside the budget (< 45 s), so the last round has at least maxDuration − budget = 15 s before the platform cuts it (R879); the cadence is §23.2’s 20–30 s', () => {
-    // live-poll.ts breaks when `elapsed + cadence >= budget` AFTER a round, so a
-    // round may START at any instant below the budget (a 24 s first poll ⇒ the
-    // second round starts at 44 s) — what bounds the last round is maxDuration.
-    expect(LIVE_POLL_BUDGET_MS).toBeLessThan(maxDuration * 1000)
-    expect(maxDuration * 1000 - LIVE_POLL_BUDGET_MS).toBeGreaterThanOrEqual(15_000)
-    expect(POLL_CADENCE_MS).toBeGreaterThanOrEqual(20_000)
-    expect(POLL_CADENCE_MS).toBeLessThanOrEqual(30_000)
+  it('an unknown `sweep` value is refused (400) before any client is built — never guessed into a mode', async () => {
+    const prior = process.env.CRON_SECRET
+    process.env.CRON_SECRET = 'right'
+    try {
+      const res = await GET(new Request('http://x/api/cron/sync-live?sweep=weekly', { headers: { authorization: 'Bearer right' } }))
+      expect(res.status).toBe(400)
+    } finally {
+      if (prior === undefined) delete process.env.CRON_SECRET
+      else process.env.CRON_SECRET = prior
+    }
+  })
+
+  it('`?sweep=` → the plan mode: absent is the pre-224 hourly fallback; daily / none as named; anything else null', () => {
+    expect([parseSweepMode(null), parseSweepMode('daily'), parseSweepMode('none')]).toEqual(['hourly', 'daily', 'none'])
+    expect([parseSweepMode(''), parseSweepMode('hourly'), parseSweepMode('DAILY')]).toEqual([null, null, null])
+  })
+
+  it('224 wakes this route with exactly the parameters the route reads, every 30 s in a window and once a day at the re-poll hour', () => {
+    expect(LIVE_WAKE_SECONDS).toBe(30) // Chris 2026-11-14: "how about every 30 seconds during games" (§23.2's 20–30 s)
+    expect(MIGRATION_224).toContain(`'sync-live-ping', '${LIVE_WAKE_SECONDS} seconds'`)
+    expect(MIGRATION_224).toContain(`'score-week-ping', '${LIVE_WAKE_SECONDS} seconds'`)
+    expect(MIGRATION_224).toContain(`'sync-live-sweep', '0 ${FINAL_WEEK_REPOLL_UTC_HOUR} * * *'`)
+    expect(MIGRATION_224).toContain(`'/api/cron/sync-live?sweep=none'`)
+    expect(MIGRATION_224).toContain(`'/api/cron/sync-live?sweep=daily'`)
+    // The window's lead is the plan's lead (the SQL restates it; the stack test pins the two agree row by row).
+    expect(MIGRATION_224).toContain(`interval '${POLL_LEAD_MS / 60_000} minutes'`)
+  })
+
+  it('one round per invocation under a 60 s hard timeout (the daily sweep reads several weeks)', () => {
     expect(maxDuration).toBe(60)
   })
 })
