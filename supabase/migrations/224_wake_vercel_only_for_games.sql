@@ -31,19 +31,22 @@
 -- WHAT
 -- ---------------------------------------------------------------------------
 -- 1. `public.live_game_window_open(p_now, p_season)` — the GAME WINDOW, in
---    SQL: an `nfl_games` row of the season whose status is `scheduled` or
---    `live` (NULL reads as scheduled) and whose kickoff is at or before
---    now + 15 minutes. That is `planLivePoll`'s HOT rule exactly
---    (`src/lib/sync/live-poll.ts`: OPEN_STATUSES, POLL_LEAD_MS) — pinned
---    equal row by row against the TypeScript in
---    `src/lib/sync/live-poll-window-db.test.ts`. A `final` game NEVER keeps
---    a window open (Chris: "once the score is final the game is over"), so
---    the tick after the last Sunday game reads final does not call Vercel.
---    THE SEASON: the route plans for `NEXT_PUBLIC_NFL_SEASON`; the database
---    cannot read Vercel's env, so it takes the newest season in `nfl_weeks`
---    — the same season in-season (the calendar is per-season and the route
---    reads that season's rows). Scoping matters: without it, an old
---    season's never-flipped row would hold the window open forever.
+--    SQL (`live_game_window_since`, one body shared with the stall check):
+--    an `nfl_games` row of the season whose status is `scheduled` or `live`
+--    (NULL reads as scheduled) with p_now − 8 h <= kickoff <= p_now + 15 min.
+--    That is `planLivePoll`'s HOT rule exactly (`src/lib/sync/live-poll.ts`:
+--    OPEN_STATUSES, POLL_LEAD_MS, STUCK_GAME_CAP_MS) — pinned equal row by
+--    row against the TypeScript in `src/lib/sync/live-poll-window-db.test.ts`.
+--    A `final` game NEVER keeps a window open (Chris: "once the score is
+--    final the game is over"), so the tick after the last Sunday game reads
+--    final does not call Vercel; and a game 8 hours past kickoff that never
+--    reads final stops holding it (R1822 — Chris: games last "a couple
+--    hours"; the route raises an ALERT line for it on every poll).
+--    THE SEASON (R1819): `live_poll_season(p_now)` — the season that started
+--    most recently (its first `nfl_weeks.starts_at` <= p_now). A season that
+--    has not started (next year loaded early, the simulator's 2099) never
+--    wins. Scoping matters both ways: an old season's never-flipped row must
+--    not hold the window open, and a future season must not close it.
 -- 2. `public.score_week_wake_reason(p_now)` — why score-week should run now,
 --    or NULL:
 --      'game_window'     — the window above is open (every tick);
@@ -60,8 +63,10 @@
 --                          read, so the wake and the pass cannot disagree);
 --      'stat_fix_owed'   — 222 has a stat fix owed somewhere
 --                          (`stat_fix_targets(true, 1)` — the pass's own read).
---    The last three are checked once per 5 minutes (the tick in [:00, :30)
---    of a minute divisible by 5), not every tick. WHY: each of them can be
+--    The last three are checked once per 5-minute slot, not every tick —
+--    the slot keyed on a STORED instant (`score_week_slot_due`: the last slot
+--    stamp in `system_flags.score_week_slot` at least 4 min 45 s old), so
+--    pg_cron jitter can neither skip nor double one (R1824/R1825). WHY: each of them can be
 --    owed for a long time on purpose — a hold re-defers every 30 s while its
 --    week is not open; a week the door keeps refusing stays owed by design
 --    ("stays owed and the next pass tries again") — and an every-tick wake
@@ -85,17 +90,31 @@
 --    final-week re-poll already ran at (FINAL_WEEK_REPOLL_UTC_HOUR), before
 --    the 11:15Z reconcile — so the one daily sweep carries the schedule
 --    refresh, F270's open-window weeks and TD5's final weeks. The 30-second
---    wake calls `?sweep=none`: a game-window poll never sweeps. 183's knob
---    list gains `sync-live-sweep` (no knobs — Q98's stat-sync rule).
+--    wake calls `?sweep=none`: a game-window poll never runs that sweep, BUT
+--    it carries every week whose correction window closes within the
+--    15-minute lead (R1820) — the window ends at the next week's first
+--    kickoff, which is exactly when the Thursday window opens, so a
+--    correction published Thursday after 11:00Z is still ingested (and
+--    re-scored) before the week locks. Game days only; no new wake. 183's
+--    knob list gains `sync-live-sweep` (no knobs — Q98's stat-sync rule).
 -- 5. The routes now do ONE pass per call and exit (this PR's TypeScript): no
---    20 s / 5 s sleep loops. The cadence is the schedule.
+--    20 s / 5 s sleep loops. The cadence is the schedule. A game-window
+--    round takes a short lease first (`sync_live_lease_take`, R1823) so two
+--    rounds never overlap.
+-- 6. `SETTLE_GRACE_MS` (TypeScript, F511) widens 6 h → 15 h (R1821): the
+--    first poll after a prime-time final is now the next 11:00Z sweep
+--    (~7.5 h later; ~14 h after a Saturday-afternoon final), and ordinary
+--    post-game cleanup found there must stay quiet, not become a public
+--    "stat correction" post.
 --
 -- WHAT CHANGES FOR A LEAGUE MEMBER: during games, stats and scores refresh
 -- every 30 s (was every 20 s / 5 s inside a held-open call). Outside games
 -- nothing calls Vercel at all, except the 11:00Z sweep, a scoring queue with
 -- work (stat fixes, a held week) and the close of a week. A stat correction
 -- on a week still inside its correction window is picked up by the next
--- daily sweep (was: the next hourly one); a correction after the window is
+-- daily sweep (was: the next hourly one) and, last of all, in the 15
+-- minutes before that window closes at the next kickoff; a correction after
+-- the window is
 -- recorded by the daily sweep, as before.
 --
 -- ---------------------------------------------------------------------------
@@ -149,16 +168,21 @@
 -- hand whoever holds EXECUTE a way to make the database fire an
 -- authenticated request at our cron routes. EXECUTE is REVOKEd from PUBLIC,
 -- anon, authenticated AND service_role (a PUBLIC-only revoke leaves
--- service_role standing — measured in 124). The two read-only predicates
--- (`live_game_window_open`, `score_week_wake_reason`) carry no secret and
--- issue no request; they keep `service_role` EXECUTE as the D291 harness
--- door (the window equivalence suite calls the first through PostgREST),
--- and are REVOKEd from PUBLIC/anon/authenticated. search_path = '' on all.
+-- service_role standing — measured in 124). The read-only predicates
+-- (`live_poll_season`, `live_game_window_since`, `live_game_window_open`,
+-- `score_week_slot_due`, `score_week_wake_reason`) carry no secret and issue
+-- no request; they keep `service_role` EXECUTE as the D291 harness door (the
+-- window equivalence suite calls one through PostgREST), and are REVOKEd
+-- from PUBLIC/anon/authenticated. The two lease functions are the route's
+-- (service_role), REVOKEd from PUBLIC/anon/authenticated. search_path = ''
+-- on all. New `system_flags` keys (world-readable like the rest, no client
+-- write policy — 122 unchanged): `score_week_slot`, `sync_live_lease`.
 --
 -- Staging rehearsal: R6 waiver — no staging clone; rehearsal evidence = the
--- fresh local `db reset` 001–224 + pgTAP 174 (and 072/085/131 re-pinned) +
--- `npm run test:db` + the stack-backed equivalence suite in this PR.
--- No table is created or altered: four new functions, one replaced
+-- fresh local `db reset` 001–224 + pgTAP 174 (and 072/085 re-pinned) +
+-- `npm run test:db` (also on a USED stack — the synthetic 2099 season
+-- seeded) + the stack-backed equivalence suite in this PR.
+-- No table is created or altered: nine new functions, one replaced
 -- (`scoring_stall_check`), one re-listed (`op_job_check_internal`), three
 -- cron rows.
 -- ============================================================================
@@ -166,6 +190,77 @@
 -- ---------------------------------------------------------------------------
 -- 1. The game window — planLivePoll's HOT rule, in SQL
 -- ---------------------------------------------------------------------------
+-- 1a. THE SEASON (R1819). The route plans for `NEXT_PUBLIC_NFL_SEASON`; the
+-- database cannot read Vercel's env, so it takes THE SEASON THAT STARTED
+-- MOST RECENTLY: of the seasons whose first `nfl_weeks.starts_at` is at or
+-- before p_now, the one with the latest such start. That is the route's
+-- season from the moment its week 1 begins (a Wednesday, before the
+-- Thursday opener's 15-minute lead) until the next season's week 1 begins —
+-- and a season that has not started yet can NEVER win: not next year's
+-- calendar loaded early, not the simulator's synthetic 2099. (`max(season)`
+-- — the first build — let any such row switch every wake and the stall
+-- check's in-game arm off.) Ordering by the START, not the season number,
+-- also keeps an odd-numbered fixture from winning by its label alone. No
+-- season started ⇒ NULL ⇒ no window (the daily sweep still runs).
+CREATE OR REPLACE FUNCTION public.live_poll_season(p_now TIMESTAMPTZ)
+RETURNS INTEGER
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $fn$
+  SELECT w.season
+    FROM public.nfl_weeks w
+   GROUP BY w.season
+  HAVING min(w.starts_at) <= p_now
+   ORDER BY min(w.starts_at) DESC, w.season DESC
+   LIMIT 1;
+$fn$;
+
+COMMENT ON FUNCTION public.live_poll_season(TIMESTAMPTZ) IS
+  'Migration 224 (R1819): the season the live poll is in at p_now — of the seasons whose first nfl_weeks.starts_at is <= p_now, the one that started most recently. A season that has not started (next year loaded early, the synthetic 2099) never wins. NULL when none has started. Read-only.';
+REVOKE EXECUTE ON FUNCTION public.live_poll_season(TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.live_poll_season(TIMESTAMPTZ) TO service_role;
+
+-- 1b. WHEN THE OPEN WINDOW OPENED — the earliest open game's kickoff − 15
+-- minutes, or NULL when no window is open. One body for the wake AND the
+-- stall check, so the two can never disagree about whether a game is on.
+--   * OPEN_STATUSES = {scheduled, live}; NULL reads as scheduled (001's
+--     column default; `statusOf` in live-poll.ts). `final` is over (Chris
+--     2026-11-14: "once the score is final the game is over"); `postponed`
+--     waits for its new kickoff.
+--   * POLL_LEAD_MS = 15 minutes: polling starts 15 minutes before a kickoff.
+--   * STUCK_GAME_CAP_MS = 8 hours (R1822; Chris: games last "a couple
+--     hours"): a game more than 8 hours past kickoff that has still not read
+--     final no longer holds the window open — without the cap one game the
+--     provider never flips would wake Vercel every 30 s around the clock.
+--     The route says so loudly (`stuckGames` → an ALERT line on every poll
+--     that sees one, the daily sweep included), and reconcile's
+--     `game_not_final_late` names it; the daily sweep still polls its week,
+--     so the flip to final is observed when it comes.
+CREATE OR REPLACE FUNCTION public.live_game_window_since(
+  p_now    TIMESTAMPTZ,
+  p_season INTEGER DEFAULT NULL
+) RETURNS TIMESTAMPTZ
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $fn$
+  SELECT min(g.kickoff_at) - interval '15 minutes'
+    FROM public.nfl_games g
+   WHERE g.season = COALESCE(p_season, public.live_poll_season(p_now))
+     AND COALESCE(g.status, 'scheduled') IN ('scheduled', 'live')
+     AND g.kickoff_at <= p_now + interval '15 minutes'
+     AND g.kickoff_at >= p_now - interval '8 hours';
+$fn$;
+
+COMMENT ON FUNCTION public.live_game_window_since(TIMESTAMPTZ, INTEGER) IS
+  'Migration 224: when the open game window opened (the earliest open game''s kickoff − 15 minutes), NULL when none is open. Open game: an nfl_games row of the season (default live_poll_season(p_now)) with status scheduled / live / NULL and p_now − 8 h <= kickoff_at <= p_now + 15 min. planLivePoll''s HOT rule exactly (live-poll.ts OPEN_STATUSES / POLL_LEAD_MS / STUCK_GAME_CAP_MS; pinned equal in live-poll-window-db.test.ts). Read-only.';
+REVOKE EXECUTE ON FUNCTION public.live_game_window_since(TIMESTAMPTZ, INTEGER) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.live_game_window_since(TIMESTAMPTZ, INTEGER) TO service_role;
+
+-- 1c. Is a window open?
 CREATE OR REPLACE FUNCTION public.live_game_window_open(
   p_now    TIMESTAMPTZ,
   p_season INTEGER DEFAULT NULL
@@ -175,32 +270,48 @@ STABLE
 SECURITY INVOKER
 SET search_path = ''
 AS $fn$
-  -- OPEN_STATUSES = {scheduled, live}; NULL reads as scheduled (001's column
-  -- default; `statusOf` in live-poll.ts). `final` is over and `postponed`
-  -- waits for its new kickoff — neither keeps a window open.
-  -- POLL_LEAD_MS = 15 minutes: polling starts 15 minutes before a kickoff.
-  SELECT EXISTS (
-    SELECT 1
-      FROM public.nfl_games g
-     WHERE g.season = COALESCE(p_season, (SELECT max(w.season) FROM public.nfl_weeks w))
-       AND COALESCE(g.status, 'scheduled') IN ('scheduled', 'live')
-       AND g.kickoff_at <= p_now + interval '15 minutes'
-  );
+  SELECT public.live_game_window_since(p_now, p_season) IS NOT NULL;
 $fn$;
 
 COMMENT ON FUNCTION public.live_game_window_open(TIMESTAMPTZ, INTEGER) IS
-  'Migration 224: is a game window open at p_now? — an nfl_games row of the season (default: the newest season in nfl_weeks) whose status is scheduled or live (NULL = scheduled) with kickoff_at <= p_now + 15 minutes. planLivePoll''s HOT rule exactly (live-poll.ts OPEN_STATUSES / POLL_LEAD_MS; pinned equal in live-poll-window-db.test.ts). A final game never keeps a window open (Chris 2026-11-14: "once the score is final the game is over"). Read-only; carries no secret.';
+  'Migration 224: is a game window open at p_now? — live_game_window_since(p_now, p_season) IS NOT NULL: an unfinished game of the season within 15 minutes of kickoff or past it (at most 8 hours past). planLivePoll''s HOT rule (pinned equal in live-poll-window-db.test.ts). A final game never keeps a window open (Chris 2026-11-14: "once the score is final the game is over"). Read-only; carries no secret.';
 
 REVOKE EXECUTE ON FUNCTION public.live_game_window_open(TIMESTAMPTZ, INTEGER)
   FROM PUBLIC, anon, authenticated;
--- service_role KEEPS EXECUTE (platform default): the D291 harness door —
--- the equivalence suite calls it through PostgREST.
+-- service_role KEEPS EXECUTE: the D291 harness door — the equivalence suite
+-- calls it through PostgREST.
 GRANT EXECUTE ON FUNCTION public.live_game_window_open(TIMESTAMPTZ, INTEGER) TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 2. Why score-week should run now — or NULL
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.score_week_wake_reason(p_now TIMESTAMPTZ)
+-- 2a. THE 5-MINUTE SLOT (R1824 / R1825), keyed on a STORED instant, not the
+-- wall-clock second: due when the last slot check (`system_flags` key
+-- `score_week_slot`, stamped by `cron_wake_score_week`) is at least 4 min
+-- 45 s old, or absent. With 30-second ticks that is one slot every 5
+-- minutes — a tick that arrives a few seconds late or early neither skips a
+-- slot nor takes two (the first build keyed on second < 30 of a minute
+-- divisible by 5, which pg_cron jitter could miss or double).
+CREATE OR REPLACE FUNCTION public.score_week_slot_due(p_now TIMESTAMPTZ)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $fn$
+  SELECT COALESCE(
+    (SELECT f.updated_at <= p_now - interval '4 minutes 45 seconds'
+       FROM public.system_flags f WHERE f.key = 'score_week_slot'),
+    TRUE);
+$fn$;
+
+COMMENT ON FUNCTION public.score_week_slot_due(TIMESTAMPTZ) IS
+  'Migration 224 (R1824/R1825): is score-week''s 5-minute slot due at p_now? — true when system_flags.score_week_slot (stamped by cron_wake_score_week on each slot) is absent or at least 4 min 45 s old. Keyed on a stored instant so 30-second ticks give one slot per 5 minutes whatever the jitter. Read-only.';
+REVOKE EXECUTE ON FUNCTION public.score_week_slot_due(TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.score_week_slot_due(TIMESTAMPTZ) TO service_role;
+
+-- 2b. The reason.
+CREATE OR REPLACE FUNCTION public.score_week_wake_reason(p_now TIMESTAMPTZ, p_slot BOOLEAN DEFAULT NULL)
 RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -210,7 +321,6 @@ DECLARE
   -- = SCORE_WEEK_LEASE_SECONDS (score-week-invoker.ts), the lease the route
   -- claims with: a row leased more recently is a LIVE drain's, not work.
   c_lease CONSTANT INTERVAL := interval '120 seconds';
-  v_utc   TIMESTAMP := p_now AT TIME ZONE 'UTC';
   v_slot  BOOLEAN;
 BEGIN
   IF p_now IS NULL THEN
@@ -233,8 +343,8 @@ BEGIN
     RETURN 'queue';
   END IF;
 
-  -- Work that can be owed for a long time on purpose: once per 5 minutes.
-  v_slot := (EXTRACT(MINUTE FROM v_utc)::INTEGER % 5 = 0) AND EXTRACT(SECOND FROM v_utc) < 30;
+  -- Work that can be owed for a long time on purpose: once per slot.
+  v_slot := COALESCE(p_slot, public.score_week_slot_due(p_now));
   IF NOT v_slot THEN
     RETURN NULL;
   END IF;
@@ -270,12 +380,12 @@ BEGIN
 END;
 $fn$;
 
-COMMENT ON FUNCTION public.score_week_wake_reason(TIMESTAMPTZ) IS
-  'Migration 224: why /api/cron/score-week should run at p_now, or NULL. Every 30 s tick: game_window (live_game_window_open) or queue (a score_fanout row score_fanout_claim would take now — lease 120 s — that was never deferred). Once per 5 minutes (the tick in [:00,:30) of a minute divisible by 5): queue_held (a claimable row deferred before), close_owed (league_weeks_to_close(p_now, 1) — 216''s own read), stat_fix_owed (stat_fix_targets(true, 1) — 222''s own read); a read that raises returns check_failed (fail open). The slot keeps a hold or a refused week — owed for a long time on purpose — from waking Vercel every 30 s. Read-only; carries no secret.';
+COMMENT ON FUNCTION public.score_week_wake_reason(TIMESTAMPTZ, BOOLEAN) IS
+  'Migration 224: why /api/cron/score-week should run at p_now, or NULL. Every 30 s tick: game_window (live_game_window_open) or queue (a score_fanout row score_fanout_claim would take now — lease 120 s — that was never deferred). On the 5-minute slot (p_slot, default score_week_slot_due(p_now)): queue_held (a claimable row deferred before), close_owed (league_weeks_to_close(p_now, 1) — 216''s own read), stat_fix_owed (stat_fix_targets(true, 1) — 222''s own read); a read that raises returns check_failed (fail open). The slot keeps a hold or a refused week — owed for a long time on purpose — from waking Vercel every 30 s. Read-only; carries no secret.';
 
-REVOKE EXECUTE ON FUNCTION public.score_week_wake_reason(TIMESTAMPTZ)
+REVOKE EXECUTE ON FUNCTION public.score_week_wake_reason(TIMESTAMPTZ, BOOLEAN)
   FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.score_week_wake_reason(TIMESTAMPTZ) TO service_role;
+GRANT EXECUTE ON FUNCTION public.score_week_wake_reason(TIMESTAMPTZ, BOOLEAN) TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 3. The two job bodies — decide, and ping only on a yes
@@ -291,7 +401,8 @@ DECLARE
   v_request_id BIGINT;
 BEGIN
   IF v_open THEN
-    -- `sweep=none`: a game-window poll never sweeps — the daily job does.
+    -- `sweep=none`: a game-window poll never runs the daily sweep — it does
+    -- carry the weeks whose correction window is about to close (R1820).
     v_request_id := public.cron_ping_route('/api/cron/sync-live?sweep=none');
   END IF;
   RETURN jsonb_build_object('woke', v_open, 'reason', CASE WHEN v_open THEN 'game_window' END,
@@ -312,22 +423,94 @@ SECURITY INVOKER          -- 124's reason; see the banner
 SET search_path = ''
 AS $fn$
 DECLARE
-  v_reason     TEXT := public.score_week_wake_reason(p_now);
+  v_slot       BOOLEAN := public.score_week_slot_due(p_now);
+  v_reason     TEXT;
   v_request_id BIGINT;
 BEGIN
+  v_reason := public.score_week_wake_reason(p_now, v_slot);
+  -- The slot is spent whatever the answer: any wake runs every pass, and a
+  -- slot that found nothing has nothing to repeat for 5 minutes.
+  IF v_slot THEN
+    INSERT INTO public.system_flags (key, value, updated_at)
+    VALUES ('score_week_slot', jsonb_build_object('checked_at', p_now, 'reason', v_reason), p_now)
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at;
+  END IF;
   IF v_reason IS NOT NULL THEN
     v_request_id := public.cron_ping_route('/api/cron/score-week');
   END IF;
-  RETURN jsonb_build_object('woke', v_reason IS NOT NULL, 'reason', v_reason,
+  RETURN jsonb_build_object('woke', v_reason IS NOT NULL, 'reason', v_reason, 'slot', v_slot,
                             'request_id', v_request_id, 'at', p_now);
 END;
 $fn$;
 
 COMMENT ON FUNCTION public.cron_wake_score_week(TIMESTAMPTZ) IS
-  'Migration 224: the score-week-ping job body (every 30 s). Calls /api/cron/score-week through cron_ping_route ONLY when score_week_wake_reason(p_now) names a reason; otherwise sends nothing. Returns {woke, reason, request_id, at}. SECURITY INVOKER like cron_ping_route; EXECUTE revoked from every API role.';
+  'Migration 224: the score-week-ping job body (every 30 s). Calls /api/cron/score-week through cron_ping_route ONLY when score_week_wake_reason(p_now, slot) names a reason; stamps system_flags.score_week_slot when the 5-minute slot was due. Returns {woke, reason, slot, request_id, at}. SECURITY INVOKER like cron_ping_route; EXECUTE revoked from every API role.';
 
 REVOKE EXECUTE ON FUNCTION public.cron_wake_score_week(TIMESTAMPTZ)
   FROM PUBLIC, anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 3b. The sync-live round lease (R1823) — two game-window rounds never overlap
+-- ---------------------------------------------------------------------------
+-- A 30-second wake whose round outlives 30 s (a slow provider) would
+-- otherwise overlap the next one. The route takes this lease before a
+-- game-window round (`?sweep=none` only — the daily sweep must never be the
+-- one skipped) and skips the round when another holds it; it releases on
+-- the way out, and a hard-killed round's lease lapses on its own after
+-- SYNC_LIVE_LEASE_SECONDS (= the route's maxDuration). The overlap it
+-- prevents was never a wrong write — ingestion writes a diff — but two
+-- rounds' failures would count twice toward stats_degraded. A database
+-- without these functions (merge before push) answers PGRST202 and the
+-- route polls without a lease, as before.
+CREATE OR REPLACE FUNCTION public.sync_live_lease_take(p_now TIMESTAMPTZ, p_seconds INTEGER)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY INVOKER          -- the route calls it as service_role (rolbypassrls)
+SET search_path = ''
+AS $fn$
+DECLARE
+  v_token UUID := gen_random_uuid();
+  v_got   UUID;
+BEGIN
+  IF p_now IS NULL OR p_seconds IS NULL OR p_seconds < 1 THEN
+    RAISE EXCEPTION 'sync_live_lease_take: p_now and a positive p_seconds are required'
+      USING ERRCODE = '22023';
+  END IF;
+  INSERT INTO public.system_flags AS f (key, value, updated_at)
+  VALUES ('sync_live_lease',
+          jsonb_build_object('token', v_token, 'until', p_now + make_interval(secs => p_seconds)),
+          p_now)
+  ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+    WHERE (f.value ->> 'until')::TIMESTAMPTZ <= p_now
+  RETURNING (f.value ->> 'token')::UUID INTO v_got;
+  RETURN v_got;   -- NULL: another round holds it
+END;
+$fn$;
+
+COMMENT ON FUNCTION public.sync_live_lease_take(TIMESTAMPTZ, INTEGER) IS
+  'Migration 224 (R1823): takes the sync-live round lease (system_flags.sync_live_lease) until p_now + p_seconds and returns its token — or NULL when another round holds an unexpired one. Service role only.';
+REVOKE EXECUTE ON FUNCTION public.sync_live_lease_take(TIMESTAMPTZ, INTEGER) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sync_live_lease_take(TIMESTAMPTZ, INTEGER) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.sync_live_lease_release(p_token UUID, p_now TIMESTAMPTZ)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $fn$
+BEGIN
+  UPDATE public.system_flags f
+     SET value = jsonb_set(f.value, '{until}', to_jsonb(p_now)), updated_at = p_now
+   WHERE f.key = 'sync_live_lease' AND f.value ->> 'token' = p_token::TEXT;
+  RETURN FOUND;   -- false: the lease lapsed and another round took it — nothing of theirs is touched
+END;
+$fn$;
+
+COMMENT ON FUNCTION public.sync_live_lease_release(UUID, TIMESTAMPTZ) IS
+  'Migration 224 (R1823): releases the sync-live round lease if p_token still holds it (sets until = p_now); false when it lapsed and another round took it. Service role only.';
+REVOKE EXECUTE ON FUNCTION public.sync_live_lease_release(UUID, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sync_live_lease_release(UUID, TIMESTAMPTZ) TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 4. scoring_stall_check — 124's body, ARM 2 re-thresholded (see banner)
@@ -375,14 +558,9 @@ BEGIN
     FROM public.system_flags f
    WHERE f.key LIKE 'ingest_poll:%';
 
-  -- When did the open window open? The earliest open game's kickoff − 15 min
-  -- (the same rows live_game_window_open reads); NULL = no window open.
-  SELECT min(g.kickoff_at) - interval '15 minutes'
-    INTO v_window_since
-    FROM public.nfl_games g
-   WHERE g.season = (SELECT max(w.season) FROM public.nfl_weeks w)
-     AND COALESCE(g.status, 'scheduled') IN ('scheduled', 'live')
-     AND g.kickoff_at <= p_now + interval '15 minutes';
+  -- When did the open window open? The SAME function the wake reads (§1b —
+  -- its season rule and its 8-hour cap included); NULL = no window open.
+  v_window_since := public.live_game_window_since(p_now);
 
   IF v_window_since IS NOT NULL THEN
     v_ingest_after := c_ingest_window;

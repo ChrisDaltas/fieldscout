@@ -19,9 +19,9 @@
  *       held back: the recovery poll back-fills everything else, the
  *       tracker clears, the scores move.
  *   P5  every game final, WR3 and RB4 still held back.
- *   P6  WR3's row lands 1 h after the week's last game (inside the 6 h
+ *   P6  WR3's row lands 1 h after the week's last game (inside the 15 h
  *       settle grace): scored, never recorded as a correction.
- *   P7  RB4's row lands 8 h after (past the grace, inside the window): a
+ *   P7  RB4's row lands 16 h after (past the 15 h grace since 224, inside the window): a
  *       first line for a final week — recorded as a correction, one league
  *       post, scored once.
  *   P8  a STALE cached row for RB1 (100 → 90 rush yards), then the fresh
@@ -176,12 +176,12 @@ describe('L.F2.3 drill 2 — the provider delays and duplicates rows', () => {
     expect(await posts()).toEqual([])
   })
 
-  it('P7 RB4\'s row lands 8 h after (past the grace, inside the window): one correction, one league post, scored once', async () => {
+  it('P7 RB4\'s row lands 16 h after (past the grace, inside the window): one correction, one league post, scored once', async () => {
     faulty.faults = {}
-    const r = await poll(world, faulty, db, at(T.final, 8))
+    const r = await poll(world, faulty, db, at(T.final, 16))
     expect([r.ok, r.stats.updated]).toEqual([true, 1])
     expect(r.corrections.detected).toBeGreaterThan(0)
-    await drain(world, service, at(T.final, 8.01))
+    await drain(world, service, at(T.final, 16.01))
     expect(await scores()).toEqual(GOLDEN_SCORES)
     expect(await events()).toEqual(['rb4 fumbles_lost 0→1', 'rb4 rush_yards 5→12'])
     const p = await posts()
@@ -191,12 +191,12 @@ describe('L.F2.3 drill 2 — the provider delays and duplicates rows', () => {
 
   it('P8 a STALE cached RB1 row (100 → 90), then the fresh one: each answer applied as given — the score ends where the stats end, never doubled', async () => {
     faulty.faults = { stale: new Map([[pid('rb1'), line('rb1', { rush_yards: 90, rush_tds: 1 })]]) }
-    await poll(world, faulty, db, at(T.final, 9))
-    await drain(world, service, at(T.final, 9.01))
+    await poll(world, faulty, db, at(T.final, 17))
+    await drain(world, service, at(T.final, 17.01))
     expect(await scores()).toEqual([[20, 26], [7.8, 6.9]])
     faulty.faults = {}
-    await poll(world, faulty, db, at(T.final, 10))
-    await drain(world, service, at(T.final, 10.01))
+    await poll(world, faulty, db, at(T.final, 18))
+    await drain(world, service, at(T.final, 18.01))
     expect(await scores()).toEqual(GOLDEN_SCORES)
     expect((await events()).filter((e) => e.startsWith('rb1'))).toEqual(['rb1 rush_yards 100→90', 'rb1 rush_yards 90→100'])
     console.log(`[L.F2.3 drill 2] P8 stale-then-fresh RB1: league posts now ${(await posts()).length} — ${JSON.stringify(await posts())}`)
@@ -213,7 +213,7 @@ describe('L.F2.3 drill 2 — the provider delays and duplicates rows', () => {
     const eventsBefore = await events()
     const postsBefore = await posts()
     const failuresBefore = world.degradation.consecutiveFailures
-    const r = await poll(world, faulty, db, at(T.final, 11))
+    const r = await poll(world, faulty, db, at(T.final, 19))
     expect([r.ok, r.stats.duplicates, r.write.path]).toEqual([false, 0, 'none'])
     expect(r.error).toContain(`two different lines for 1 player(s) (${pid('rb2')})`)
     expect(r.reasons.join(' ')).toContain('Skip it, retry next update')
@@ -234,7 +234,7 @@ describe('L.F2.3 drill 2 — the provider delays and duplicates rows', () => {
     ]
     const seen: Array<[boolean, boolean]> = []
     for (let i = 0; i < 4; i++) {
-      const r = await poll(world, faulty, db, at(T.final, 12 + i * 0.01))
+      const r = await poll(world, faulty, db, at(T.final, 20 + i * 0.01))
       expect(r.error).toContain('(F831)')
       seen.push([r.ok, r.degraded])
     }
@@ -253,10 +253,10 @@ describe('L.F2.3 drill 2 — the provider delays and duplicates rows', () => {
   it('P10 the provider answers cleanly again: the poll succeeds, the flag clears, nothing moved while it was skipped — still on the goldens', async () => {
     faulty.faults = {}
     world.provider.lines = finalLines()
-    const r = await poll(world, faulty, db, at(T.final, 13))
+    const r = await poll(world, faulty, db, at(T.final, 21))
     expect([r.ok, r.degraded, r.stats.updated]).toEqual([true, false, 0])
     expect(world.degradation.degraded).toBe(false)
-    await drain(world, service, at(T.final, 13.01))
+    await drain(world, service, at(T.final, 21.01))
     expect(await scores()).toEqual(GOLDEN_SCORES)
   })
 

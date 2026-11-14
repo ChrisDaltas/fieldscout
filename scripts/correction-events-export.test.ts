@@ -147,10 +147,10 @@ describe('readCorrectionExport + render', () => {
     expect(file).not.toMatch(/supabase\.co/)
   })
 
-  it('E5 the week final-seen instant is null while any in-week game is not final; grace boundary at 360 min', () => {
+  it('E5 the week final-seen instant is null while any in-week game is not final; grace boundary at 900 min (SETTLE_GRACE_MS = 15 h since 224 — R1821)', () => {
     expect(weekFinalSeen([{ ...GAMES[0], status: 'live' }, GAMES[1]] as never)).toBeNull()
     expect(weekFinalSeen(GAMES as never)).toBe('2031-09-29T03:18:00Z')
-    expect([graceOf(359.9), graceOf(360), graceOf(null)]).toEqual(['inside', 'outside', 'undetermined'])
+    expect([graceOf(899.9), graceOf(900), graceOf(null)]).toEqual(['inside', 'outside', 'undetermined'])
   })
 })
 

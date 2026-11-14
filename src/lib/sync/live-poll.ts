@@ -82,10 +82,13 @@
  * (the D3 fence covers this file).
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js'
+
 import { DegradationTracker } from '@/lib/leagues/stats/degradation'
 import type { ProviderGame, StatsProvider } from '@/lib/leagues/stats/stats-provider'
 import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 import { pageAll } from '@/lib/supabase/page-all'
+import type { Database } from '@/types/database'
 
 import { type FlagsClient, loadDegradationTracker, persistPollOutcome, type StatsDegradedFlag } from './ingest-flags'
 import { failedPollReport, ingestWeek, pollFailureCounted, type IngestReport } from './ingest-week'
@@ -94,6 +97,13 @@ import { failedPollReport, ingestWeek, pollFailureCounted, type IngestReport } f
 
 /** Poll from this long before a kickoff: inactives / status flips land pre-game. 224's `live_game_window_open` uses the same 15 minutes. */
 export const POLL_LEAD_MS = 15 * 60_000
+/** R1822 (Chris: games last "a couple hours"): a game more than this far past
+ *  kickoff that still has not read final no longer holds a window open — one
+ *  game the provider never flips would otherwise keep the 30-second wake going
+ *  around the clock. Every plan that sees one says so (`stuckGames`), and the
+ *  route raises an ALERT line for it. 224's `live_game_window_since` uses the
+ *  same 8 hours. */
+export const STUCK_GAME_CAP_MS = 8 * 3_600_000
 /** 224's in-window cadence — the `sync-live-ping` job's `'30 seconds'` schedule (§23.2's "20–30s"; Chris 2026-11-14). The route test pins it against the migration text. */
 export const LIVE_WAKE_SECONDS = 30
 /** The pre-224 fallback's sweep minute (`'hourly'` mode only). */
@@ -129,6 +139,43 @@ export function parseSweepMode(raw: string | null): SweepMode | null {
   return raw === 'daily' || raw === 'none' ? raw : null
 }
 
+// ── The round lease (R1823) ────────────────────────────────────────────────
+
+/** The game-window round lease's length — the route's `maxDuration`, so a
+ *  hard-killed round's lease lapses on its own (224 `sync_live_lease_take`). */
+export const SYNC_LIVE_LEASE_SECONDS = 60
+
+type LeaseDb = Pick<SupabaseClient<Database>, 'rpc'>
+
+export type RoundLease = { status: 'taken'; token: string } | { status: 'held' } | { status: 'unavailable'; reason: string }
+
+/**
+ * R1823: take the game-window round lease, so two 30-second wakes' rounds
+ * never overlap (a slow provider). `held` — another round is in flight, skip
+ * this one. `unavailable` — the lease could not be read (a database without
+ * 224 answers PGRST202 — merge before push — or any error): poll without a
+ * lease, as before 224, and say why. A lease must never cost a poll.
+ */
+export async function takeRoundLease(db: LeaseDb, time: TimeProvider, seconds: number = SYNC_LIVE_LEASE_SECONDS): Promise<RoundLease> {
+  const { data, error } = await db.rpc('sync_live_lease_take', { p_now: time.now().toISOString(), p_seconds: seconds })
+  if (error) {
+    return {
+      status: 'unavailable',
+      reason:
+        error.code === 'PGRST202'
+          ? 'round lease: not on this database (224 not pushed) — polled without one, as before 224'
+          : `round lease: could not be taken (${error.message}) — polled without one`,
+    }
+  }
+  return typeof data === 'string' && data.length > 0 ? { status: 'taken', token: data } : { status: 'held' }
+}
+
+/** Release the round lease if this round still holds it; a failure is returned to be said, never thrown (the lease lapses on its own). */
+export async function releaseRoundLease(db: LeaseDb, time: TimeProvider, token: string): Promise<string | null> {
+  const { error } = await db.rpc('sync_live_lease_release', { p_token: token, p_now: time.now().toISOString() })
+  return error ? `round lease: release failed (${error.message}) — it lapses on its own after ${SYNC_LIVE_LEASE_SECONDS} s` : null
+}
+
 
 // ── The plan (pure) ────────────────────────────────────────────────────────
 
@@ -158,14 +205,17 @@ export interface PollPlan {
   mode: PollMode
   /** Weeks to poll, ascending; empty when idle. */
   weeks: number[]
-  /** HOT on the sweep minute only (F509): the weeks the sweep would poll that
-   *  are not already hot — polled once per invocation, after the hot weeks.
-   *  Empty for every other plan. */
+  /** HOT only: weeks carried once in the invocation, after the hot weeks —
+   *  the sweep's weeks when a sweep is due (F509), and every week whose
+   *  correction window closes within the lead (R1820). Empty for every other
+   *  plan. */
   sweepWeeks: number[]
   /** In-week games at or past (now + lead) not yet observed final. */
   dueGames: number
   /** Games past their kickoff and still not final — the window held open by observation (R711). */
   openPastKickoff: number
+  /** R1822: open games more than STUCK_GAME_CAP_MS past kickoff — they no longer hold a window open, and the route ALERTS on them. */
+  stuckGames: number
   /** The current calendar week (the greatest `starts_at <= now`; 1 before the season). */
   currentWeek: number
   reasons: string[]
@@ -270,11 +320,24 @@ export function planLivePoll(games: readonly CalendarGame[], weeks: readonly Cal
   const currentWeek = currentCalendarWeek(weeks, now)
   const reasons: string[] = []
 
-  const due = games.filter((g) => OPEN_STATUSES.has(statusOf(g)) && new Date(g.kickoff_at).getTime() <= nowMs + leadMs)
+  const open = games.filter((g) => OPEN_STATUSES.has(statusOf(g)))
+  // R1822: an open game more than STUCK_GAME_CAP_MS past kickoff no longer
+  // holds the window — said on every plan that sees one.
+  const stuck = open.filter((g) => new Date(g.kickoff_at).getTime() < nowMs - STUCK_GAME_CAP_MS)
+  const stuckGames = stuck.length
+  if (stuckGames > 0) {
+    reasons.push(
+      `stuck: ${stuckGames} game(s) more than ${STUCK_GAME_CAP_MS / 3_600_000} h past kickoff and still not final (weeks ${[...new Set(stuck.map((g) => g.week))].sort((a, b) => a - b).join(', ')}) — no longer holding the game window open (R1822); the daily sweep keeps polling the week`,
+    )
+  }
+  const due = open.filter((g) => {
+    const kickoffMs = new Date(g.kickoff_at).getTime()
+    return kickoffMs <= nowMs + leadMs && kickoffMs >= nowMs - STUCK_GAME_CAP_MS
+  })
   const openPastKickoff = due.filter((g) => new Date(g.kickoff_at).getTime() <= nowMs).length
   if (due.length > 0) {
     const dueWeeks = [...new Set(due.map((g) => g.week))].sort((a, b) => a - b)
-    reasons.push(
+    reasons.unshift(
       `hot: ${due.length} in-week game(s) at or within ${leadMs / 60_000} min of kickoff and not yet observed final (${openPastKickoff} past kickoff) — weeks ${dueWeeks.join(', ')}`,
     )
     // F509: a game the provider never flips to final (Q37's cancelled game)
@@ -286,20 +349,36 @@ export function planLivePoll(games: readonly CalendarGame[], weeks: readonly Cal
     // (`sweepWeeks`), polled once in the invocation. Nothing here decides
     // what a stuck game IS (Q37 / E43 rule that) — it only stops one from
     // starving the other weeks.
-    const sweepWeeks = sweepIsDue ? sweepTargets(weeks, currentWeek, now, opts).all.filter((w) => !dueWeeks.includes(w)) : []
-    if (sweepWeeks.length > 0) {
+    const carriedSweep = sweepIsDue ? sweepTargets(weeks, currentWeek, now, opts).all.filter((w) => !dueWeeks.includes(w)) : []
+    if (carriedSweep.length > 0) {
       reasons.push(
-        `sweep carried on a hot invocation (F509): week(s) ${sweepWeeks.join(', ')} — the ${mode} sweep and the re-polls never wait for a game not yet observed final`,
+        `sweep carried on a hot invocation (F509): week(s) ${carriedSweep.join(', ')} — the ${mode} sweep and the re-polls never wait for a game not yet observed final`,
       )
     }
-    return { mode: 'hot', weeks: dueWeeks, sweepWeeks, dueGames: due.length, openPastKickoff, currentWeek, reasons }
+    // R1820: a week's correction window ends at the next week's first
+    // kickoff — exactly when that kickoff's window opens. So on a game day
+    // every hot round in the last `leadMs` of a correction window re-polls
+    // that week: a correction published after the morning's daily sweep is
+    // still ingested and re-scored before the week locks. Game days only (it
+    // rides the window's own wakes) — never a new wake.
+    const closing = weeksInCorrectionWindow(weeks, currentWeek, now).filter((w) => {
+      const ends = weeks.find((x) => x.week === w)?.correction_window_ends_at
+      return ends != null && new Date(ends).getTime() <= nowMs + leadMs && !dueWeeks.includes(w) && !carriedSweep.includes(w)
+    })
+    if (closing.length > 0) {
+      reasons.push(
+        `correction window closing (R1820): week(s) ${closing.join(', ')} — re-polled in the last ${leadMs / 60_000} min before the window ends at the next kickoff, so a late correction is scored before the week locks`,
+      )
+    }
+    const sweepWeeks = [...carriedSweep, ...closing]
+    return { mode: 'hot', weeks: dueWeeks, sweepWeeks, dueGames: due.length, openPastKickoff, stuckGames, currentWeek, reasons }
   }
 
   // F228 — except on 224's game-window wake (`'none'`), which never sweeps:
   // with no game rows that wake never comes, and the daily sweep lands them.
   if (games.length === 0 && mode !== 'none') {
     reasons.push(`sweep: the season has NO nfl_games rows — polling week ${currentWeek} so the provider's calendar can land (F228)`)
-    return { mode: 'sweep', weeks: [currentWeek], sweepWeeks: [], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
+    return { mode: 'sweep', weeks: [currentWeek], sweepWeeks: [], dueGames: 0, openPastKickoff: 0, stuckGames, currentWeek, reasons }
   }
   // F270 CLOSED (M5 L.D3.11, R1260): the sweep re-polls the CURRENT week AND
   // every earlier week still inside its stat-correction window — so a
@@ -314,7 +393,7 @@ export function planLivePoll(games: readonly CalendarGame[], weeks: readonly Cal
   // its caller, so a late wake still sweeps.
   if (sweepIsDue) {
     const { inWindow, finalRepoll, all } = sweepTargets(weeks, currentWeek, now, opts)
-    reasons.push(
+    reasons.unshift(
       `sweep: nothing due; ${mode} schedule refresh of week ${currentWeek} (flex moves reach nfl_games by the next sweep, E42)` +
         (inWindow.length > 0 ? `; and week(s) ${inWindow.join(', ')} still inside their stat-correction window (F270 — a late correction is re-scored before the week locks)` : '') +
         (finalRepoll.length > 0
@@ -322,15 +401,16 @@ export function planLivePoll(games: readonly CalendarGame[], weeks: readonly Cal
           : ''),
     )
     // R1265: the current week first — a throw on an earlier week never skips its refresh.
-    return { mode: 'sweep', weeks: all, sweepWeeks: [], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
+    return { mode: 'sweep', weeks: all, sweepWeeks: [], dueGames: 0, openPastKickoff: 0, stuckGames, currentWeek, reasons }
   }
-  reasons.push(
+  reasons.unshift(
     `idle: no in-week game within ${leadMs / 60_000} min of kickoff or still open; ${
       mode === 'hourly' ? `next sweep at minute ${opts.sweepMinute ?? SWEEP_MINUTE}` : `next sweep at the daily ${FINAL_WEEK_REPOLL_UTC_HOUR}:00Z run`
     } — no provider call`,
   )
-  return { mode: 'idle', weeks: [], sweepWeeks: [], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
+  return { mode: 'idle', weeks: [], sweepWeeks: [], dueGames: 0, openPastKickoff: 0, stuckGames, currentWeek, reasons }
 }
+
 
 // ── Calendar reads (paged; the plan's inputs) ──────────────────────────────
 
@@ -402,6 +482,8 @@ export interface LivePollInvocationReport {
   problems: string[]
   /** Why nothing was polled — never an empty success by default. */
   reason: 'idle' | null
+  /** R1822: open games more than STUCK_GAME_CAP_MS past kickoff — the route ALERTS when > 0. */
+  stuck_games: number
 }
 
 export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePollInvocationReport> {
@@ -418,6 +500,7 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
     flag: null,
     problems: [],
     reason: null,
+    stuck_games: 0,
   }
 
   // ONE ROUND (224). The 30-second cadence lives in the database's schedule;
@@ -426,6 +509,7 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
     const now = deps.time.now()
     const calendar = await readCalendar(deps.db, deps.season)
     const plan = planLivePoll(calendar.games, calendar.weeks, now, deps.planOptions)
+    report.stuck_games = plan.stuckGames
     if (plan.mode === 'idle') {
       report.reason = 'idle'
       report.problems.push(`polled nothing: ${plan.reasons.join('; ')}`)

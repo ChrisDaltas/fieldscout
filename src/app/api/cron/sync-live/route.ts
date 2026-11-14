@@ -4,7 +4,7 @@ import { NflverseProvider, withNflverseCalendar } from '@/lib/leagues/stats/nflv
 import { SleeperStatsProvider } from '@/lib/leagues/stats/sleeper-stats-provider'
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createTypedAdminClient } from '@/lib/supabase/admin'
-import { parseSweepMode, runLivePollInvocation } from '@/lib/sync/live-poll'
+import { parseSweepMode, releaseRoundLease, runLivePollInvocation, takeRoundLease } from '@/lib/sync/live-poll'
 import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
@@ -76,52 +76,78 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'sweep must be "daily" or "none" (or absent)' }, { status: 400 })
   }
 
+
   const season = Number(process.env.NEXT_PUBLIC_NFL_SEASON ?? 2026)
 
   try {
-    // The cron entry point is where real infrastructure is bound to the
-    // seam: the sleeper_free tier + nflverse's calendar, and the wall clock
-    // (§23.1; D300; F216 as amended by D304).
-    const provider = withNflverseCalendar(new SleeperStatsProvider(systemTime), new NflverseProvider(systemTime))
-    const report = await runLivePollInvocation({
-      db: createTypedAdminClient(),
-      provider,
-      time: systemTime,
-      season,
-      planOptions: { sweep },
-    })
-    for (const problem of report.problems) console.warn('[sync-live]', problem)
-    if (report.flag?.degraded) console.error('[sync-live] ALERT stats_degraded is RAISED (§23.2/E45):', JSON.stringify(report.flag))
-    const summary = {
-      season,
-      sweep,
-      reason: report.reason,
-      rounds: report.rounds.map((r) => ({
-        mode: r.plan.mode,
-        weeks: r.plan.weeks,
-        plan: r.plan.reasons,
-        polls: r.polls.map((p) => ({
-          week: p.week,
-          ok: p.report.ok,
-          games: p.report.games,
-          weeks: p.report.weeks,
-          stats: p.report.stats,
-          // M6 L.E2.1: the write path (the 167 door — the only path since F508)
-          // and the poll's stat corrections.
-          write: p.report.write,
-          corrections: p.report.corrections,
-          reasons: p.report.reasons,
-          degraded: p.flag.degraded,
-          consecutive_failures: p.flag.consecutive_failures,
-        })),
-      })),
-      flag: report.flag,
-      problems: report.problems,
-      started_at: report.started_at,
-      finished_at: report.finished_at,
+    const db = createTypedAdminClient()
+    // R1823: a game-window round (`none`) takes the round lease first, so two
+    // 30-second wakes never overlap. The daily sweep never waits on it — it
+    // must not be the round that gets skipped.
+    const lease = sweep === 'none' ? await takeRoundLease(db, systemTime) : null
+    if (lease?.status === 'held') {
+      const skipped = { season, sweep, skipped: 'another game-window round is still running (R1823) — this wake polled nothing; the next one carries on' }
+      console.log('[sync-live]', JSON.stringify(skipped))
+      return NextResponse.json(skipped)
     }
-    console.log('[sync-live]', JSON.stringify(summary))
-    return NextResponse.json(summary)
+    if (lease?.status === 'unavailable') console.warn('[sync-live]', lease.reason)
+    try {
+      // The cron entry point is where real infrastructure is bound to the
+      // seam: the sleeper_free tier + nflverse's calendar, and the wall clock
+      // (§23.1; D300; F216 as amended by D304).
+      const provider = withNflverseCalendar(new SleeperStatsProvider(systemTime), new NflverseProvider(systemTime))
+      const report = await runLivePollInvocation({
+        db,
+        provider,
+        time: systemTime,
+        season,
+        planOptions: { sweep },
+      })
+      for (const problem of report.problems) console.warn('[sync-live]', problem)
+      if (report.flag?.degraded) console.error('[sync-live] ALERT stats_degraded is RAISED (§23.2/E45):', JSON.stringify(report.flag))
+      // R1822: a game 8 h past kickoff and still not final no longer holds the
+      // game window open — loud on every poll that sees it.
+      if (report.stuck_games > 0) {
+        console.error(`[sync-live] ALERT ${report.stuck_games} game(s) more than 8 h past kickoff and still not final — no longer polled every 30 s; the daily sweep keeps polling the week (R1822; reconcile names it game_not_final_late)`)
+      }
+      const summary = {
+        season,
+        sweep,
+        reason: report.reason,
+        stuck_games: report.stuck_games,
+        rounds: report.rounds.map((r) => ({
+          mode: r.plan.mode,
+          weeks: r.plan.weeks,
+          carried: r.plan.sweepWeeks,
+          plan: r.plan.reasons,
+          polls: r.polls.map((p) => ({
+            week: p.week,
+            ok: p.report.ok,
+            games: p.report.games,
+            weeks: p.report.weeks,
+            stats: p.report.stats,
+            // M6 L.E2.1: the write path (the 167 door — the only path since F508)
+            // and the poll's stat corrections.
+            write: p.report.write,
+            corrections: p.report.corrections,
+            reasons: p.report.reasons,
+            degraded: p.flag.degraded,
+            consecutive_failures: p.flag.consecutive_failures,
+          })),
+        })),
+        flag: report.flag,
+        problems: report.problems,
+        started_at: report.started_at,
+        finished_at: report.finished_at,
+      }
+      console.log('[sync-live]', JSON.stringify(summary))
+      return NextResponse.json(summary)
+    } finally {
+      if (lease?.status === 'taken') {
+        const failed = await releaseRoundLease(db, systemTime, lease.token)
+        if (failed) console.warn('[sync-live]', failed)
+      }
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[sync-live] failed:', message)

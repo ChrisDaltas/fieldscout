@@ -14,7 +14,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   },
 }))
 
-import { FINAL_WEEK_REPOLL_UTC_HOUR, LIVE_WAKE_SECONDS, parseSweepMode, POLL_LEAD_MS } from '@/lib/sync/live-poll'
+import { FINAL_WEEK_REPOLL_UTC_HOUR, LIVE_WAKE_SECONDS, parseSweepMode, POLL_LEAD_MS, STUCK_GAME_CAP_MS, SYNC_LIVE_LEASE_SECONDS } from '@/lib/sync/live-poll'
 
 import { GET, maxDuration } from './route'
 
@@ -61,9 +61,12 @@ describe('GET /api/cron/sync-live', () => {
     expect(MIGRATION_224).toContain(`'/api/cron/sync-live?sweep=daily'`)
     // The window's lead is the plan's lead (the SQL restates it; the stack test pins the two agree row by row).
     expect(MIGRATION_224).toContain(`interval '${POLL_LEAD_MS / 60_000} minutes'`)
+    // …and so is the stuck-game cap (R1822).
+    expect(MIGRATION_224).toContain(`g.kickoff_at >= p_now - interval '${STUCK_GAME_CAP_MS / 3_600_000} hours'`)
   })
 
-  it('one round per invocation under a 60 s hard timeout (the daily sweep reads several weeks)', () => {
+  it('one round per invocation under a 60 s hard timeout (the daily sweep reads several weeks); the round lease lapses with it (R1823)', () => {
     expect(maxDuration).toBe(60)
+    expect(SYNC_LIVE_LEASE_SECONDS).toBe(maxDuration)
   })
 })

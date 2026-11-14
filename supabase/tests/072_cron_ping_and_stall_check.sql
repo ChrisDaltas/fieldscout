@@ -266,10 +266,14 @@ select ok(has_function_privilege('service_role', 'public.scoring_stall_check(tim
   'E3 service_role KEEPS it — the D291 harness/sim door the three week workers have (064:98-101). It carries no secret; cron_ping_route does, which is why C5 disagrees with this cell on purpose');
 
 -- 224: the ingest arm's threshold depends on whether a game window is open
--- in the newest nfl_weeks season. Pin that season to a scratch one with no
--- games, so §E/§F judge in the non-game-day regime (49 h — `2940` below)
--- whatever calendar the local stack holds; §G opens a window on purpose.
-insert into nfl_weeks (season, week, starts_at) values (2092, 1, '2092-09-05 04:00:00+00');
+-- in the live season — the season that started most recently at p_now
+-- (`live_poll_season`, R1819). Pin it to a scratch season that starts at
+-- 2026-09-10 00:00Z, after any real 2026 week (week 1 starts 09-09 04:00Z)
+-- and before every instant below, with no games: §E/§F judge in the
+-- non-game-day regime (49 h — `2940` below) whatever calendar the local
+-- stack holds (a USED stack carries the simulator's 2099, which has not
+-- started at 2026 instants and never wins); §G opens a window on purpose.
+insert into nfl_weeks (season, week, starts_at) values (2092, 1, '2026-09-10 00:00:00+00');
 
 insert into players (id, full_name, position, adp) values
   ('q72-p1', 'Q72 WR 1', 'WR', 0.001),

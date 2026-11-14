@@ -24,7 +24,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { Database } from '@/types/database'
 
-import { type CalendarGame, planLivePoll, POLL_LEAD_MS } from './live-poll'
+import { type CalendarGame, planLivePoll, POLL_LEAD_MS, STUCK_GAME_CAP_MS } from './live-poll'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_SERVICE_ROLE_KEY =
@@ -62,6 +62,8 @@ async function bothAnswers(slate: Array<{ status: string | null; offsetMs: numbe
 
 const STATUSES: Array<string | null> = ['scheduled', 'live', 'final', 'postponed', null, 'suspended']
 const OFFSETS: Array<[string, number]> = [
+  ['cap + 1 s past kickoff', -STUCK_GAME_CAP_MS - 1_000],
+  ['exactly the cap past kickoff', -STUCK_GAME_CAP_MS],
   ['5 h past kickoff', -5 * 3_600_000],
   ['at kickoff', 0],
   ['lead − 1 s', POLL_LEAD_MS - 1_000],
@@ -74,7 +76,7 @@ beforeAll(clear)
 afterAll(clear)
 
 describe('224: live_game_window_open ≡ planLivePoll(...).mode === "hot"', () => {
-  it('one game: every status × every kickoff offset agrees (36 cases)', async () => {
+  it('one game: every status × every kickoff offset agrees (48 cases — the 15-minute lead and the 8-hour cap, R1822, each to the second)', async () => {
     const rows: string[] = []
     for (const status of STATUSES) {
       for (const [label, offsetMs] of OFFSETS) {

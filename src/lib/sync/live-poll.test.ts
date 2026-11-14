@@ -26,9 +26,13 @@ import {
   finalWeeksForRepoll,
   LIVE_WAKE_SECONDS,
   planLivePoll,
+  releaseRoundLease,
+  SYNC_LIVE_LEASE_SECONDS,
+  takeRoundLease,
   weeksInCorrectionWindow,
   POLL_LEAD_MS,
   runLivePollInvocation,
+  STUCK_GAME_CAP_MS,
   type SweepMode,
   withScheduleMemo,
 } from './live-poll'
@@ -42,6 +46,8 @@ const WEEKS: CalendarWeek[] = [
 /** Week 1's Thursday opener (the real 2026 wk-1 first kickoff — F11's 2026-09-10T00:20Z). */
 const TNF = '2026-09-10T00:20:00.000Z'
 const SNF = '2026-09-14T00:20:00.000Z'
+/** A week-1 game still live four hours before SNF — two weeks hot at once inside the 8-hour cap (R1822). */
+const SNF_EARLIER = '2026-09-13T20:25:00.000Z'
 
 function game(week: number, kickoff_at: string, status: string | null = 'scheduled'): CalendarGame {
   return { season: 2026, week, kickoff_at, status }
@@ -88,12 +94,49 @@ describe('planLivePoll — hot / sweep / idle from the tables', () => {
     expect(nullStatus.mode).toBe('hot') // 001's nullable column reads as scheduled
   })
 
-  it('a lingering unfinished game in an EARLIER week is polled beside the current one (weeks ascending) — F238: the stamp needs an observing poll', () => {
+  it('a lingering unfinished game in an EARLIER week is polled beside the current one (weeks ascending) while inside the 8-hour cap — F238: the stamp needs an observing poll', () => {
     const now = new Date(new Date(SNF).getTime() + 60_000)
-    const plan = planLivePoll([game(1, TNF, 'live'), game(2, SNF, 'scheduled')], WEEKS, now)
+    const plan = planLivePoll([game(1, SNF_EARLIER, 'live'), game(2, SNF, 'scheduled')], WEEKS, now)
     expect(plan.mode).toBe('hot')
     expect(plan.weeks).toEqual([1, 2])
     expect(plan.dueGames).toBe(2)
+    expect(plan.stuckGames).toBe(0)
+  })
+
+  it('R1822 — a game more than 8 h past kickoff that never reads final stops holding the window (Chris: games last "a couple hours"); it is named on every plan (D146 at the cap)', () => {
+    expect(STUCK_GAME_CAP_MS).toBe(8 * 3_600_000)
+    const atCap = planLivePoll([game(1, TNF, 'live')], WEEKS, new Date(new Date(TNF).getTime() + STUCK_GAME_CAP_MS), { sweep: 'none' })
+    expect([atCap.mode, atCap.stuckGames]).toEqual(['hot', 0]) // exactly 8 h: still held
+    const past = planLivePoll([game(1, TNF, 'live')], WEEKS, new Date(new Date(TNF).getTime() + STUCK_GAME_CAP_MS + 1), { sweep: 'none' })
+    expect([past.mode, past.stuckGames]).toEqual(['idle', 1])
+    expect(past.reasons[1]).toMatch(/^stuck: 1 game\(s\) more than 8 h past kickoff and still not final \(weeks 1\)/)
+    // Beside a live current-week game the stuck one is named and not polled hot; the daily sweep still polls its week.
+    const beside = planLivePoll([game(1, TNF, 'live'), game(2, SNF, 'scheduled')], WEEKS, new Date(new Date(SNF).getTime() + 60_000))
+    expect([beside.mode, beside.weeks, beside.stuckGames]).toEqual(['hot', [2], 1])
+    expect(planLivePoll([game(1, TNF, 'live')], WEEKS, new Date('2026-09-11T11:00:00Z'), { sweep: 'daily' }).mode).toBe('sweep')
+  })
+
+  it('R1820 — the correction window closing at Thursday’s kickoff: a hot round in its last 15 min re-polls that week, so a correction published after the 11:00Z sweep is scored before the week locks', () => {
+    // Week 2's window ends at week 3's Thursday kickoff, 2026-09-25T00:15Z. A correction lands Thu 20:00Z.
+    const weeks: CalendarWeek[] = [
+      { season: 2026, week: 2, starts_at: '2026-09-16T04:00:00Z', correction_window_ends_at: '2026-09-25T00:15:00Z' },
+      { season: 2026, week: 3, starts_at: '2026-09-23T04:00:00Z', correction_window_ends_at: '2026-10-02T00:15:00Z' },
+    ]
+    const tnf = [game(2, SNF, 'final'), game(3, '2026-09-25T00:15:00.000Z', 'scheduled')]
+    // Thu 20:00Z: no game window — nothing wakes (no new around-the-clock wake).
+    expect(planLivePoll(tnf, weeks, new Date('2026-09-24T20:00:00Z'), { sweep: 'none' }).mode).toBe('idle')
+    // Fri 00:00Z, the window's first round: week 3 hot, week 2 carried.
+    const first = planLivePoll(tnf, weeks, new Date('2026-09-25T00:00:00Z'), { sweep: 'none' })
+    expect([first.mode, first.weeks, first.sweepWeeks]).toEqual(['hot', [3], [2]])
+    expect(first.reasons[1]).toMatch(/^correction window closing \(R1820\): week\(s\) 2 /)
+    // …every round up to the close…
+    expect(planLivePoll(tnf, weeks, new Date('2026-09-25T00:14:59.999Z'), { sweep: 'none' }).sweepWeeks).toEqual([2])
+    // …and not at or after it (the week is locked from the kickoff on; Fri 01:00Z carries nothing).
+    expect(planLivePoll(tnf, weeks, new Date('2026-09-25T00:15:00Z'), { sweep: 'none' }).sweepWeeks).toEqual([])
+    expect(planLivePoll(tnf, weeks, new Date('2026-09-25T01:00:00Z'), { sweep: 'none' }).sweepWeeks).toEqual([])
+    // A hot round more than 15 min before the close does not carry it (Sunday's slate leaves Thursday's re-poll alone).
+    const sunday = [game(2, '2026-09-20T17:00:00.000Z', 'live')]
+    expect(planLivePoll(sunday, weeks, new Date('2026-09-20T18:00:00Z'), { sweep: 'none' }).sweepWeeks).toEqual([])
   })
 
   it('SWEEP on the top-of-hour minute when nothing is due; idle off it; the current week is the sweep target', () => {
@@ -304,7 +347,7 @@ describe('runLivePollInvocation — ONE round per invocation (224: the database 
   })
 
   it('HOT with two due weeks: both polled in ONE round sharing ONE schedule read', async () => {
-    const world = makeWorld([game(1, TNF, 'live'), game(2, SNF, 'scheduled')])
+    const world = makeWorld([game(1, SNF_EARLIER, 'live'), game(2, SNF, 'scheduled')])
     const clock = new VirtualClock(new Date(new Date(SNF).getTime() + 7 * 60_000)) // off the sweep minute
     const report = await run(world, clock)
     expect(report.rounds[0].polls.map((p) => p.week)).toEqual([1, 2])
@@ -373,7 +416,7 @@ describe('M7 L.F2.3 — what a poll that misbehaves does to the round (F830 / R1
   })
 
   it('F832: a poll that THROWS after the provider answered is a failed poll — counted once, persisted, named — and the round still polls its other week', async () => {
-    const world = makeWorld([game(1, TNF, 'live'), game(2, SNF, 'scheduled')])
+    const world = makeWorld([game(1, SNF_EARLIER, 'live'), game(2, SNF, 'scheduled')])
     const clock = new VirtualClock(new Date(new Date(SNF).getTime() + 7 * 60_000))
     const persisted: Array<{ week: number; ok: boolean; failures: number }> = []
     const report = await runLivePollInvocation({
@@ -412,7 +455,7 @@ describe('M7 L.F2.3 — what a poll that misbehaves does to the round (F830 / R1
 
   /** Two hot weeks; `failing` throws on every poll, the other always succeeds; one round per invocation. */
   async function twoWeekRounds(failing: 1 | 2, rounds: number) {
-    const world = makeWorld([game(1, TNF, 'live'), game(2, SNF, 'scheduled')])
+    const world = makeWorld([game(1, SNF_EARLIER, 'live'), game(2, SNF, 'scheduled')])
     const seen: Array<{ failures: number; degraded: boolean }> = []
     for (let i = 0; i < rounds; i++) {
       await runLivePollInvocation({
@@ -447,7 +490,7 @@ describe('M7 L.F2.3 — what a poll that misbehaves does to the round (F830 / R1
   })
 
   it('R1740: two failed weeks in one round are ONE failed instant (counted once), and an all-success round clears the count', async () => {
-    const world = makeWorld([game(1, TNF, 'live'), game(2, SNF, 'scheduled')])
+    const world = makeWorld([game(1, SNF_EARLIER, 'live'), game(2, SNF, 'scheduled')])
     world.flag = { ...world.flag, consecutive_failures: 1 }
     const report = await run(world, new VirtualClock(new Date(new Date(SNF).getTime() + 7 * 60_000)), { failPolls: true })
     expect(world.flag.consecutive_failures).toBe(2)
@@ -614,7 +657,7 @@ describe('F509 — a game that never flips to final no longer stops the sweep an
     { season: 2026, week: 2, starts_at: '2026-09-16T04:00:00Z', correction_window_ends_at: '2026-09-25T00:15:00Z' },
     { season: 2026, week: 3, starts_at: '2026-09-23T04:00:00Z', correction_window_ends_at: '2026-10-02T00:15:00Z' },
   ]
-  const stuck = game(2, '2026-09-21T00:20:00.000Z', 'scheduled')
+  const stuck = game(2, '2026-09-24T08:00:00.000Z', 'scheduled') // kicked off 3–7 h before the instants below — stuck, but inside the 8-hour cap (R1822)
   const games = [game(1, TNF, 'final'), stuck]
 
   it('P1 the plan: HOT on the stuck week; on the sweep minute it carries the current week (and open-window weeks); at 11:00Z the final weeks too; off the minute nothing extra', () => {
@@ -626,7 +669,7 @@ describe('F509 — a game that never flips to final no longer stops the sweep an
     const off = planLivePoll(games, weeks, new Date('2026-09-24T11:01:00Z'))
     expect([off.mode, off.weeks, off.sweepWeeks]).toEqual(['hot', [2], []])
     // a stuck game in a week whose window has CLOSED: the current week and F270's open-window week still run
-    const p = planLivePoll([game(1, TNF, 'live'), game(2, SNF, 'final')], weeks, new Date('2026-09-24T15:00:30Z'))
+    const p = planLivePoll([game(1, '2026-09-24T09:00:00.000Z', 'live'), game(2, SNF, 'final')], weeks, new Date('2026-09-24T15:00:30Z'))
     expect([p.mode, p.weeks, p.sweepWeeks]).toEqual(['hot', [1], [3, 2]])
   })
 
@@ -654,5 +697,41 @@ describe('F509 — a game that never flips to final no longer stops the sweep an
     expect(world.polls.map((p) => p.week)).toEqual([2, 3, 1])
     expect(world.flag.consecutive_failures).toBe(1)
     expect(report.problems).toHaveLength(3)
+  })
+})
+
+describe('R1823 — the game-window round lease (two 30-second wakes never overlap; a lease never costs a poll)', () => {
+  const clock = () => new VirtualClock(new Date('2026-09-25T00:05:00.000Z'))
+  const db = (answer: { data: unknown; error: { code?: string; message: string } | null }, calls: unknown[] = []) =>
+    ({
+      rpc: async (fn: string, args: unknown) => {
+        calls.push([fn, args])
+        return answer
+      },
+    }) as unknown as Parameters<typeof takeRoundLease>[0]
+
+  it('taken: the token comes back, asked with the injected instant and the 60 s lease (= maxDuration)', async () => {
+    const calls: unknown[] = []
+    expect(await takeRoundLease(db({ data: 'tok-1', error: null }, calls), clock())).toEqual({ status: 'taken', token: 'tok-1' })
+    expect(calls).toEqual([['sync_live_lease_take', { p_now: '2026-09-25T00:05:00.000Z', p_seconds: SYNC_LIVE_LEASE_SECONDS }]])
+    expect(SYNC_LIVE_LEASE_SECONDS).toBe(60)
+  })
+
+  it('held: another round holds it — the route skips this wake', async () => {
+    expect(await takeRoundLease(db({ data: null, error: null }), clock())).toEqual({ status: 'held' })
+  })
+
+  it('unavailable: a database without 224 (PGRST202) or any error polls WITHOUT a lease, and says why', async () => {
+    const pre224 = await takeRoundLease(db({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } }), clock())
+    expect(pre224).toEqual({ status: 'unavailable', reason: 'round lease: not on this database (224 not pushed) — polled without one, as before 224' })
+    const other = await takeRoundLease(db({ data: null, error: { code: '57014', message: 'canceling statement' } }), clock())
+    expect(other).toEqual({ status: 'unavailable', reason: 'round lease: could not be taken (canceling statement) — polled without one' })
+  })
+
+  it('release: by token; a failure is said, never thrown', async () => {
+    const calls: unknown[] = []
+    expect(await releaseRoundLease(db({ data: true, error: null }, calls), clock(), 'tok-1')).toBeNull()
+    expect(calls).toEqual([['sync_live_lease_release', { p_token: 'tok-1', p_now: '2026-09-25T00:05:00.000Z' }]])
+    expect(await releaseRoundLease(db({ data: null, error: { message: 'boom' } }), clock(), 'tok-1')).toBe('round lease: release failed (boom) — it lapses on its own after 60 s')
   })
 })
