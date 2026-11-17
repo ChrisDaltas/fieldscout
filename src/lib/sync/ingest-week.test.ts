@@ -904,7 +904,7 @@ describe('L.E2.1 — TD2: what a correction is, poll after poll through the real
       recorded: 1,
       replayed: 0,
       unchangedAtWrite: 0,
-      settled: 0, // L.E2.2 (F511): G1 was seen final 2026-09-20T20:30Z — this Tuesday fix is well past the 6 h settle grace
+      settled: 0, // L.E2.2 (F511): G1 was seen final 2026-09-20T20:30Z — this Tuesday fix is well past the 15 h settle grace
       weekState: 'final',
       keys: [{ player_id: 'p-wr', stat_key: 'receiving_yards', old: 52, new: 50 }],
       reason: '1 recorded',
@@ -1204,12 +1204,12 @@ describe('L.E2.1 — TD2: what a correction is, poll after poll through the real
 // first seen final is ordinary post-game settling — written, queued and
 // re-scored as always, but never recorded as a correction (so no league
 // record, post or notification follows). The boundary instants are pinned:
-// seen final + 6 h − 1 ms settles, seen final + 6 h is a correction. The
+// seen final + the grace − 1 ms settles, seen final + the grace is a correction. The
 // break probe (rule 14): SETTLE_GRACE_MS → 0 reds S1 / S2 (the settle is
 // then recorded as a correction).
 describe('L.E2.2 — F511: a finished game’s routine settle is not a correction (the settle grace)', () => {
-  it('S0 the grace is six hours, named', () => {
-    expect(SETTLE_GRACE_MS).toBe(6 * 60 * 60 * 1000)
+  it('S0 the grace is fifteen hours, named (six until 224 retired the hourly sweep — R1821)', () => {
+    expect(SETTLE_GRACE_MS).toBe(15 * 60 * 60 * 1000)
   })
 
   it('S1–S3 through the real ingestWeek: inside the grace ⇒ settled (re-scored, not recorded); at the boundary ⇒ a correction', async () => {
@@ -1237,21 +1237,21 @@ describe('L.E2.2 — F511: a finished game’s routine settle is not a correctio
     expect([s1.corrections.detected, s1.corrections.settled, s1.corrections.reason]).toEqual([
       0,
       1,
-      '1 scoring delta(s): 1 key(s) moved within 6 h of the game being seen final — ordinary post-game settling, re-scored, not a correction (F511)',
+      '1 scoring delta(s): 1 key(s) moved within 15 h of the game being seen final — ordinary post-game settling, re-scored, not a correction (F511)',
     ])
     expect(s1.reasons).toContain(
-      "stat settle: 1 key(s) on a final game's line moved within 6 h of the game being seen final — ordinary post-game settling (F511): re-scored as always, not recorded as a correction",
+      "stat settle: 1 key(s) on a final game's line moved within 15 h of the game being seen final — ordinary post-game settling (F511): re-scored as always, not recorded as a correction",
     )
 
-    // S2 — the last instant inside the grace (seen final + 6 h − 1 ms): still settling.
+    // S2 — the last instant inside the grace (seen final + the grace − 1 ms): still settling.
     state.lines = [wk2Line('p-wr', WK2_G1, { receptions: 3, receiving_yards: 54 })]
-    const s2 = await poll('2026-09-21T02:29:59.999Z')
+    const s2 = await poll('2026-09-21T11:29:59.999Z')
     expect(lastSent(world)).toEqual({ 'p-wr': { enqueue: true, corrections: [] } })
     expect([s2.corrections.detected, s2.corrections.settled]).toEqual([0, 1])
 
-    // S3 — AT the boundary (seen final + 6 h): a correction, named with the key.
+    // S3 — AT the boundary (seen final + the grace): a correction, named with the key.
     state.lines = [wk2Line('p-wr', WK2_G1, { receptions: 3, receiving_yards: 55 })]
-    const s3 = await poll('2026-09-21T02:30:00.000Z')
+    const s3 = await poll('2026-09-21T11:30:00.000Z')
     expect(lastSent(world)).toEqual({ 'p-wr': { enqueue: true, corrections: [{ stat_key: 'receiving_yards', column: 'receiving_yards' }] } })
     expect([s3.corrections.detected, s3.corrections.settled, s3.corrections.keys]).toEqual([1, 0, [{ player_id: 'p-wr', stat_key: 'receiving_yards', old: 54, new: 55 }]])
   })
@@ -1281,9 +1281,9 @@ describe('L.E2.2 — F511: a finished game’s routine settle is not a correctio
     const existing = new Map([['p-wr', prior]])
     const at = (iso: string, seen: string | null) =>
       classifyCorrectionsWithSettle(diff, existing, games, 2026, 2, { polledAt: new Date(iso), observedAt: new Map([[WK2_G1, seen]]), graceMs: SETTLE_GRACE_MS })
-    const inside = at('2026-09-21T02:29:59.999Z', '2026-09-20T20:30:00.000Z')
+    const inside = at('2026-09-21T11:29:59.999Z', '2026-09-20T20:30:00.000Z')
     expect([inside.corrections.size, inside.settled.size]).toEqual([0, 1])
-    const boundary = at('2026-09-21T02:30:00.000Z', '2026-09-20T20:30:00.000Z')
+    const boundary = at('2026-09-21T11:30:00.000Z', '2026-09-20T20:30:00.000Z')
     expect([boundary.corrections.size, boundary.settled.size]).toEqual([1, 0])
     const unknown = at('2026-09-20T20:31:00.000Z', null)
     expect([unknown.corrections.size, unknown.settled.size]).toEqual([1, 0])
@@ -1440,7 +1440,7 @@ describe('F870 / F871 — merged mid-week: the old map\'s rows, then the new map
     return { world, poll }
   }
 
-  it('no correction while a game of the week is open; settled inside the 6 h grace; recorded as a stat correction past it', async () => {
+  it('no correction while a game of the week is open; settled inside the grace; recorded as a stat correction past it', async () => {
     const moved = () => ({ [BASS.player_id]: { enqueue: true, corrections: [] }, [MITCHELL.player_id]: { enqueue: true, corrections: [] } })
 
     // M1 — G3 still live: both lines move and are re-scored, nothing is recorded.

@@ -6192,6 +6192,8 @@ export type Database = {
         Returns: Json
       }
       cron_ping_route: { Args: { p_path: string }; Returns: number }
+      cron_wake_score_week: { Args: { p_now?: string }; Returns: Json }
+      cron_wake_sync_live: { Args: { p_now?: string }; Returns: Json }
       delete_mock_draft: { Args: { p_draft_id: string }; Returns: undefined }
       draft_actor_name: { Args: never; Returns: string }
       draft_adjust_budget: {
@@ -6865,6 +6867,15 @@ export type Database = {
         Args: { p_kind: string; p_title: string }
         Returns: boolean
       }
+      live_game_window_open: {
+        Args: { p_now: string; p_season?: number }
+        Returns: boolean
+      }
+      live_game_window_since: {
+        Args: { p_now: string; p_season?: number }
+        Returns: string
+      }
+      live_poll_season: { Args: { p_now: string }; Returns: number }
       log_commissioner_action_internal: {
         Args: {
           p_acting_as_team_id?: string
@@ -7435,6 +7446,11 @@ export type Database = {
           week: number
         }[]
       }
+      score_week_slot_due: { Args: { p_now: string }; Returns: boolean }
+      score_week_wake_reason: {
+        Args: { p_now: string; p_slot?: boolean }
+        Returns: string
+      }
       score_write_week_batch: {
         Args: { p_league_id: string; p_scores: Json; p_week: number }
         Returns: Json
@@ -7565,6 +7581,14 @@ export type Database = {
         }[]
       }
       stat_key_label_internal: { Args: { p_key: string }; Returns: string }
+      sync_live_lease_release: {
+        Args: { p_now: string; p_token: string }
+        Returns: boolean
+      }
+      sync_live_lease_take: {
+        Args: { p_now: string; p_seconds: number }
+        Returns: string
+      }
       team_broadcast_payload: {
         Args: { t: Database["public"]["Tables"]["teams"]["Row"] }
         Returns: Json

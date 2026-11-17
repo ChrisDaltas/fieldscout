@@ -293,8 +293,8 @@ select is((select count(*)::int from cron.job where jobname = 'league-player-val
 select is(
   (select string_agg(jobname || ' ' || schedule, '; ' order by jobname) from cron.job
     where jobname in ('sync-weekly-projections-ping', 'sync-live-ping', 'score-week-ping', 'scoring-stall-check', 'lineup-lock')),
-  'lineup-lock * * * * *; score-week-ping * * * * *; scoring-stall-check * * * * *; sync-live-ping * * * * *; sync-weekly-projections-ping 40 * * * *',
-  'E4 the neighbouring jobs are untouched (136''s projections ping still :40; 124''s three + 116''s lineup-lock)');
+  'lineup-lock * * * * *; score-week-ping 30 seconds; scoring-stall-check * * * * *; sync-live-ping 30 seconds; sync-weekly-projections-ping 40 * * * *',
+  'E4 the neighbouring jobs are untouched (136''s projections ping still :40; 124''s three — the two pings every 30 s since 224 — + 116''s lineup-lock)');
 
 -- ---------------------------------------------------------------------------
 -- F. ON DELETE CASCADE from players and leagues

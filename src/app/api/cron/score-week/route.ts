@@ -8,15 +8,20 @@ import {
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createTypedAdminClient } from '@/lib/supabase/admin'
 import { lastPollCompletedAtReader } from '@/lib/sync/ingest-flags'
-import { planLivePoll, readCalendar } from '@/lib/sync/live-poll'
 import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
- * The `score-league-week` invoker (spec §14 "every 5–10s in game windows" /
- * §22.2 / §22.3). SCHEDULED EVERY MINUTE BY pg_cron + pg_net, migration
- * 124's `score-week-ping` job (the 5 s cadence is still produced INSIDE the
- * invocation by `runScoreWeekInvocation`, L.D2.3 / PROGRESS D322) — Q43
- * ANSWERED with its option (c). Vercel Hobby refuses any cron finer than
+ * The `score-league-week` invoker (spec §14 / §22.2 / §22.3). WOKEN BY THE
+ * DATABASE (migration 224, Chris 2026-11-14 — "how about every 30 seconds
+ * during games"): pg_cron's `score-week-ping` job runs every 30 s and calls
+ * this route only while a game window is open or there is scoring work
+ * (`public.score_week_wake_reason` — the queue, the close pass, our stat
+ * fixes). Each invocation does ONE drain pass (a full claim drains again at
+ * once) and exits — no sleep loop, because a sleeping function is billed for
+ * the wait (the Hobby pause of 2026-11-11). Before 224 is pushed, 124's
+ * per-minute ping still calls it and scoring runs once a minute. HISTORY:
+ * 124 scheduled it every minute by pg_cron + pg_net — Q43 ANSWERED with its
+ * option (c). Vercel Hobby refuses any cron finer than
  * daily at deploy time (PROGRESS R884), and the daily stopgap left 24
  * enqueued rows undrained for six hours on 2026-09-10 (124's banner). THE
  * DAILY `vercel.json` ENTRY (`30 8 * * *`) STAYS FOR NOW, deliberately: it
@@ -46,8 +51,9 @@ import { isCronAuthorized } from '@/lib/auth/cron-secret'
  *     (D292) and `nothing_writable` (F259(e)) — `console.error` with
  *     `league_id`; `all_leased` / `all_deferred` informational (R875/R872).
  *
- * Self-gating: an empty queue outside a game window ends the invocation
- * after one claim RPC. `maxDuration` must exceed the budget (pinned).
+ * One pass: a claim that is not full ends the invocation; a full one drains
+ * again at once within the budget. `maxDuration` must exceed the budget
+ * (pinned).
  */
 
 // R885 (#268, orchestrator): Next.js's segment-config parser accepts only a LITERAL here —
@@ -56,8 +62,6 @@ import { isCronAuthorized } from '@/lib/auth/cron-secret'
 // vitest all passed (F271: CI runs no `next build`). The constant stays the single source of
 // truth: route.test.ts pins this literal equal to it.
 export const maxDuration = 60
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 export async function GET(request: Request) {
   if (!isCronAuthorized(request)) {
@@ -73,12 +77,7 @@ export async function GET(request: Request) {
     const report = await runScoreWeekInvocation({
       db,
       time: systemTime,
-      sleep,
       lastPollCompletedAt: lastPollCompletedAtReader(db),
-      isHot: async () => {
-        const calendar = await readCalendar(db, season)
-        return planLivePoll(calendar.games, calendar.weeks, systemTime.now()).mode === 'hot'
-      },
       budgetMs: SCORE_WEEK_BUDGET_MS,
       leaseSeconds: SCORE_WEEK_LEASE_SECONDS,
     })

@@ -6,10 +6,16 @@
  * `lease_lost + gone > 0`, the lease ≥ `maxDuration` + a clock-skew
  * margin (pinned in the route's test), `all_leased` informational).
  *
- * WHAT ONE INVOCATION DOES (the scheduler fires it every minute — BUILT and
- * UNSCHEDULED until PROGRESS Q43 picks the scheduler, R884: Vercel Hobby
- * refuses a per-minute cron at deploy time; the 5–10 s cadence §14 asks for
- * is produced INSIDE the invocation):
+ * WHAT ONE INVOCATION DOES — ONE PASS, THEN EXIT (migration 224; Chris
+ * 2026-11-14: "how about every 30 seconds during games"). The DATABASE
+ * decides when to wake this route: 224's `score-week-ping` job runs every
+ * 30 s and calls it only while a game window is open or the queue, the close
+ * pass or the stat-fix pass has work (`public.score_week_wake_reason`). The
+ * cadence lives in the schedule, never in a sleep loop here — a Vercel
+ * function that sleeps is billed for the whole wall-clock wait (the Hobby
+ * account was paused 2026-11-11 for exactly that). Before 224 is pushed the
+ * old per-minute ping still calls it; a single pass then scores once a
+ * minute — correct, only slower.
  *
  *   1. DRAIN — `runScoreWeekBatch(deps, { batchSize, leaseSeconds,
  *      deferSeconds })` (L.D2.2's worker, untouched) with the last-poll
@@ -43,11 +49,10 @@
  *      INFO. A database without 222 is a SILENT no-op (deploy before push). A
  *      pass that THROWS is one `STAT FIX PASS ERROR` alert and the drain loop
  *      carries on — it never costs the minute its scoring.
- *   3. REPEAT while the budget allows: immediately when the claim came back
- *      FULL (`more`), else after `DRAIN_INTERVAL_MS`; STOP early when the
- *      queue is empty AND no game window is hot (the same table-derived
- *      plan `sync-live` uses — `planLivePoll`), so an idle season costs one
- *      claim RPC per minute, not twelve.
+ *   3. REPEAT only while the claim came back FULL (`more` — a backlog bigger
+ *      than one batch), at once, while `DRAIN_RESERVE_MS` of the budget is
+ *      left; otherwise STOP. No idle wait: the next pass is the next
+ *      30-second wake (224), never a sleep inside this one.
  *
  * THE LEASE PRECONDITION (F263(f), R866/R874): `SCORE_WEEK_LEASE_SECONDS`
  * must be ≥ the route's `maxDuration` + `CLOCK_SKEW_SECONDS`. A drain that
@@ -58,8 +63,8 @@
  * `claimed_at`) means a LIVE drain is never re-claimed. The route's test
  * pins the inequality against the exported `maxDuration`.
  *
- * Time only via `time` (the D3 fence covers this file); `sleep` injected;
- * the drain and the hot predicate injectable for the loop's tests.
+ * Time only via `time` (the D3 fence covers this file); the drain and the
+ * two passes injectable for the loop's tests.
  */
 
 import type { TimeProvider } from '../time/time-provider'
@@ -74,9 +79,9 @@ export const SCORE_WEEK_MAX_DURATION_SECONDS = 60
 export const CLOCK_SKEW_SECONDS = 30
 /** ≥ maxDuration + skew (F263(f)/R874) — pinned by `route.test.ts`. */
 export const SCORE_WEEK_LEASE_SECONDS = 120
-/** The in-window drain cadence (§14: 5–10 s). */
-export const DRAIN_INTERVAL_MS = 5_000
-/** The invocation's own budget; the route's `maxDuration` must exceed it. */
+/** A back-to-back drain (the last claim came back FULL) starts only while this much of the budget is left. */
+export const DRAIN_RESERVE_MS = 5_000
+/** The invocation's own budget — bounds a backlog drained back-to-back; the route's `maxDuration` must exceed it. */
 export const SCORE_WEEK_BUDGET_MS = 50_000
 export const SCORE_WEEK_BATCH_SIZE = 500
 export const SCORE_WEEK_DEFER_SECONDS = 30
@@ -178,11 +183,8 @@ export function closePassErrorAlert(err: unknown): string {
 export interface ScoreWeekInvokerDeps {
   db: ScoreWorkerClient
   time: TimeProvider
-  sleep: (ms: number) => Promise<void>
   /** F263(e): the persisted last-poll surface (122) — `lastPollCompletedAtReader(db)` in production. */
   lastPollCompletedAt: (season: number, week: number) => Promise<string | null>
-  /** Is a game window open? (`planLivePoll(...).mode === 'hot'` in production.) Decides whether an empty queue ends the invocation. */
-  isHot: () => Promise<boolean>
   budgetMs?: number
   /** Injectable for the loop's tests; production passes nothing (runScoreWeekBatch). */
   drain?: typeof runScoreWeekBatch
@@ -205,8 +207,8 @@ export interface ScoreWeekInvocationReport {
   stat_fix: StatFixPassReport | null
   alerts: string[]
   infos: string[]
-  /** Why the invocation stopped. */
-  stopped: 'budget' | 'queue_empty_idle' | null
+  /** Why the invocation stopped: `drained` — the last claim was not full (the one pass is done); `budget` — a full backlog outran the budget (the next wake carries on). */
+  stopped: 'budget' | 'drained' | null
 }
 
 export async function runScoreWeekInvocation(deps: ScoreWeekInvokerDeps): Promise<ScoreWeekInvocationReport> {
@@ -264,17 +266,18 @@ export async function runScoreWeekInvocation(deps: ScoreWeekInvokerDeps): Promis
       }
     }
 
-    if (batch.reason === 'queue_empty' && !(await deps.isHot())) {
-      report.stopped = 'queue_empty_idle'
+    // ONE PASS (224): stop unless the claim came back FULL — a backlog is
+    // drained at once while the budget allows. No idle wait, no sleep: the
+    // next pass is the next 30-second wake.
+    if (!batch.more) {
+      report.stopped = 'drained'
       break
     }
-    const waitMs = batch.more ? 0 : DRAIN_INTERVAL_MS
     const elapsed = deps.time.now().getTime() - startedMs
-    if (elapsed + waitMs + DRAIN_INTERVAL_MS > budgetMs) {
+    if (elapsed + DRAIN_RESERVE_MS > budgetMs) {
       report.stopped = 'budget'
       break
     }
-    if (waitMs > 0) await deps.sleep(waitMs)
   }
 
   report.finished_at = deps.time.now().toISOString()

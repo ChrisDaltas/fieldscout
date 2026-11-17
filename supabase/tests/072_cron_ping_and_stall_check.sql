@@ -118,12 +118,14 @@ select ok((select exists (select 1 from pg_extension where extname = 'pg_cron'))
 -- ---------------------------------------------------------------------------
 -- B. The three jobs — and the idempotent re-apply, executed
 -- ---------------------------------------------------------------------------
+-- B1/B2 re-pinned by migration 224 (Chris 2026-11-14: the database wakes
+-- Vercel every 30 s only while a game is on); pgTAP 174 owns the full proof.
 select is((select schedule || ' | ' || command from cron.job where jobname = 'sync-live-ping'),
-  '* * * * * | SELECT public.cron_ping_route(''/api/cron/sync-live'')',
-  'B1 cron: sync-live-ping every minute, pinging the route by path');
+  '30 seconds | SELECT public.cron_wake_sync_live()',
+  'B1 cron: sync-live-ping every 30 s since 224, through the window gate (was every minute, pinging the route by path)');
 select is((select schedule || ' | ' || command from cron.job where jobname = 'score-week-ping'),
-  '* * * * * | SELECT public.cron_ping_route(''/api/cron/score-week'')',
-  'B2 cron: score-week-ping every minute (the 5 s drains are produced INSIDE the invocation — D322(3))');
+  '30 seconds | SELECT public.cron_wake_score_week()',
+  'B2 cron: score-week-ping every 30 s since 224, through its wake gate (was every minute, the 5 s drains inside the invocation)');
 select is((select schedule || ' | ' || command from cron.job where jobname = 'scoring-stall-check'),
   '* * * * * | SELECT public.scoring_stall_check()',
   'B3 cron: scoring-stall-check every minute, its OWN job — an absent secret raises out of cron_ping_route, and that is exactly when the queue stalls');
@@ -263,6 +265,16 @@ select ok(not has_function_privilege('anon', 'public.scoring_stall_check(timesta
 select ok(has_function_privilege('service_role', 'public.scoring_stall_check(timestamptz)', 'EXECUTE'),
   'E3 service_role KEEPS it — the D291 harness/sim door the three week workers have (064:98-101). It carries no secret; cron_ping_route does, which is why C5 disagrees with this cell on purpose');
 
+-- 224: the ingest arm's threshold depends on whether a game window is open
+-- in the live season — the season that started most recently at p_now
+-- (`live_poll_season`, R1819). Pin it to a scratch season that starts at
+-- 2026-09-10 00:00Z, after any real 2026 week (week 1 starts 09-09 04:00Z)
+-- and before every instant below, with no games: §E/§F judge in the
+-- non-game-day regime (49 h — `2940` below) whatever calendar the local
+-- stack holds (a USED stack carries the simulator's 2099, which has not
+-- started at 2026 instants and never wins); §G opens a window on purpose.
+insert into nfl_weeks (season, week, starts_at) values (2092, 1, '2026-09-10 00:00:00+00');
+
 insert into players (id, full_name, position, adp) values
   ('q72-p1', 'Q72 WR 1', 'WR', 0.001),
   ('q72-p2', 'Q72 WR 2', 'WR', 0.002),
@@ -272,7 +284,7 @@ insert into players (id, full_name, position, adp) values
 select is((select public.scoring_stall_check('2026-09-10 15:00:00+00') -> 'stalled'), 'false'::jsonb,
   'E4 an empty queue is not stalled');
 select is((select value from system_flags where key = 'scoring_stalled'),
-  '{"rows": 0, "reasons": [], "stalled": false, "checked_at": "2026-09-10T15:00:00+00:00", "ingest_stale": false, "last_ingest_at": null, "oldest_enqueued_at": null, "threshold_minutes": 10, "ingest_threshold_minutes": 120}'::jsonb,
+  '{"rows": 0, "reasons": [], "stalled": false, "checked_at": "2026-09-10T15:00:00+00:00", "ingest_stale": false, "last_ingest_at": null, "oldest_enqueued_at": null, "threshold_minutes": 10, "ingest_threshold_minutes": 2940}'::jsonb,
   'E5 …and the flag is written ANYWAY, with `checked_at` — a frozen checked_at is how a dead checker is told apart from a healthy queue; `reasons` is EMPTY, never absent, so a reader can tell "nothing raised it" from "this key predates the arm"');
 
 -- A fresh row (1 min old) is in flight, not stalled.
@@ -306,7 +318,7 @@ insert into score_fanout (season, week, player_id, enqueued_at)
 select 2026, 1, 'q72-p' || g, '2026-09-10 08:50:35+00' from generate_series(2, 3) g;
 update score_fanout set enqueued_at = '2026-09-10 08:50:35+00' where player_id = 'q72-p1';
 select is((select public.scoring_stall_check('2026-09-10 14:50:00+00')),
-  '{"rows": 3, "reasons": ["queue_undrained"], "stalled": true, "checked_at": "2026-09-10T14:50:00+00:00", "ingest_stale": false, "last_ingest_at": null, "oldest_enqueued_at": "2026-09-10T08:50:35+00:00", "threshold_minutes": 10, "ingest_threshold_minutes": 120}'::jsonb,
+  '{"rows": 3, "reasons": ["queue_undrained"], "stalled": true, "checked_at": "2026-09-10T14:50:00+00:00", "ingest_stale": false, "last_ingest_at": null, "oldest_enqueued_at": "2026-09-10T08:50:35+00:00", "threshold_minutes": 10, "ingest_threshold_minutes": 2940}'::jsonb,
   'E11 THE MEASURED 2026-09-10 INCIDENT: rows enqueued 08:50:35Z, 0 claimed, 0 deferred, six hours later ⇒ stalled on `queue_undrained`, with the row count and the oldest instant an operator needs');
 
 -- ---------------------------------------------------------------------------
@@ -350,7 +362,7 @@ select is((select (public.scoring_stall_check('2026-09-10 14:50:00+00') ->> 'row
 insert into score_fanout (season, week, player_id, enqueued_at, claimed_at, claim_token) values
   (2026, 1, 'q72-p1', '2026-09-10 08:50:35+00', '2026-09-10 08:50:40+00', gen_random_uuid());
 select is((select public.scoring_stall_check('2026-09-10 14:50:00+00')),
-  '{"rows": 2, "reasons": ["queue_undrained"], "stalled": true, "checked_at": "2026-09-10T14:50:00+00:00", "ingest_stale": false, "last_ingest_at": null, "oldest_enqueued_at": "2026-09-10T08:50:35+00:00", "threshold_minutes": 10, "ingest_threshold_minutes": 120}'::jsonb,
+  '{"rows": 2, "reasons": ["queue_undrained"], "stalled": true, "checked_at": "2026-09-10T14:50:00+00:00", "ingest_stale": false, "last_ingest_at": null, "oldest_enqueued_at": "2026-09-10T08:50:35+00:00", "threshold_minutes": 10, "ingest_threshold_minutes": 2940}'::jsonb,
   'F3 THE BLOCKER, REPRODUCED AND CLOSED: one aged lease + one elapsed deferral, six hours undrained ⇒ stalled with rows 2. Measured against the shipped predicate this returned {"rows": 0, "stalled": false} — the check went blind exactly when a drain dies mid-work, the case it exists for');
 select ok((select (public.scoring_stall_check('2026-09-10 14:50:00+00') -> 'stalled')::boolean),
   'F4 …and the BANNER''s own boolean is raised on it, not merely the row count');
@@ -399,6 +411,11 @@ select is((select (public.scoring_stall_check('2026-09-10 14:50:00+00') ->> 'row
 -- while the entire pipeline is dark. Silence reading as health is the
 -- CLAUDE.md shape this whole change exists to end, one level up.
 -- ---------------------------------------------------------------------------
+-- 224: §G runs INSIDE a game window (a game live since 08:00Z — open since
+-- 07:45Z), where the ingest arm's threshold is 15 minutes; outside one it is
+-- 49 hours (pgTAP 174 §E pins that regime and both thresholds' edges).
+insert into nfl_games (id, season, week, home_team, away_team, kickoff_at, status) values
+  ('q72-g1', 2092, 1, 'SEA', 'NE', '2026-09-10 08:00:00+00', 'live');
 delete from score_fanout;
 select is((select count(*)::int from score_fanout), 0,
   'G1 precondition: the queue is EMPTY — with ingestion dead there is nothing left to age, so §F''s arm CANNOT fire here. This is the state that read as healthy');
@@ -406,18 +423,18 @@ select is((select count(*)::int from score_fanout), 0,
 insert into system_flags (key, value, updated_at) values
   ('ingest_poll:2026:1', '{"completed_at": "2026-09-10T08:50:35+00:00", "provider": "sleeper+nflverse"}'::jsonb, '2026-09-10 08:50:35+00');
 select is((select public.scoring_stall_check('2026-09-10 14:50:00+00')),
-  '{"rows": 0, "reasons": ["ingest_stale"], "stalled": true, "checked_at": "2026-09-10T14:50:00+00:00", "ingest_stale": true, "last_ingest_at": "2026-09-10T08:50:35+00:00", "oldest_enqueued_at": null, "threshold_minutes": 10, "ingest_threshold_minutes": 120}'::jsonb,
+  '{"rows": 0, "reasons": ["ingest_stale"], "stalled": true, "checked_at": "2026-09-10T14:50:00+00:00", "ingest_stale": true, "last_ingest_at": "2026-09-10T08:50:35+00:00", "oldest_enqueued_at": null, "threshold_minutes": 10, "ingest_threshold_minutes": 15}'::jsonb,
   'G2 BOTH PINGS DEAD IS DETECTED: zero queue rows, the last successful ingestion six hours old ⇒ RAISED, on `ingest_stale` alone. F329 claimed a dead ping was caught by its consequence — it is not, when the ping that dies is the one that FEEDS the queue');
 
-update system_flags set updated_at = '2026-09-10 14:20:00+00',
-                        value = '{"completed_at": "2026-09-10T14:20:00+00:00", "provider": "sleeper+nflverse"}'::jsonb
+update system_flags set updated_at = '2026-09-10 14:40:00+00',
+                        value = '{"completed_at": "2026-09-10T14:40:00+00:00", "provider": "sleeper+nflverse"}'::jsonb
   where key = 'ingest_poll:2026:1';
 select is((select public.scoring_stall_check('2026-09-10 14:50:00+00') -> 'stalled'), 'false'::jsonb,
-  'G3 a poll 30 minutes ago is NOT a stall — outside a game window the plan is IDLE and sweeps once an HOUR (`SWEEP_MINUTE = 0`), so a per-minute threshold here would be a permanent banner');
-update system_flags set updated_at = '2026-09-10 12:50:00+00' where key = 'ingest_poll:2026:1';
+  'G3 a poll 10 minutes ago is NOT a stall (224: inside a game window the threshold is 15 minutes — the 30-second wake polls ~30 times in it; outside one it is 49 h, the daily sweep''s)');
+update system_flags set updated_at = '2026-09-10 14:35:00+00' where key = 'ingest_poll:2026:1';
 select is((select public.scoring_stall_check('2026-09-10 14:50:00+00') -> 'stalled'), 'false'::jsonb,
-  'G4 EXACTLY two hours is still healthy (strict `<`) — the window tolerates exactly ONE missed hourly sweep, and a single provider blip must not light a banner on its own (that is `stats_degraded`''s job, after three failures)');
-update system_flags set updated_at = '2026-09-10 12:49:59.999999+00' where key = 'ingest_poll:2026:1';
+  'G4 EXACTLY fifteen minutes is still healthy (strict `<`) — a single provider blip must not light a banner on its own (that is `stats_degraded`''s job, after three failures)');
+update system_flags set updated_at = '2026-09-10 14:34:59.999999+00' where key = 'ingest_poll:2026:1';
 select is((select public.scoring_stall_check('2026-09-10 14:50:00+00') -> 'ingest_stale'), 'true'::jsonb,
   'G5 …one microsecond more IS (D146''s one-unit rule, pinned both sides)');
 

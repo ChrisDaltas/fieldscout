@@ -58,7 +58,7 @@
  * touches a league table (158's lock; the worker's `week_final`).
  *
  * THE SETTLE GRACE (M6 L.E2.2 — F511, TD2 amended; PROGRESS D453(6)): a
- * change to a final game's line within `SETTLE_GRACE_MS` (6 h) of the game
+ * change to a final game's line within `SETTLE_GRACE_MS` (15 h since 224) of the game
  * first being seen final — or, with no game on the line, of the week's last
  * game being seen final — is ordinary post-game settling: written, queued and
  * re-scored as always, never recorded as a correction (`corrections.settled`
@@ -809,14 +809,24 @@ export function classifyCorrections(
  * the latest such instant over its in-week games, i.e. when its last game
  * was seen final. An unknown instant (NULL) grants no grace.
  *
- * Six hours: every production week so far settled inside the poll that saw
- * its last game final (2026 wks 1–3: the whole week rewritten at that poll,
- * then no line moved in the 31 hourly sweeps measured after week 3 — PROGRESS
- * D453(6)); the platforms' official corrections come days later (Tuesday
- * onward), so the grace covers the overnight cleanup without swallowing
- * them. L.E2.5 re-measures it on the first real corrections.
+ * Six hours, as first measured: every production week so far settled inside
+ * the poll that saw its last game final (2026 wks 1–3: the whole week
+ * rewritten at that poll, then no line moved in the 31 hourly sweeps measured
+ * after week 3 — PROGRESS D453(6)); the platforms' official corrections come
+ * days later (Tuesday onward). L.E2.5 re-measures it on the first real
+ * corrections.
+ *
+ * FIFTEEN hours since migration 224 (R1821, PROGRESS D850): the hourly sweep
+ * is gone. After a week's last game reads final the window closes, and the
+ * next poll of that week is the daily 11:00Z sweep — ~7.5 h after a
+ * prime-time final (~03:30Z), up to ~14 h after a Saturday-afternoon one
+ * (~21:00Z). The grace must reach that first poll, or the ordinary overnight
+ * cleanup it finds would become a public "stat correction" post. 15 h = the
+ * longest such gap plus an hour; it still ends long before the platforms'
+ * official corrections (Tuesday onward for a Monday final — a correction
+ * inside it is still written and re-scored, only not announced).
  */
-export const SETTLE_GRACE_MS = 6 * 60 * 60_000
+export const SETTLE_GRACE_MS = 15 * 60 * 60_000
 
 /** When this line's game (or, with no game id, its week's last game) was first seen final — null when unknown. */
 export function finalObservedAt(
