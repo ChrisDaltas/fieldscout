@@ -8,6 +8,13 @@ Oct 18, 2026 · Architect pass · **DRAFT for Chris's review — no code until a
 >
 > **Measured figures.** The hosted-database numbers in this plan (the playoff rows, Puka Nacua's 2025 line, the `players` counts, the database size) were re-measured by the orchestrator on 2026-10-21 with read-only SQL against the hosted project and are marked *(measured 2026-10-21)*. Anything still marked *(reported)* came from the research pass and is re-measured (query + environment + date recorded in PROGRESS) by the task named next to it before anything depends on it.
 >
+> **Rulings since this plan was written (Chris, in chat) — these override the order and the Highlights and Duel milestones below.**
+> - **2026-11-17 — order.** "we need a way to be making money before we can do something like Duel, because that's going to cost money to run it." / "So I would start with the highlight and do a spike on this salary cap league thing instead." **Highlights is built first. Duel (every D-M milestone, the feed spike D-M0 and its budget question NP-Q2) is on hold, not deleted.** The spike that replaces D-M0 is `spike-salary-cap-pool.md` (PR #598).
+> - **2026-11-17 — Highlights is a browse page.** A YouTube-homepage-style hub (best plays from last week, best players, a row per game, player search), not rows inside a player view. **And every player gets a detail page** with tabs for stats, profile, rankings, games and a highlight reel, which revisits the 2026-10-04 modal ruling (C11, NP-Q4). The Highlights milestones in §6 are superseded by **`replan-highlights-2026-11-17.md`** (hub second, player page third).
+> - **2026-11-13 — Highlights checks YouTube once a week, on Tuesday** (no hourly or nightly job; §2, §5.2 and Appendix B's `ingest-highlights-ping` are superseded), and the feature and its tab are called just **Highlights**.
+> - **2026-11-14 — Vercel is woken only during games** (every 30 s) plus one daily sweep (migration 224). Every job in this plan must fit that; the 15-second Duel ping in §2.1 does not and is on hold with Duel.
+> - **Numbers moved again:** main is at `08e7b65`, migration head 224, pgTAP head 174 (next free 225 / 175). Rate limits shipped as 209 and were extended by 213, so C42 / X.8's design is superseded by the shipped one.
+>
 > **Product name, branding and domains are unchanged.** "Duel" is an internal working name. **Duel stays free.** No paid service is adopted by this document; §5 only proposes them for Chris's approval.
 
 ---
