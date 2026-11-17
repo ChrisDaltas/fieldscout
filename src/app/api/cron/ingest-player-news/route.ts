@@ -6,8 +6,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
- * Player news ingest (F575; migration 198; PROGRESS D550). SCHEDULED every
- * 30 min by pg_cron `ingest-player-news-ping` →
+ * Player news ingest (F575; migration 198; PROGRESS D550). SCHEDULED ONCE A
+ * DAY at 13:30Z by pg_cron `ingest-player-news-ping` (every 30 min until 225 —
+ * Chris 2026-11-17: "yes move those to once a day too") →
  * `cron_ping_route('/api/cron/ingest-player-news')` (124's vehicle). No
  * vercel.json entry (Hobby = daily only). Plain fetch of free RSS feeds and
  * the public Bluesky AppView; stores only items that match a player;

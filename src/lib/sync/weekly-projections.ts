@@ -52,7 +52,8 @@
  *      should not block roster moves and users are not required to remove
  *      injured players from their lineups."): every row of the feed —
  *      projected AND filler — carries Sleeper's current `player.injury_*`,
- *      so the hourly run also keeps `players`' injury fields fresh for the
+ *      so each run (daily + about an hour before each kickoff since 225)
+ *      also keeps `players`' injury fields fresh for the
  *      players we already have (before this only the Tuesday player sync
  *      wrote them, so a tag stuck all week). Only rows of weeks whose
  *      projections WROTE count (a refused response is trusted for nothing).
@@ -381,7 +382,7 @@ export function isClearableInjuryTag(status: string | null | undefined): boolean
   return CLEARABLE_INJURY_TAGS.has((status ?? '').trim().toLowerCase())
 }
 
-/** The four `players` columns the hourly run keeps fresh. */
+/** The four `players` columns each run (daily + pre-kickoff, 225) keeps fresh. */
 export interface InjuryFields {
   status: string | null
   injury_body_part: string | null

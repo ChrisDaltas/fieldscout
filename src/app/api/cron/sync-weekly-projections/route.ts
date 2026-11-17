@@ -7,10 +7,13 @@ import { isCronAuthorized } from '@/lib/auth/cron-secret'
 
 /**
  * THIS WEEK's projected stat lines (M6A L.E1.19; migration 136; PROGRESS
- * F379 / D373; spec §14's `sync-weekly-projections` row). SCHEDULED HOURLY
- * at :40 by pg_cron + pg_net — migration 136's `sync-weekly-projections-ping`
+ * F379 / D373; spec §14's `sync-weekly-projections` row). SCHEDULED ONCE A
+ * DAY at 12:40Z by pg_cron + pg_net — `sync-weekly-projections-ping` (136;
+ * daily since 225 — Chris 2026-11-17: "yes move those to once a day too")
  * (`SELECT public.cron_ping_route('/api/cron/sync-weekly-projections')`),
- * 124's vehicle. No `vercel.json` entry: Hobby allows daily crons only, and
+ * 124's vehicle — and again about an hour before each kickoff (225's
+ * `pregame-refresh-ping` → `cron_wake_pregame_refresh`; Q109: "do the hour
+ * before each kickoff one"), which also refreshes injury tags (D592). No `vercel.json` entry: Hobby allows daily crons only, and
  * the table this writes arrives with the same `db push` as the job.
  *
  * Plans the current + next calendar week from `nfl_weeks` at the injected

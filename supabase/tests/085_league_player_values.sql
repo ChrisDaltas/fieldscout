@@ -276,8 +276,8 @@ select ok(has_table_privilege('anon', 'public.league_player_values', 'SELECT'),
 -- ---------------------------------------------------------------------------
 select is(
   (select schedule || ' | ' || command from cron.job where jobname = 'league-player-values-ping'),
-  '50 * * * * | SELECT public.cron_ping_route(''/api/cron/league-player-values'')',
-  'E1 hourly at :50 (ten minutes after 136''s projections sync), pinging the route through 124''s cron_ping_route');
+  '50 12 * * * | SELECT public.cron_ping_route(''/api/cron/league-player-values'')',
+  'E1 ONCE A DAY at 12:50Z since 225 (Chris 2026-11-17: "yes move those to once a day too"; was hourly at :50) — still ten minutes after the projections sync — pinging the route through 124''s cron_ping_route');
 select is((select count(*)::int from cron.job where jobname = 'league-player-values-ping'), 1, 'E2 exactly ONE such job');
 do $do$
 begin
@@ -293,8 +293,8 @@ select is((select count(*)::int from cron.job where jobname = 'league-player-val
 select is(
   (select string_agg(jobname || ' ' || schedule, '; ' order by jobname) from cron.job
     where jobname in ('sync-weekly-projections-ping', 'sync-live-ping', 'score-week-ping', 'scoring-stall-check', 'lineup-lock')),
-  'lineup-lock * * * * *; score-week-ping 30 seconds; scoring-stall-check * * * * *; sync-live-ping 30 seconds; sync-weekly-projections-ping 40 * * * *',
-  'E4 the neighbouring jobs are untouched (136''s projections ping still :40; 124''s three — the two pings every 30 s since 224 — + 116''s lineup-lock)');
+  'lineup-lock * * * * *; score-week-ping 30 seconds; scoring-stall-check * * * * *; sync-live-ping 30 seconds; sync-weekly-projections-ping 40 12 * * *',
+  'E4 the neighbouring jobs are untouched (the projections ping daily at 12:40Z since 225; 124''s three — the two pings every 30 s since 224 — + 116''s lineup-lock)');
 
 -- ---------------------------------------------------------------------------
 -- F. ON DELETE CASCADE from players and leagues

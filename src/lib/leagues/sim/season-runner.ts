@@ -100,7 +100,7 @@ import type { Database } from '@/types/database'
 import { commishSetAutopilot } from '../api/commish-autopilot-service'
 import { commishEditScore } from '../api/commish-matchup-service'
 import { setLineup } from '../api/lineup-service'
-import { PROJECTION_MAX_AGE_MS } from '../scoring/player-values'
+import { AUTOPILOT_VALUE_MAX_AGE_MS } from '../scoring/player-values'
 import { runLeaguePlayerValues } from '../scoring/player-values-job'
 import { reconcileSeason, type ReconcileReport } from '../scoring/reconcile'
 import { runCloseScoring, runScoreWeekBatch, type BatchReport } from '../scoring/score-week-worker'
@@ -3316,9 +3316,9 @@ async function runValuesChain(
  * F391 — record every pick a tick pass WROTE, with the harness's own read of
  * each key at the pass instant, for invariant 10 (`checkAutopilotSelection`).
  * The keys are read the way 138 reads them: `league_player_values` for
- * (league, season, week), a row older than 6 h at the instant is absent, a
- * projection older than 6 h is absent (`PROJECTION_MAX_AGE_MS` — the same
- * constant 138's `c_max_age` is pinned to), then `players.adp`. Witnesses are
+ * (league, season, week), a row older than 30 h at the instant is absent, a
+ * projection older than 30 h is absent (`AUTOPILOT_VALUE_MAX_AGE_MS` — the
+ * constant 225's `c_max_age` is pinned to; 6 h before Q110), then `players.adp`. Witnesses are
  * the team's rostered men the written map left on the bench, eligible for the
  * slot, with no designation (`simDesignation` — Questionable is healthy), not
  * IR-held and not in the pass's `skipped_locked[]`.
@@ -3366,9 +3366,9 @@ async function gradeAutopilotPicks(service: Supabase, league: LeagueState, data:
   }
   const keyOf = (playerId: string): AuditSelectionKey => {
     const v = valueBy.get(playerId)
-    const fresh = v !== undefined && Date.parse(v.computed_at) >= atMs - PROJECTION_MAX_AGE_MS
+    const fresh = v !== undefined && Date.parse(v.computed_at) >= atMs - AUTOPILOT_VALUE_MAX_AGE_MS
     const projFresh =
-      fresh && v!.projected_points !== null && v!.projection_fetched_at !== null && Date.parse(v!.projection_fetched_at) >= atMs - PROJECTION_MAX_AGE_MS
+      fresh && v!.projected_points !== null && v!.projection_fetched_at !== null && Date.parse(v!.projection_fetched_at) >= atMs - AUTOPILOT_VALUE_MAX_AGE_MS
     return {
       player_id: playerId,
       projected: projFresh ? num(v!.projected_points) : null,

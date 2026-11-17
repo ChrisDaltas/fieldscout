@@ -107,13 +107,27 @@ import { applicableKeys, cutsOf, deliverableKeys, scoreStarter, type StatLineRow
 // ── Constants ──────────────────────────────────────────────────────────────
 
 /**
- * F387's bound. The weekly sync runs hourly (136's `40 * * * *`) and rewrites
- * every line it still projects, so a healthy line is at most ~1 h old; six
- * consecutive missed runs is a dead sync, not a blip (a Sleeper hiccup, one
- * failed deploy). Past this a line is not trusted — the next key orders the
- * player instead. Inclusive: an age of EXACTLY the bound is still fresh.
+ * F387's bound — the COMPUTE half (this job's own read of the weekly lines).
+ * Since 225 the weekly sync runs once a day (12:40Z) and again about an hour
+ * before each kickoff, and this job runs ten minutes after each of those
+ * runs, so the line it reads is minutes old; six hours still means the sync
+ * that should have just run did not. Past this a line is not trusted — the
+ * next key orders the player instead. Inclusive: an age of EXACTLY the bound
+ * is still fresh.
  */
 export const PROJECTION_MAX_AGE_MS = 6 * 60 * 60 * 1000
+
+/**
+ * F387's bound — the READ half: autopilot's `c_max_age` (newest definer of
+ * `lineup_autopilot_internal`, migration 225; pinned equal by V9a). Autopilot
+ * picks the minute a starting spot opens, any hour of a live week, and the
+ * values it reads are refreshed once a day plus an hour before each kickoff
+ * (225), so a day-old row is the healthy case: 30 h = a day plus room for one
+ * late run (Q110, Chris 2026-11-17: "go with option 1" — "Let autopilot use
+ * projections up to about a day old."). Older than this a values row or its
+ * projection is absent at the tick instant. Inclusive, like the compute half.
+ */
+export const AUTOPILOT_VALUE_MAX_AGE_MS = 30 * 60 * 60 * 1000
 
 export type ProjectedMissing = 'no_line' | 'stale_line'
 export type PreseasonMissing = 'no_line' | 'other_season'
