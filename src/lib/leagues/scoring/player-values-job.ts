@@ -6,14 +6,15 @@
  *
  * WHY ITS OWN CRON ROUTE (the task let the Builder choose — "its own cron
  * route or a phase of an existing worker"): the values depend on FOUR moving
- * inputs — the weekly lines (136's sync, hourly), `player_stats` (ingestion),
+ * inputs — the weekly lines (136's sync — daily + pre-kickoff since 225), `player_stats` (ingestion),
  * each league's roster (add/drop, daily-ish) and snapshot (a commissioner
  * scoring change). As a phase of the projections sync it would inherit that
  * sync's failure (a Sleeper outage would also stop re-valuing rosters and
  * season totals) and couple a stat-lines job to league state; as a phase of
- * the scoring worker it would run every minute for data that moves hourly.
- * A separate hourly route at :50 — ten minutes after the sync lands — keeps
- * each job's failure its own and named.
+ * the scoring worker it would run every minute for data that moves a few
+ * times a day. A separate route — daily at 12:50Z and before each kickoff,
+ * each time ten minutes after the sync lands (225) — keeps each job's
+ * failure its own and named.
  *
  * WHAT ONE RUN DOES
  *   1. PLAN from `nfl_weeks` at the injected instant — the SAME planner the

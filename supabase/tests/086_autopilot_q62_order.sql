@@ -22,9 +22,12 @@
 --     FIRST. Each premise is asserted BY VALUE before the cell (§B).
 --   * EVERY VALUE IS A STORED LITERAL and every instant is injected — the
 --     tick instant P = 2026-09-25 12:00Z, the values' computed_at P−1h. The
---     freshness bound is a PAIR at each of its two sites: exactly P−6h is
---     FRESH and P−6h−1s is STALE, for `computed_at` (§E1/§E2) and for
---     `projection_fetched_at` (§E3/§E4). Nothing reads a wall clock.
+--     freshness bound is a PAIR at each of its two sites: exactly P−30h is
+--     FRESH and P−30h−1s is STALE, for `computed_at` (§E1/§E2) and for
+--     `projection_fetched_at` (§E3/§E4) — 30 h since 225 (Q110, Chris
+--     2026-11-17: "go with option 1"; it was 6 h, and these fixtures sat at
+--     P−6h). §E1c / §E2c run the ST2 team an hour either side of P: its row
+--     29 h old is used, 31 h old is absent. Nothing reads a wall clock.
 --   * THE FLEX CELL (§C6) HAS A RANK PREMISE: the RB is RB #1 of the
 --     league-week's values and the WR is WR #3 (asserted by value), so a
 --     rank-against-rank comparison seats the RB and only POINTS seat the WR.
@@ -60,7 +63,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(85);
+select plan(87);
 
 -- pg_temp.un181 — migration 181's one tick hunk removed (pgTAP 129 pins it);
 -- an identity on every other body. Applied INNERMOST.
@@ -164,11 +167,11 @@ select is(
   'A4 THE SORT IS ONE CLAUSE (D340; Q62): the four-key lexicographic ORDER BY appears exactly once in the chooser''s body');
 select ok(
   (select p.prosrc like '%LEFT JOIN public.league_player_values v%'
-      and p.prosrc like '%c_max_age     CONSTANT INTERVAL := interval ''6 hours''%'
+      and p.prosrc like '%c_max_age     CONSTANT INTERVAL := interval ''30 hours''%'
       and p.prosrc not like '%ORDER BY p.adp ASC NULLS LAST, r.player_id ASC)%'
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'lineup_autopilot_internal'),
-  'A5 F389 in the body: a LEFT JOIN to league_player_values (never inner), the 6-hour read bound (F387''s read half), and 125''s adp-first sort GONE');
+  'A5 F389 in the body: a LEFT JOIN to league_player_values (never inner), the 30-hour read bound (F387''s read half; 225 / Q110 — was 6 h), and 125''s adp-first sort GONE');
 select ok(
   (select p.prosrc like '%IF (v_p ->> ''designation'') IN (''OUT'', ''IR'', ''PUP'', ''NFI'', ''Suspended'') THEN%'
       and p.prosrc like '%(v_by_pid -> v_pid ->> ''designation'') IN (''OUT'', ''IR'', ''PUP'', ''NFI'', ''Suspended'', ''Doubtful'')%'
@@ -496,24 +499,24 @@ from (values
  (3, 'q62-o11-qb', 15.00,  null,   null, '2026-09-25 11:00:00+00', null),
  (3, 'q62-o11-out',30.00,  null,   null, '2026-09-25 11:00:00+00', null),
  (3, 'q62-o11-dbt', 2.00,  null,   null, '2026-09-25 11:00:00+00', null),
- -- ST: a's ROW is 6h+1s old at P (stale); ST2: a's row is EXACTLY 6h old
+ -- ST: a's ROW is 30h+1s old at P (stale); ST2: a's row is EXACTLY 30h old
  -- (fresh). SEASON points, not projections, so the ROW bound is the only
  -- thing under test (a projection's line is fetched before its row is
  -- computed, so a stale row would drag a stale LINE along with it).
- (3, 'q62-st-a',    null,  30.00,  null, '2026-09-25 05:59:59+00', null),
+ (3, 'q62-st-a',    null,  30.00,  null, '2026-09-24 05:59:59+00', null),
  (3, 'q62-st-b',    null,  10.00,  null, '2026-09-25 11:00:00+00', null),
- (3, 'q62-st2-a',   null,  30.00,  null, '2026-09-25 06:00:00+00', null),
+ (3, 'q62-st2-a',   null,  30.00,  null, '2026-09-24 06:00:00+00', null),
  (3, 'q62-st2-b',   null,  10.00,  null, '2026-09-25 11:00:00+00', null),
- -- SP: a's PROJECTION LINE is 6h+1s old at P (row fresh); SP2: exactly 6h.
- (3, 'q62-sp-a',   30.00,  10.00,  null, '2026-09-25 11:00:00+00', '2026-09-25 05:59:59+00'),
+ -- SP: a's PROJECTION LINE is 30h+1s old at P (row fresh); SP2: exactly 30h.
+ (3, 'q62-sp-a',   30.00,  10.00,  null, '2026-09-25 11:00:00+00', '2026-09-24 05:59:59+00'),
  (3, 'q62-sp-b',    null,  50.00,  null, '2026-09-25 11:00:00+00', null),
- (3, 'q62-sp2-a',  30.00,  10.00,  null, '2026-09-25 11:00:00+00', '2026-09-25 06:00:00+00'),
+ (3, 'q62-sp2-a',  30.00,  10.00,  null, '2026-09-25 11:00:00+00', '2026-09-24 06:00:00+00'),
  (3, 'q62-sp2-b',   null,  50.00,  null, '2026-09-25 11:00:00+00', null),
  -- NV: only b has a row (a is rostered with NONE); NV2's only QB has none.
  (3, 'q62-nv-b',    null,   5.00,  null, '2026-09-25 11:00:00+00', null),
- -- SA: EVERY row of the team stale.
- (3, 'q62-sa-a',   40.00,  null,   null, '2026-09-24 12:00:00+00', null),
- (3, 'q62-sa-b',   10.00,  null,   null, '2026-09-24 12:00:00+00', null),
+ -- SA: EVERY row of the team stale (31 h old at P — a day-old row is fresh since 225).
+ (3, 'q62-sa-a',   40.00,  null,   null, '2026-09-24 05:00:00+00', null),
+ (3, 'q62-sa-b',   10.00,  null,   null, '2026-09-24 05:00:00+00', null),
  -- D20 (AL2, allow_illegal_lineups = FALSE)
  (3, 'q62-d20-qb', 15.00,  null,   null, '2026-09-25 11:00:00+00', null),
  (3, 'q62-d20-dbt',12.00,  null,   null, '2026-09-25 11:00:00+00', null),
@@ -609,13 +612,13 @@ select is(
 select is(
   (select string_agg(format('%s:%s', player_id, computed_at), ' ' order by player_id) from league_player_values
    where player_id in ('q62-st-a', 'q62-st2-a')),
-  'q62-st-a:2026-09-25 05:59:59+00 q62-st2-a:2026-09-25 06:00:00+00',
-  'B8 FRESHNESS PREMISE (rows): at P = 12:00:00Z the ST row is 6h+1s old and the ST2 row EXACTLY 6h — the boundary pair (season points 30 vs 10; nobody projected)');
+  'q62-st-a:2026-09-24 05:59:59+00 q62-st2-a:2026-09-24 06:00:00+00',
+  'B8 FRESHNESS PREMISE (rows): at P = 12:00:00Z the ST row is 30h+1s old and the ST2 row EXACTLY 30h — the boundary pair (season points 30 vs 10; nobody projected)');
 select is(
   (select string_agg(format('%s:%s', player_id, projection_fetched_at), ' ' order by player_id) from league_player_values
    where player_id in ('q62-sp-a', 'q62-sp2-a')),
-  'q62-sp-a:2026-09-25 05:59:59+00 q62-sp2-a:2026-09-25 06:00:00+00',
-  'B9 FRESHNESS PREMISE (projections): the SP line is 6h+1s old and the SP2 line EXACTLY 6h, both rows computed an hour before P');
+  'q62-sp-a:2026-09-24 05:59:59+00 q62-sp2-a:2026-09-24 06:00:00+00',
+  'B9 FRESHNESS PREMISE (projections): the SP line is 30h+1s old and the SP2 line EXACTLY 30h, both rows computed an hour before P');
 select is(
   (select count(*)::int from league_player_values where player_id in ('q62-nv-a', 'q62-nv2-a')),
   0, 'B10 F389(a) PREMISE: NV''s a and NV2''s only QB are ROSTERED with NO values row');
@@ -752,13 +755,20 @@ select is(pg_temp.r('O11') -> 'slot_map' -> 'flex:0', '"q62-o11-dbt"'::jsonb,
 -- E. F387's READ HALF — a stale value is ABSENT ⇒ the next key (boundary pairs)
 -- ---------------------------------------------------------------------------
 select is(pg_temp.r('ST2') -> 'slot_map' -> 'qb:0', '"q62-st2-a"'::jsonb,
-  'E1 a values row EXACTLY 6h old at P is FRESH: a''s 30.00 season points order him first (b''s adp is better)');
+  'E1 a values row EXACTLY 30h old at P is FRESH (225 / Q110): a''s 30.00 season points order him first (b''s adp is better)');
 select is(pg_temp.r('ST') -> 'slot_map' -> 'qb:0', '"q62-st-b"'::jsonb,
   'E2 …ONE SECOND older and the row is STALE ⇒ absent: b (10.00, fresh) starts over a''s 30.00 — the values job had stopped landing (break probe: trust the stale row ⇒ red)');
 select is(pg_temp.r('ST') -> 'order_basis' -> 'stale_value_row', '["q62-st-a"]'::jsonb,
   'E2b …and order_basis NAMES the stale row''s player (rule 15)');
+-- Q110 in round hours: the ST2 team run an hour either side of P.
+select is((select public.lineup_autopilot_internal(t.league_id, t.id, 2026, 3, '2026-09-25 11:00:00+00') -> 'slot_map' -> 'qb:0'
+             from q62_team t where t.tag = 'ST2'), '"q62-st2-a"'::jsonb,
+  'E1c a values row 29 h old is USED — Chris 2026-11-17 (Q110): "go with option 1" — autopilot works from a day-old row (it would have been absent under 6 h)');
+select is((select public.lineup_autopilot_internal(t.league_id, t.id, 2026, 3, '2026-09-25 13:00:00+00') -> 'slot_map' -> 'qb:0'
+             from q62_team t where t.tag = 'ST2'), '"q62-st2-b"'::jsonb,
+  'E2c …and 31 h old it is ABSENT: b (10.00, fresh) starts over a''s 30.00 — the "updates have stopped" safety still trips, after a missed day');
 select is(pg_temp.fill('SP2', 'qb:0') -> 'order' ->> 'ordered_by', 'projected_points',
-  'E3 a projection line EXACTLY 6h old at P is FRESH: SP2''s a is ordered by his projection');
+  'E3 a projection line EXACTLY 30h old at P is FRESH (225 / Q110): SP2''s a is ordered by his projection');
 select is(pg_temp.r('SP2') -> 'slot_map' -> 'qb:0', '"q62-sp2-a"'::jsonb,
   'E3b …and starts (30.00 projected beats b''s unprojected 50.00 season — key 1 outranks key 2, the per-player reading)');
 select is(pg_temp.r('SP') -> 'slot_map' -> 'qb:0', '"q62-sp-b"'::jsonb,

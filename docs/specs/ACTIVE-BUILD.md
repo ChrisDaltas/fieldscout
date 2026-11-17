@@ -264,7 +264,7 @@ Discharges **F378**, mints **F383**, records **D372**; spec **v2.16.43** (fold-b
 `player_weekly_projections` (THIS week's projected stat line per player, canonical
 namespace, SELECT for signed-in users, no write policy) + `src/lib/sync/weekly-projections.ts`
 + `npm run sync:weekly-projections` + `GET /api/cron/sync-weekly-projections`, fired
-hourly at :40 by pg_cron `sync-weekly-projections-ping` (124's vehicle). **Measured
+~~hourly at :40~~ once a day at 12:40Z plus about an hour before each kickoff since 225 (F917(b), Q109) by pg_cron `sync-weekly-projections-ping` / `pregame-refresh-ping` (124's vehicle). **Measured
 first:** Sleeper's weekly endpoint answers 200 with filler rows, and a week that does
 not exist is ALL filler — so zero PROJECTED rows for any position fails the week.
 The first third of Q62; records **D373** (incl. D373(2), the namespace reading —
@@ -276,8 +276,9 @@ flagged), mints **F385 / F386** for L.E1.20; spec **v2.16.44** (fold-back).
 season-to-date points + games, preseason projected points — POINTS under the league's
 FROZEN snapshot through the worker's own composition; every NULL names why, NULL is never
 zero; member-readable, no write policy) + `src/lib/leagues/scoring/player-values.ts` /
-`player-values-job.ts` + `GET /api/cron/league-player-values`, fired hourly at :50 by
-pg_cron `league-player-values-ping`. **F385** discharged (the legacy season line
+`player-values-job.ts` + `GET /api/cron/league-player-values`, fired ~~hourly at :50~~ once a day at
+12:50Z plus ten minutes after each pre-kickoff projections run since 225 by
+pg_cron `league-player-values-ping` / `pregame-refresh-ping`. **F385** discharged (the legacy season line
 translated), **F386(b)** discharged (a fractional projected PA takes its floor's tier —
 Sleeper's own indicator, 186 / 186 live), **F386(a)** → F10 (neither map extended; every
 value names the keys its source cannot supply), **F387**'s compute half discharged (6 h);

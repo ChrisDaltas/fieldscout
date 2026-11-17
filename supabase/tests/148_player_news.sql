@@ -72,8 +72,9 @@ select is((select count(*)::int from pg_policy where polrelid in ('public.player
   'exactly one (SELECT) policy per table');
 
 -- 3. Schedule ----------------------------------------------------------------
-select is((select command from cron.job where jobname = 'ingest-player-news-ping'),
-  'SELECT public.cron_ping_route(''/api/cron/ingest-player-news'')', 'pg_cron pings the ingest route');
+select is((select schedule || ' | ' || command from cron.job where jobname = 'ingest-player-news-ping'),
+  '30 13 * * * | SELECT public.cron_ping_route(''/api/cron/ingest-player-news'')',
+  'pg_cron pings the ingest route ONCE A DAY at 13:30Z (225 — Chris 2026-11-17: "yes move those to once a day too"; was every 30 min)');
 
 select * from finish();
 rollback;

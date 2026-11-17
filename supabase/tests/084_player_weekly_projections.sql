@@ -237,8 +237,8 @@ select ok(has_table_privilege('anon', 'public.player_weekly_projections', 'SELEC
 -- ---------------------------------------------------------------------------
 select is(
   (select schedule || ' | ' || command from cron.job where jobname = 'sync-weekly-projections-ping'),
-  '40 * * * * | SELECT public.cron_ping_route(''/api/cron/sync-weekly-projections'')',
-  'E1 hourly at :40, pinging the route through 124''s cron_ping_route');
+  '40 12 * * * | SELECT public.cron_ping_route(''/api/cron/sync-weekly-projections'')',
+  'E1 ONCE A DAY at 12:40Z since 225 (Chris 2026-11-17: "yes move those to once a day too"; was hourly at :40 — the pre-kickoff refresh is 225''s pregame-refresh-ping, pgTAP 175), pinging the route through 124''s cron_ping_route');
 select is((select count(*)::int from cron.job where jobname = 'sync-weekly-projections-ping'), 1,
   'E2 exactly ONE such job');
 do $do$

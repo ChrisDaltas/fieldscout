@@ -8,9 +8,12 @@ import { isCronAuthorized } from '@/lib/auth/cron-secret'
 /**
  * League-scored player values for autopilot (M6A L.E1.20; migration 137;
  * PROGRESS F379 / D374; spec §14's `league-player-values` row). SCHEDULED
- * HOURLY at :50 by pg_cron + pg_net — migration 137's
- * `league-player-values-ping` (`SELECT public.cron_ping_route('/api/cron/league-player-values')`),
- * 124's vehicle, ten minutes after 136's projections sync. No `vercel.json`
+ * ONCE A DAY at 12:50Z by pg_cron + pg_net — `league-player-values-ping`
+ * (137; daily since 225 — Chris 2026-11-17: "yes move those to once a day
+ * too") (`SELECT public.cron_ping_route('/api/cron/league-player-values')`),
+ * 124's vehicle, ten minutes after the projections sync — and again about
+ * 50 minutes before each kickoff, ten minutes after the pre-kickoff
+ * projections run (225's `pregame-refresh-ping` → `cron_wake_pregame_refresh`). No `vercel.json`
  * entry: Hobby allows daily crons only, and the table this writes arrives
  * with the same `db push` as the job.
  *

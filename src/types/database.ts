@@ -6192,6 +6192,7 @@ export type Database = {
         Returns: Json
       }
       cron_ping_route: { Args: { p_path: string }; Returns: number }
+      cron_wake_pregame_refresh: { Args: { p_now?: string }; Returns: Json }
       cron_wake_score_week: { Args: { p_now?: string }; Returns: Json }
       cron_wake_sync_live: { Args: { p_now?: string }; Returns: Json }
       delete_mock_draft: { Args: { p_draft_id: string }; Returns: undefined }
@@ -7222,6 +7223,7 @@ export type Database = {
         }
         Returns: Json
       }
+      pregame_refresh_step: { Args: { p_now: string }; Returns: Json }
       process_waivers_internal: {
         Args: { p_at: string; p_league_id: string }
         Returns: Json

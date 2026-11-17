@@ -66,6 +66,26 @@ set local search_path = public, extensions;
 
 select plan(25);
 
+-- pg_temp.un225 — migration 225's ONE lineup_autopilot_internal hunk reversed
+-- (the read-side bound 30 h → 6 h; derive_225.py's pair). The replacement text
+-- occurs once in that body and nowhere else, so it is an identity on every
+-- other body; un201 below applies it INNERMOST, so this suite pins exactly what
+-- it pinned before 225 (R992, additive).
+create function pg_temp.un225(s text) returns text language sql immutable as $un225$
+  select replace(s, $n225$  -- 225 (Q110, Chris 2026-11-17: "go with option 1"): the read-side bound   -- 225 / Q110
+  -- (F387's read half / F389(c)) is 30 HOURS. Projections and values run once   -- 225 / Q110
+  -- a day plus an hour before each kickoff (225), so a day-old row is the   -- 225 / Q110
+  -- healthy case; 30 h = a day plus room for one late run. Pinned equal to   -- 225 / Q110
+  -- AUTOPILOT_VALUE_MAX_AGE_MS (`player-values.ts`) by V9a.   -- 225 / Q110
+  c_max_age     CONSTANT INTERVAL := interval '30 hours';   -- 225 / Q110
+$n225$,
+                    $o225$  -- 138 (L.E1.21, Q62): the read-side freshness bound (F387's read half /
+  -- F389(c)) — the SAME six hours as the compute half's
+  -- `PROJECTION_MAX_AGE_MS` (`player-values.ts`), pinned equal by a unit cell.
+  c_max_age     CONSTANT INTERVAL := interval '6 hours';
+$o225$)
+$un225$;
+
 -- pg_temp.un201 — migration 201's pairs reversed (derive_201.py; pgTAP 151
 -- pins it). RE-PINNED BY D591 ("Allow illegal lineups" retired:
 -- set_lineup_internal, commish_edit_lineup_internal, lineup_autopilot_internal
@@ -73,6 +93,7 @@ select plan(25);
 -- additive, R992). Applied INNERMOST.
 create function pg_temp.un201(s text) returns text language plpgsql as $un201$
 begin
+  s := pg_temp.un225(s);   -- 225 / Q110: innermost (R992)
   -- set_lineup_internal
   s := replace(s, $n201$      -- The bye / OUT refusal that stood here is RETIRED with the setting: a bye or   -- 201 / D591
       -- injured starter, or an empty slot, never refuses a save. He keeps his flag (above)   -- 201 / D591

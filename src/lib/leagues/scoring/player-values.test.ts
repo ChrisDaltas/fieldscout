@@ -28,10 +28,11 @@
  *   V7  computePlayerValue's branches — F387's freshness boundary (exactly
  *       6 h fresh, 6 h + 1 ms stale), no line, other season, projected 0.00.
  *   V8  the projected line's position scope (no zero fill).
- *   V9  F387's two halves share ONE bound (L.E1.21, migration 138): the SQL
- *       read-side `c_max_age` in autopilot's newest definer equals
- *       PROJECTION_MAX_AGE_MS — a line the job still scores is a line the
- *       lock-time read still trusts.
+ *   V9  F387's two halves (L.E1.21, migration 138; split by 225 / Q110): the
+ *       SQL read-side `c_max_age` in autopilot's newest definer equals
+ *       AUTOPILOT_VALUE_MAX_AGE_MS (30 h), and is never tighter than the
+ *       compute half PROJECTION_MAX_AGE_MS (6 h) — a line the job still
+ *       scores is a line the lock-time read still trusts.
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -51,6 +52,7 @@ import {
   isFreshLine,
   LEGACY_SEASON_LINE_KEYS,
   PRESEASON_SOURCE_KEYS,
+  AUTOPILOT_VALUE_MAX_AGE_MS,
   PROJECTION_MAX_AGE_MS,
   scopedProjectedLine,
   scorePreseasonLine,
@@ -410,8 +412,8 @@ describe('V8 the projected line\'s position scope — the worker\'s scope, WITHO
   })
 })
 
-describe('V9 F387 — the compute bound and the lock-time read bound are ONE number (L.E1.21, migration 138)', () => {
-  it('V9a the NEWEST migration defining lineup_autopilot_internal carries c_max_age = 6 hours, equal to PROJECTION_MAX_AGE_MS', () => {
+describe('V9 F387 — the lock-time read bound is pinned to the SQL (L.E1.21, migration 138; 30 h since 225 / Q110)', () => {
+  it('V9a the NEWEST migration defining lineup_autopilot_internal carries c_max_age = 30 hours, equal to AUTOPILOT_VALUE_MAX_AGE_MS, and never tighter than the compute half', () => {
     const dir = fileURLToPath(new URL('../../../../supabase/migrations/', import.meta.url))
     const definers = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
@@ -421,7 +423,10 @@ describe('V9 F387 — the compute bound and the lock-time read bound are ONE num
     const newest = readFileSync(dir + definers[definers.length - 1]!, 'utf8')
     const m = newest.match(/c_max_age\s+CONSTANT INTERVAL := interval '(\d+) hours'/)
     expect(m, 'the read-side bound must be declared as a whole number of hours').not.toBeNull()
-    expect(Number(m![1]) * 60 * 60 * 1000).toBe(PROJECTION_MAX_AGE_MS)
+    expect(Number(m![1]) * 60 * 60 * 1000).toBe(AUTOPILOT_VALUE_MAX_AGE_MS)
+    // Chris 2026-11-17 (Q110): "go with option 1" — about a day old: a day plus one late run.
+    expect(AUTOPILOT_VALUE_MAX_AGE_MS).toBe(30 * 60 * 60 * 1000)
+    expect(AUTOPILOT_VALUE_MAX_AGE_MS).toBeGreaterThanOrEqual(PROJECTION_MAX_AGE_MS)
     expect(PROJECTION_MAX_AGE_MS).toBe(6 * 60 * 60 * 1000)
   })
 })
