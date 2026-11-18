@@ -6,7 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
 
 import { type FetchLike, ingestPlayerNews, readCapped } from './ingest'
-import type { RssSource } from './sources'
+import type { BlueskySource, RssSource } from './sources'
 
 const rss = (key: string): RssSource => ({ kind: 'rss', key, label: key, url: `https://${key}.test/feed` })
 const FEED = `<?xml version="1.0"?><rss><channel><item><guid>g1</guid><title>Jordan Love throws 3 TDs</title><link>https://ok.test/a</link><pubDate>Sun, 18 Oct 2026 20:00:00 GMT</pubDate></item></channel></rss>`
@@ -96,5 +96,52 @@ describe('readCapped (R1592)', () => {
   })
   it('reads a body under the cap', async () => {
     expect(await readCapped(new Response('hello'))).toBe('hello')
+  })
+})
+
+describe('ingestPlayerNews — Bluesky reads back a full day', () => {
+  const src: BlueskySource = { kind: 'bluesky', key: 'bsky:r.test', label: 'R', handle: 'r.test' }
+  const NOW = new Date('2026-10-18T21:00:00Z')
+  const post = (n: number, hoursAgo: number) => ({
+    post: {
+      uri: `at://did:plc:r/app.bsky.feed.post/p${n}`,
+      author: { handle: 'r.test' },
+      record: { text: `Jordan Love note ${n}`, createdAt: new Date(NOW.getTime() - hoursAgo * 3_600_000).toISOString() },
+    },
+  })
+  const run = async (pages: Array<{ feed: unknown[]; cursor?: string }>) => {
+    const urls: string[] = []
+    const f: FetchLike = async (url) => {
+      urls.push(url)
+      return new Response(JSON.stringify(pages[urls.length - 1] ?? { feed: [] }))
+    }
+    const report = await ingestPlayerNews({ db: stubDb().db, time: { now: () => NOW }, fetch: f, sources: [src] })
+    return { urls, report }
+  }
+
+  it('asks for 100 a page and follows the cursor until a page reaches past 26 h', async () => {
+    const { urls, report } = await run([
+      { feed: [post(1, 1), post(2, 10)], cursor: 'c1' },
+      { feed: [post(3, 20), post(4, 25)], cursor: 'c2' },
+      { feed: [post(5, 25.5), post(6, 30)], cursor: 'c3' },
+      { feed: [post(7, 40)], cursor: 'c4' },
+    ])
+    expect(urls).toHaveLength(3)
+    expect(urls[0]).toContain('limit=100')
+    expect(urls[0]).not.toContain('cursor=')
+    expect(urls[1]).toContain('cursor=c1')
+    expect(urls[2]).toContain('cursor=c2')
+    expect(report.sources[0].fetched).toBe(6)
+  })
+
+  it('stops when the feed has no cursor', async () => {
+    const { urls } = await run([{ feed: [post(1, 1)] }])
+    expect(urls).toHaveLength(1)
+  })
+
+  it('never reads more than 5 pages', async () => {
+    const pages = Array.from({ length: 9 }, (_, i) => ({ feed: [post(i, 1)], cursor: `c${i}` }))
+    const { urls } = await run(pages)
+    expect(urls).toHaveLength(5)
   })
 })
