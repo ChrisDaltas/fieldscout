@@ -123,11 +123,15 @@
 --     backlog is gone.
 -- NOT measured: the DELETE itself (this work may only read the hosted
 -- database). It removes the batch by primary key, inside the range the batch
--- spans. And until the table has its first statistics — the first nightly
--- ANALYZE — the planner may read the whole table (about 7 s there) for the
--- "jobs with a run inside the window" step instead of walking the window.
--- All of it together is tens of seconds against 120, for the nine runs the
--- backlog lasts, and well under a second afterwards.
+-- spans.
+-- NOT GUARANTEED until the table has its first statistics (the first nightly
+-- ANALYZE): the plans. The index walk above is what the hosted planner chose
+-- with no statistics; under other cost settings (the local stack's) the same
+-- read is a pass over the rows below the mark plus a sort, and the "jobs with
+-- a run inside the window" step may read the whole table (about 7 s there)
+-- instead of walking the window. An earlier draft's sort form measured 14.3 s
+-- on hosted. Whichever plans are chosen, a call is tens of seconds against
+-- 120 for the nine runs the backlog lasts, and well under a second after.
 --
 -- ---------------------------------------------------------------------------
 -- WHY A SCHEDULED VACUUM, AND WHAT IT DOES NOT DO
@@ -254,7 +258,8 @@ BEGIN
 
   -- THE MARK: the newest runid that is past the short window. Everything
   -- deletable is at or below it (a failed run past 30 days is past 7 too), so
-  -- nothing below looks at the window's own rows. A run with NO timestamps is
+  -- the rule never has to look at the window's own rows. A run with NO
+  -- timestamps is
   -- judged against it: a lower runid was created before that run, so it is
   -- older still — and a run in flight, whose runid is the highest there is,
   -- can never be below it.
@@ -327,7 +332,10 @@ BEGIN
   IF cardinality(v_due) > 0 THEN
     -- Exactly the runs chosen above, by primary key. The range is the
     -- batch's own span — it keeps the read on the index whatever the planner
-    -- knows about the table.
+    -- knows about the table. The rule is NOT re-checked here (it is written
+    -- once): a row re-stamped as recent by someone else between the two
+    -- statements would still go. Nothing does that — the launcher only
+    -- writes runs in flight, and those are never chosen.
     DELETE FROM cron.job_run_details d
      WHERE d.runid >= v_due[1]
        AND d.runid <= v_due[cardinality(v_due)]

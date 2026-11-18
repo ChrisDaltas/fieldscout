@@ -25,8 +25,8 @@
 --       and 186's reader still reports it afterwards; an unscheduled job gets
 --       no such protection.
 --   §E  THE GUARDS: a window under a day, a failed-run window shorter than
---       the rest, a zero cap, a NULL instant and an instant in the future are
---       refused.
+--       the rest, a zero cap, any NULL argument and an instant in the future
+--       are refused.
 --
 -- What it CANNOT prove: VACUUM itself (it cannot run inside a transaction).
 -- §A/§B pin the commands and the privilege; the PR records each job run end
@@ -38,7 +38,9 @@
 -- FIXTURES. Every fixture run is in early 2001 with a NEGATIVE runid, and the
 -- injected instant is 2001-03-01: every real row on a used stack is later
 -- than any cut-off here and has a positive runid above the mark, so the
--- counts below are this file's alone. Runids rise with time, as pg_cron's do.
+-- counts below are this file's alone. Runids rise with time, as pg_cron's do
+-- (one pair, -8942 / -8940, is a microsecond out of order on purpose: it puts
+-- the exactly-7-days run BELOW the mark, where only the rule can keep it).
 --   cut-offs at 2001-03-01: 7 days = 2001-02-22, 30 days = 2001-01-30.
 -- ============================================================================
 begin;
@@ -47,7 +49,7 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 set local time zone 'UTC';
 
-select plan(60);
+select plan(67);
 
 -- ---------------------------------------------------------------------------
 -- A. Posture
@@ -145,17 +147,21 @@ select cron.schedule('q176-quiet',   '0 0 1 1 *', 'SELECT 1') as quiet_id,     -
        cron.schedule('q176-off',     '0 0 1 1 *', 'SELECT 1') as off_id;       -- SWITCHED OFF below; one run, older than everything
 do $do$ begin perform cron.alter_job((select off_id from j176), active := false); end; $do$;
 
+-- The cap block: five contiguous old runs of the unscheduled job, inserted
+-- NEWEST FIRST — "oldest first" must come from the runid, not from the order
+-- the rows happen to lie in.
+insert into cron.job_run_details (jobid, runid, database, username, command, status, return_message, start_time, end_time)
+values (-176001, -9501, 'postgres', 'postgres', 'SELECT 1', 'succeeded', '1 row', '2000-10-01 00:04:00+00', '2000-10-01 00:04:01+00'),
+       (-176001, -9502, 'postgres', 'postgres', 'SELECT 1', 'succeeded', '1 row', '2000-10-01 00:03:00+00', '2000-10-01 00:03:01+00'),
+       (-176001, -9503, 'postgres', 'postgres', 'SELECT 1', 'succeeded', '1 row', '2000-10-01 00:02:00+00', '2000-10-01 00:02:01+00'),
+       (-176001, -9504, 'postgres', 'postgres', 'SELECT 1', 'succeeded', '1 row', '2000-10-01 00:01:00+00', '2000-10-01 00:01:01+00'),
+       (-176001, -9505, 'postgres', 'postgres', 'SELECT 1', 'succeeded', '1 row', '2000-10-01 00:00:00+00', '2000-10-01 00:00:01+00');
+
 insert into cron.job_run_details (jobid, runid, database, username, command, status, return_message, start_time, end_time)
 select v.jobid, v.runid, 'postgres', 'postgres', 'SELECT 1', v.status, v.msg, v.started, v.ended
   from j176 j, lateral (values
     -- THE OLDEST ROW IN THE LOG is a switched-off job's newest (only) run  → STAYS, and must not stop the batch
     (j.off_id,             -9600::bigint, 'succeeded', '1 row', '2000-09-01 00:00:00+00'::timestamptz, '2000-09-01 00:00:01+00'::timestamptz),
-    -- the cap block: five contiguous old runs of the unscheduled job
-    (-176001,              -9505, 'succeeded', '1 row', '2000-10-01 00:00:00+00', '2000-10-01 00:00:01+00'),
-    (-176001,              -9504, 'succeeded', '1 row', '2000-10-01 00:01:00+00', '2000-10-01 00:01:01+00'),
-    (-176001,              -9503, 'succeeded', '1 row', '2000-10-01 00:02:00+00', '2000-10-01 00:02:01+00'),
-    (-176001,              -9502, 'succeeded', '1 row', '2000-10-01 00:03:00+00', '2000-10-01 00:03:01+00'),
-    (-176001,              -9501, 'succeeded', '1 row', '2000-10-01 00:04:00+00', '2000-10-01 00:04:01+00'),
     -- the rule block
     (-176001,              -9000, 'succeeded', '1 row', '2000-11-01 00:00:00+00', '2000-11-01 00:00:01+00'),   -- old, succeeded          → goes
     (-176002,              -8998, 'succeeded', '1 row', '2000-11-03 00:00:00+00', '2000-11-03 00:00:01+00'),   -- UNSCHEDULED job's newest (only) run → goes
@@ -173,23 +179,32 @@ select v.jobid, v.runid, 'postgres', 'postgres', 'SELECT 1', v.status, v.msg, v.
     (j.nostart_id,         -8947, 'failed',    'server restarted', null, null),                                -- no times, job's NEWEST  → STAYS
     (-176001,              -8945, 'failed',    'server restarted', null, null),                                -- no times, below mark    → goes
     (j.quiet_id,           -8944, 'failed',    'server restarted', null, null),                                -- quiet job, HIGHER runid than -8975 but no times → goes (186 reports the timed run)
+    (-176001,              -8942, 'succeeded', '1 row', '2001-02-22 00:00:00+00', '2001-02-22 00:00:01+00'),   -- exactly 7 d, BELOW the mark → stays (only the rule keeps it)
     (-176001,              -8940, 'succeeded', '1 row', '2001-02-21 23:59:59.999999+00', '2001-02-22 00:00:00+00'), -- 7 d + 1 µs          → goes
     (-176001,              -8939, 'failed',    'server restarted', null, null),                                -- no times, below THE MARK → goes
     (-176001,              -8938, 'failed',    'boom',  null,                     '2001-02-20 00:00:00+00'),   -- never started; END 9 d  → stays (30 d) — and it is THE MARK
     (-176001,              -8935, 'starting',  null,    null, null),                                           -- no times, ABOVE mark    → stays
     (j.quiet_id,           -8933, 'starting',  null,    null, null),                                           -- quiet job, a run STARTING → stays; -8975 is still its newest timed run
-    (-176001,              -8930, 'succeeded', '1 row', '2001-02-22 00:00:00+00', '2001-02-22 00:00:01+00'),   -- exactly 7 d             → stays
+    (-176001,              -8930, 'succeeded', '1 row', '2001-02-22 00:00:00+00', '2001-02-22 00:00:01+00'),   -- exactly 7 d, ABOVE the mark → stays, and is not the mark (the two no-time runs just below it stay too)
     (j.busy_id,            -8925, 'succeeded', '1 row', '2001-02-26 00:00:00+00', '2001-02-26 00:00:01+00'),   -- busy job's recent run   → stays
     (-176001,              -8920, 'succeeded', '1 row', '2001-02-25 00:00:00+00', '2001-02-25 00:00:01+00'),   -- inside the window       → stays
-    (null,                 -8918, 'succeeded', '1 row', '2001-02-26 12:00:00+00', '2001-02-26 12:00:01+00')    -- NO JOB ID, inside the window → stays, and must not switch the protection off
+    (null,                 -8918, 'succeeded', '1 row', '2001-02-26 12:00:00+00', '2001-02-26 12:00:01+00'),   -- NO JOB ID, inside the window → stays, and must not switch the protection off
+    (-176001,              -8911, 'failed',    'server restarted', null, null),                                -- no times; nine days on it sits just below a mark that has only a START time
+    (-176001,              -8910, 'running',   null,    '2001-02-28 12:00:00+00', null)                        -- started, never finished → stays now; nine days on it is THE MARK
   ) as v(jobid, runid, status, msg, started, ended);
 
-select is((select count(*)::int from cron.job_run_details where runid < 0), 31,
-  'F1 31 fixture runs, and no other row has a negative runid');
+select is((select count(*)::int from cron.job_run_details where runid < 0), 34,
+  'F1 34 fixture runs, and no other row has a negative runid');
 
 -- ---------------------------------------------------------------------------
 -- D. The batch — oldest first, never more than the cap, and it says `more`
 -- ---------------------------------------------------------------------------
+-- D1–D5 run with the index paths switched off: the cap block lies in the table
+-- newest first, so "the two oldest" can only come from the function's own
+-- ORDER BY, not from the order an index happens to hand rows back in.
+set local enable_indexscan = off;
+set local enable_indexonlyscan = off;
+set local enable_bitmapscan = off;
 select is(public.cron_log_prune('2001-03-01 00:00:00+00', p_max_rows => 2) - 'at' - 'keep_from' - 'keep_failed_from',
   '{"more": true, "deleted": 2}'::jsonb,
   'D1 a cap of 2 deletes 2 and says there is MORE');
@@ -204,8 +219,11 @@ select is(public.cron_log_prune('2001-03-01 00:00:00+00', p_max_rows => 1) - 'at
   'D4 a cap of 1 takes the last of the block — MORE, because the rule block beyond it still has old runs');
 select is((select count(*)::int from cron.job_run_details where runid between -9505 and -9501), 0,
   'D5 the cap block is gone, in three calls, and nothing past it was touched yet');
-select is((select count(*)::int from cron.job_run_details where runid between -9000 and -8918), 25,
-  'D6 …all 25 runs of the rule block still there');
+set local enable_indexscan = on;
+set local enable_indexonlyscan = on;
+set local enable_bitmapscan = on;
+select is((select count(*)::int from cron.job_run_details where runid between -9000 and -8918), 26,
+  'D6 …all 26 runs of the rule block still there');
 select ok(exists (select 1 from cron.job_run_details where runid = -9600),
   'D7 THE OLDEST ROW IN THE LOG is a switched-off job''s last run: three capped calls started past it — it neither went nor stopped the batch');
 
@@ -226,12 +244,13 @@ select is(public.cron_log_prune('2001-03-01 00:00:00+00', p_max_rows => 4) - 'at
 -- C. The rule — what those calls took, and what they left
 -- ---------------------------------------------------------------------------
 select is((select array_agg(runid order by runid) from cron.job_run_details where runid < 0),
-  array[-9600, -8975, -8970, -8960, -8955, -8950, -8947, -8938, -8935, -8933, -8930, -8925, -8920, -8918]::bigint[],
-  'C2 17 runs past their window are gone; the 14 that stay, by runid (each named below)');
+  array[-9600, -8975, -8970, -8960, -8955, -8950, -8947, -8942, -8938, -8935, -8933, -8930, -8925, -8920, -8918, -8911, -8910]::bigint[],
+  'C2 17 runs past their window are gone; the 17 that stay, by runid (each named below)');
 
 select ok(not exists (select 1 from cron.job_run_details where runid = -8940)
+      and exists (select 1 from cron.job_run_details where runid = -8942)
       and exists (select 1 from cron.job_run_details where runid = -8930),
-  'C3 SUCCEEDED, 7 days: a run 7 days + 1 µs old is gone; one exactly 7 days old stays (D146)');
+  'C3 SUCCEEDED, 7 days: a run 7 days + 1 µs old is gone; one exactly 7 days old stays (D146) — both the one below the mark (the rule kept it) and the one above it (it is not past the window, so it is not the mark)');
 select ok(not exists (select 1 from cron.job_run_details where runid = -8980)
       and exists (select 1 from cron.job_run_details where runid = -8970),
   'C4 FAILED, 30 days: 30 days + 1 µs is gone; exactly 30 days stays');
@@ -289,15 +308,17 @@ select ok(not exists (select 1 from cron.job_run_details where runid = -8975),
 
 -- Nine days on: 2001-03-10 ⇒ cut-offs 2001-03-03 and 2001-02-08.
 select is(public.cron_log_prune('2001-03-10 00:00:00+00') - 'at',
-  '{"more": false, "deleted": 8, "keep_from": "2001-03-03T00:00:00+00:00", "keep_failed_from": "2001-02-08T00:00:00+00:00"}'::jsonb,
-  'C16 nine days later the windows have moved with the clock: the job''s own call deletes the 8 runs now past them');
+  '{"more": false, "deleted": 10, "keep_from": "2001-03-03T00:00:00+00:00", "keep_failed_from": "2001-02-08T00:00:00+00:00"}'::jsonb,
+  'C16 nine days later the windows have moved with the clock: the job''s own call deletes the 10 runs now past them');
 select is((select array_agg(runid order by runid) from cron.job_run_details where runid < 0),
-  array[-9600, -8950, -8947, -8938, -8925, -8915]::bigint[],
-  'C17 what is left: the no-status run (28 days) and the never-started one (18 days by its end) — both inside 30 — and the NEWEST run of each of the four jobs still scheduled, all now past 7 days');
+  array[-9600, -8950, -8947, -8938, -8925, -8915, -8910]::bigint[],
+  'C17 what is left: the no-status run (28 days), the never-started one (18 days by its end) and the never-finished one (10 days by its start) — all inside 30 — and the NEWEST run of each of the four jobs still scheduled, all now past 7 days');
 select ok(not exists (select 1 from cron.job_run_details where runid in (-8935, -8933)),
   'C18 the two runs with no timestamps that were above the mark are gone now — later timed runs have aged past the window, which proves them older');
-select ok(not exists (select 1 from cron.job_run_details where runid in (-8970, -8960, -8955, -8918)),
-  'C19 the failed, the never-finished and the never-started run left when THEIR 30 days were up; the run with no job id when its 7 were');
+select ok(not exists (select 1 from cron.job_run_details where runid = -8911),
+  'C18b …and so is the one just below a mark that has only a START time (the never-finished run): the mark is found by start time, not only by end time');
+select ok(not exists (select 1 from cron.job_run_details where runid in (-8970, -8960, -8955, -8942, -8930, -8918)),
+  'C19 the failed, the never-finished and the never-started run left when THEIR 30 days were up; the two exactly-7-days runs and the one with no job id when their 7 were');
 
 -- One of those four jobs is unscheduled ⇒ nothing reads its runs any more.
 do $do$ begin perform cron.unschedule('q176-nostart'); end; $do$;
@@ -317,7 +338,10 @@ select lives_ok($$ select public.cron_log_prune('2001-03-10 00:00:00+00', interv
   'E2 …exactly one day is allowed');
 select is((select array_agg(runid order by runid) from cron.job_run_details where runid < 0),
   array[-9600, -8925, -8915]::bigint[],
-  'E3 …and even at one day for everything, the three scheduled jobs'' newest runs are still there (the two kept failed runs are not)');
+  'E3 …and even at one day for everything, the three scheduled jobs'' newest runs are still there — the three kept runs are not, the never-finished one included although it was THE MARK (the newest run past the window is deletable like any other)');
+select is(public.cron_log_prune('2001-03-10 00:00:00+00', interval '1 day', interval '1 day') - 'at' - 'keep_from' - 'keep_failed_from',
+  '{"more": false, "deleted": 0}'::jsonb,
+  'E3b and again: now the newest run past the window IS a scheduled job''s newest run (-8915) — it stays. A job whose newest run is the mark has no run inside the window, so it is protected, not "recent"');
 select throws_ok($$ select public.cron_log_prune('2001-03-10 00:00:00+00', interval '7 days', interval '6 days') $$, '22023', null,
   'E4 failed runs kept for LESS time than the rest is refused');
 select throws_ok($$ select public.cron_log_prune('2001-03-10 00:00:00+00', p_max_rows => 0) $$, '22023', null,
@@ -325,10 +349,20 @@ select throws_ok($$ select public.cron_log_prune('2001-03-10 00:00:00+00', p_max
 select throws_ok($$ select public.cron_log_prune(null) $$, '22023',
   'cron_log_prune: p_now, p_keep, p_keep_failed and p_max_rows are all required',
   'E6 a NULL instant is refused by name');
+select throws_ok($$ select public.cron_log_prune('2001-03-10 00:00:00+00', p_keep => null) $$, '22023', null,
+  'E6b …a NULL window too');
+select throws_ok($$ select public.cron_log_prune('2001-03-10 00:00:00+00', p_keep_failed => null) $$, '22023', null,
+  'E6c …a NULL failed-run window');
+select throws_ok($$ select public.cron_log_prune('2001-03-10 00:00:00+00', p_max_rows => null) $$, '22023', null,
+  'E6d …and a NULL cap — which would otherwise mean no cap at all');
 select throws_ok($$ select public.cron_log_prune(now() + interval '1 year') $$, '22023', null,
   'E7 an instant in the FUTURE is refused — seen from next year every run is old, and one mistyped call would empty the log');
+select throws_ok($$ select public.cron_log_prune(now() + interval '2 minutes') $$, '22023', null,
+  'E7b …two minutes ahead is already the future');
 select lives_ok($$ select public.cron_log_prune(now()) $$,
   'E8 …the present is not the future: the job''s own call (p_now = now()) runs');
+select lives_ok($$ select public.cron_log_prune(now() + interval '30 seconds') $$,
+  'E8b …and neither is a clock half a minute ahead');
 
 select * from finish();
 rollback;
