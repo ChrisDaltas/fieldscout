@@ -69,23 +69,52 @@ export async function readCapped(res: Response, max = MAX_BYTES): Promise<string
   return new TextDecoder().decode(buf)
 }
 
-async function readSource(source: NewsSource, f: FetchLike, budget: AbortSignal): Promise<NewsItem[]> {
-  const url =
-    source.kind === 'rss'
-      ? source.url
-      : `${BLUESKY_APPVIEW}?actor=${encodeURIComponent(source.handle)}&limit=30&filter=posts_no_replies`
+/** One request under the per-source timeout AND the shared run budget; the
+ *  signal also covers the body read. */
+async function fetchBody(url: string, json: boolean, f: FetchLike, budget: AbortSignal): Promise<string> {
   const res = await f(url, {
     headers: {
       'user-agent': UA,
-      accept: source.kind === 'rss' ? 'application/rss+xml, application/xml, text/xml' : 'application/json',
+      accept: json ? 'application/json' : 'application/rss+xml, application/xml, text/xml',
     },
-    // Per-source timeout AND the shared run budget; the signal also covers the body read.
     signal: AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), budget]),
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const body = await readCapped(res)
-  if (source.kind === 'rss') return parseRss(body, source)
-  return parseBluesky(JSON.parse(body) as unknown, source)
+  return readCapped(res)
+}
+
+/** The ingest runs once a day (migration 225), so a Bluesky reporter is read
+ *  back a full day: 100 posts a page (the AppView's max), following the
+ *  cursor until a page reaches past the look-back, the feed ends, or
+ *  BLUESKY_MAX_PAGES. An RSS feed is one document — it holds what it holds. */
+export const BLUESKY_PAGE_LIMIT = 100
+export const BLUESKY_MAX_PAGES = 5
+export const NEWS_LOOKBACK_MS = 26 * 60 * 60 * 1000
+
+async function readSource(
+  source: NewsSource,
+  f: FetchLike,
+  budget: AbortSignal,
+  since: number,
+): Promise<NewsItem[]> {
+  if (source.kind === 'rss') return parseRss(await fetchBody(source.url, false, f, budget), source)
+  const items: NewsItem[] = []
+  let cursor: string | undefined
+  for (let page = 0; page < BLUESKY_MAX_PAGES; page++) {
+    const url =
+      `${BLUESKY_APPVIEW}?actor=${encodeURIComponent(source.handle)}` +
+      `&limit=${BLUESKY_PAGE_LIMIT}&filter=posts_no_replies` +
+      (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '')
+    const json = JSON.parse(await fetchBody(url, true, f, budget)) as { cursor?: unknown; feed?: unknown } | null
+    const pageItems = parseBluesky(json, source)
+    items.push(...pageItems)
+    const reachedPast = pageItems.some((i) => i.published_at !== null && Date.parse(i.published_at) < since)
+    const next = typeof json?.cursor === 'string' && json.cursor ? json.cursor : undefined
+    const empty = !Array.isArray(json?.feed) || json.feed.length === 0
+    if (reachedPast || !next || empty) break
+    cursor = next
+  }
+  return items
 }
 
 function errorText(err: unknown): string {
@@ -125,7 +154,8 @@ export async function ingestPlayerNews(deps: IngestDeps): Promise<IngestReport> 
   // below stay sequential.
   const sources = deps.sources ?? NEWS_SOURCES
   const budget = AbortSignal.timeout(deps.budgetMs ?? FETCH_BUDGET_MS)
-  const settled = await Promise.allSettled(sources.map((s) => readSource(s, f, budget)))
+  const since = deps.time.now().getTime() - NEWS_LOOKBACK_MS
+  const settled = await Promise.allSettled(sources.map((s) => readSource(s, f, budget, since)))
   for (const [i, source] of sources.entries()) {
     const result = settled[i]
     if (result.status === 'rejected') {
