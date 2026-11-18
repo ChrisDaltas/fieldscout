@@ -6191,6 +6191,15 @@ export type Database = {
         }
         Returns: Json
       }
+      cron_log_prune: {
+        Args: {
+          p_keep?: string
+          p_keep_failed?: string
+          p_max_rows?: number
+          p_now?: string
+        }
+        Returns: Json
+      }
       cron_ping_route: { Args: { p_path: string }; Returns: number }
       cron_wake_pregame_refresh: { Args: { p_now?: string }; Returns: Json }
       cron_wake_score_week: { Args: { p_now?: string }; Returns: Json }
