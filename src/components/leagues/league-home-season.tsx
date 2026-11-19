@@ -769,9 +769,11 @@ interface StandingsCardProps {
 }
 
 /** The prototype's right-column standings card: rank, crest, team +
- *  manager, W–L(–T), PF — every franchise, never a slice. The viewer's row
- *  is a resting accent-soft FILL, never a shadow. The full table (PA, the
- *  tiebreakers, median / second-game records) is one tap away. */
+ *  manager, W–L(–T), PF, PA — every franchise, never a slice (PA added on
+ *  Chris's 2026-11-18 report: "the standings are missing the points
+ *  against"). The viewer's row is a resting accent-soft FILL, never a
+ *  shadow. The full table (the tiebreakers, median / second-game records)
+ *  is one tap away. */
 function HomeStandingsCard({ leagueId, doc, pending, problem, onRetry, myTeamId, managers, week }: StandingsCardProps & { week: number | null }) {
   const emptyCopy = doc ? standingsEmptyCopy(doc) : null
   return (
@@ -815,6 +817,7 @@ function HomeStandingsCard({ leagueId, doc, pending, problem, onRetry, myTeamId,
               <span className="mr-auto">Team</span>
               <span className="shrink-0 text-right">Record</span>
               <span className="w-12 shrink-0 text-right">PF</span>
+              <span className="w-12 shrink-0 text-right">PA</span>
             </div>
             <ol className="flex flex-col" data-standings-rows={doc.standings.length}>
               {doc.standings.map((row) => {
@@ -840,7 +843,8 @@ function HomeStandingsCard({ leagueId, doc, pending, problem, onRetry, myTeamId,
                       )}
                     </div>
                     <span className="fs-num shrink-0 text-right font-semibold text-ink">{formatRecord(row)}</span>
-                    <span className="fs-num w-12 shrink-0 text-right font-medium text-n-6">{formatPoints(row.points_for)}</span>
+                    <span className="fs-num w-12 shrink-0 text-right font-medium text-n-6" data-standings-pf>{formatPoints(row.points_for)}</span>
+                    <span className="fs-num w-12 shrink-0 text-right font-medium text-n-6" data-standings-pa>{formatPoints(row.points_against)}</span>
                   </li>
                 )
               })}
