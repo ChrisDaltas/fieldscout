@@ -85,5 +85,23 @@ export function useLeaguePlayerValues(
 ) {
   const query = useQuery(leaguePlayerValuesQueryOptions(leagueId, season, week, opts))
   const byPlayer = useMemo(() => new Map((query.data ?? []).map((v) => [v.player_id, v])), [query.data])
-  return { ...query, byPlayer }
+  const totalProjOf = useMemo(() => (id: string) => projectionForTotal(byPlayer.get(id)), [byPlayer])
+  return { ...query, byPlayer, totalProjOf }
+}
+
+/**
+ * A player's projection as it counts toward a TEAM's projected total. A
+ * player the projections feed published no line for this week (`no_line`:
+ * on bye, on IR, ruled out) counts 0 — what ESPN, Yahoo and Sleeper all do,
+ * so one bye or IR starter no longer blanks the whole team's total (Chris
+ * 2026-11-18: "none of the matchups are showing the projected totals").
+ * Still unknown (null — the total stays "—"): a stale line, and a player
+ * with no value row at all (incl. every player while the read loads or after
+ * it failed). The player's OWN Proj cell keeps the dash — this is only for
+ * sums.
+ */
+export function projectionForTotal(v: Pick<LeaguePlayerValue, 'projected_points' | 'projected_missing'> | undefined): number | null {
+  if (!v) return null
+  if (v.projected_points !== null) return v.projected_points
+  return v.projected_missing === 'no_line' ? 0 : null
 }

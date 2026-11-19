@@ -6,7 +6,7 @@ import { useMemo } from 'react'
 import { lineupProjectedTotal } from '@/components/leagues/my-team-ops'
 import { weekGamesStarted } from '@/components/leagues/schedule-view-ops'
 
-import { LEAGUE_PLAYER_VALUES_REFETCH_MS, leaguePlayerValuesQueryOptions } from './use-league-player-values'
+import { LEAGUE_PLAYER_VALUES_REFETCH_MS, leaguePlayerValuesQueryOptions, projectionForTotal } from './use-league-player-values'
 import { lineupQueryOptions } from './use-lineup'
 
 /**
@@ -69,7 +69,7 @@ export function useTeamProjectionsByWeek(input: {
   // identity changes only when a total does, so callers can memo on it.
   const projOfWeek = new Map(
     weeks.map((w, i) => {
-      const byPlayer = new Map((values[i]?.data ?? []).map((v) => [v.player_id, v.projected_points]))
+      const byPlayer = new Map((values[i]?.data ?? []).map((v) => [v.player_id, projectionForTotal(v)]))
       return [w.week, (id: string) => byPlayer.get(id) ?? null] as const
     }),
   )

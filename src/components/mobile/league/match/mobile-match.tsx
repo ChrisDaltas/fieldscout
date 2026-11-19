@@ -420,8 +420,8 @@ function HeadToHead({
               b={sides.b}
               myTeamId={myTeamId}
               teamIds={teamIds}
-              projA={boxProjection(boxA.data, projOf)}
-              projB={boxProjection(boxB.data, projOf)}
+              projA={boxProjection(boxA.data, values.totalProjOf)}
+              projB={boxProjection(boxB.data, values.totalProjOf)}
               projectedOf={projectedOf}
               recordOf={recordOf}
               recordsPending={standings.isPending}

@@ -44,6 +44,7 @@ export function useRowStats(args: {
     const splitRows = splits.data ?? []
     return {
       proj: (id) => values.byPlayer.get(id)?.projected_points ?? null,
+      totalProj: values.totalProjOf,
       points: (id) => {
         const line = pointsBy.get(id)
         if (!line || line.phase === 'up_next' || line.phase === 'bye') return null
@@ -54,5 +55,5 @@ export function useRowStats(args: {
       headshot: (id) => identity.playerById.get(id)?.headshot_url ?? null,
       gameHref: (line) => (line.kind === 'game' && line.gameId ? nflGameHref(leagueId, line.gameId) : null),
     }
-  }, [box.data, games.data, splits.data, values.byPlayer, identity.playerById, leagueId])
+  }, [box.data, games.data, splits.data, values.byPlayer, values.totalProjOf, identity.playerById, leagueId])
 }

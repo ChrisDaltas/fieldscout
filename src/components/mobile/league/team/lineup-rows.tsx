@@ -19,6 +19,9 @@ import { BENCH_CHIP_CLASS, posCode, slotChipClass, slotCode, TONE_TEXT, type Gam
 /** What a row reads about a player (all server reads — "–" when absent). */
 export interface RowStats {
   proj: (playerId: string) => number | null
+  /** A player's projection as it counts toward a team total
+   *  (`projectionForTotal`: no line this week = 0). Defaults to `proj`. */
+  totalProj?: (playerId: string) => number | null
   /** A week's points once his game is under way ("9.60"), else null. */
   points: (playerId: string) => string | null
   game: (nflTeam: string | null) => GameLine

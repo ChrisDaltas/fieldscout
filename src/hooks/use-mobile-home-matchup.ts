@@ -101,7 +101,7 @@ export function useMobileHomeMatchup(league: MyLeagueRow): HomeMatchupCard {
   const myBox = useBoxScore(activeId, week ?? undefined, row ? myTeamId : null)
   const oppBox = useBoxScore(activeId, week ?? undefined, oppId)
   const values = useLeaguePlayerValues(row ? league.id : undefined, doc?.season, week ?? undefined)
-  const projOf = (id: string) => values.byPlayer.get(id)?.projected_points ?? null
+  const projOf = values.totalProjOf
 
   const sub = leagueSub({
     teamCount: league.team_count,
