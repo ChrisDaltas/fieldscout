@@ -85,7 +85,7 @@ export function LineupSection(props: LineupSectionProps) {
   // sum, and never "0.00" while the projections load or after they failed.
   const starterProj = lineupProjection(
     model.starters.map((r) => r.player?.player_id ?? kept.get(r.slot.key) ?? null),
-    stats.proj,
+    stats.totalProj ?? stats.proj,
   )
 
   // Own team: the selected player's Drop (moves open, not locked).

@@ -138,7 +138,7 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   )
   const proj = lineupProjection(
     saved.starters.map((r) => r.player?.player_id ?? kept.get(r.slot.key) ?? null),
-    stats.proj,
+    stats.totalProj ?? stats.proj,
   )
 
   // The Lineup check: the viewed week's opponent and their stored lineup.
@@ -168,7 +168,7 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
         kept,
         week,
         games: games.data ?? [],
-        projOf: stats.proj,
+        projOf: stats.totalProj ?? stats.proj,
         projections: values.isError && !values.data ? 'error' : values.isPending ? 'pending' : 'ready',
         opponent: checkOpponent,
       })

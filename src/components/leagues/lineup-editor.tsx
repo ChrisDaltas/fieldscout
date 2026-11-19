@@ -137,6 +137,9 @@ export interface LineupStats {
   games: readonly WeekGame[]
   splits: ReadonlyArray<{ defense: string; position: string; rank: number }>
   proj: (playerId: string) => number | null
+  /** A player's projection as it counts toward a team total
+   *  (`projectionForTotal`: no line this week = 0). Defaults to `proj`. */
+  totalProj?: (playerId: string) => number | null
   /** The projections read (`league_player_values`): `pending` until it
    *  lands, `error` when it failed with nothing to show. Either way the
    *  projected total reads "—" — never "0.0" — and only a failure says why. */
@@ -314,10 +317,10 @@ export function LineupEditor({
   const model = useMemo(() => buildEditorModel(shown, roster, settings), [shown, roster, settings])
   // The projected total — one rule with the phone (`wholeProjectedTotal`):
   // every filled seat (a kept starter's too) must have a projection, else
-  // "—". Never a partial sum; never "0.0" for an empty lineup, while the
+  // "—" (a starter with no line this week — bye, IR, out — counts 0). Never a partial sum; never "0.0" for an empty lineup, while the
   // projections load, or after their read failed.
   const mineIds = useMemo(() => model.starters.map((r) => r.player?.player_id ?? kept.get(r.slot.key) ?? null), [model.starters, kept])
-  const mine = useMemo(() => projectedTotal(mineIds, stats.proj), [mineIds, stats.proj])
+  const mine = useMemo(() => projectedTotal(mineIds, stats.totalProj ?? stats.proj), [mineIds, stats.totalProj, stats.proj])
   const mineWhole = stats.projections === 'ready' ? wholeProjectedTotal(mine, mineIds.filter(Boolean).length) : null
   const mineNote =
     stats.projections === 'error' ? 'couldn’t load the projections' : stats.projections === 'ready' && mine.missing > 0 ? `${mine.missing} without a projection` : null

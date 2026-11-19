@@ -957,9 +957,9 @@ function LineupBoard({
                 ))}
                 <div className={cn(grid, 'py-2')} data-total-row>
                   {!two && centre(BOX_SUM_LABEL)}
-                  <TotalCell data={homeData} teamId={home.teamId} projOf={projOf} live={live} hideProj={home.projectedOnScoreboard} />
+                  <TotalCell data={homeData} teamId={home.teamId} projOf={values.totalProjOf} live={live} hideProj={home.projectedOnScoreboard} />
                   {two && centre(BOX_SUM_LABEL)}
-                  {two && (awaySide ? <TotalCell data={awayData} teamId={awaySide.teamId} projOf={projOf} live={live} hideProj={awaySide.projectedOnScoreboard} mirror /> : <span />)}
+                  {two && (awaySide ? <TotalCell data={awayData} teamId={awaySide.teamId} projOf={values.totalProjOf} live={live} hideProj={awaySide.projectedOnScoreboard} mirror /> : <span />)}
                 </div>
               </section>
             )}
@@ -1074,7 +1074,7 @@ function WinChanceMeter({
   const awayBox = useBoxScore(leagueId, week, away.teamId)
   const values = useLeaguePlayerValues(leagueId, season, week)
   const side = (d: TeamBoxScore | undefined) => (d?.lineup ? { points: d.points, starters: d.starters } : null)
-  const chance = winChance(weekStatus, side(homeBox.data), side(awayBox.data), (id) => values.byPlayer.get(id)?.projected_points ?? null)
+  const chance = winChance(weekStatus, side(homeBox.data), side(awayBox.data), values.totalProjOf)
   if (!chance) return null
   return (
     <Card className="min-w-0" data-win-chance={`${chance.home}-${chance.away}`}>
