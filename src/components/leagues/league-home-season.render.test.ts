@@ -351,6 +351,15 @@ describe('in_season — the matchup of the week is the viewer’s row at the lad
     expect(html).not.toContain('data-peek-elided')
   })
 
+  it('the standings card shows points against beside points for (Chris 2026-11-18)', () => {
+    const t1 = { ...GOLDEN_STANDINGS.standings[0], points_for: 310.5, points_against: 287.25 }
+    const html = renderHome({ standings: { ...GOLDEN_STANDINGS, standings: [t1, ...GOLDEN_STANDINGS.standings.slice(1)] } })
+    const card = html.slice(html.indexOf('data-home-standings'), html.indexOf('data-set-lineup'))
+    expect(card).toMatch(/>PF<\/span><span[^>]*>PA<\/span>/)
+    const row = card.slice(card.indexOf(`data-standings-row="${t1.team_id}"`))
+    expect(row.slice(row.indexOf('data-standings-pf'), row.indexOf('</li>'))).toMatch(/310\.50[\s\S]*data-standings-pa[^>]*>287\.25</)
+  })
+
   it('the standings card names each manager as a profile link', () => {
     const detail = detailWith()
     detail.members = detail.members.map((m) => ({ ...m, team_id: m.team_id === T1 ? 't1' : 't2', profiles: { username: m.user_id === 'user-commish' ? 'chris' : 'sam', avatar_url: null } }))
