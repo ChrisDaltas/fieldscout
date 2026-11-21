@@ -3,6 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { gameLockView, type GameLockView } from '@/lib/leagues/api/rosters-service'
+import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 import { useLeagueChannel } from './use-league-channel'
@@ -49,8 +50,17 @@ import { invalidatingHandlers, rostersEventInvalidates } from './use-league-chan
  * mirror) and go stale together. Every confirmed (re)join refetches (§9.3).
  * Never optimistic: a move re-reads (`use-transactions.ts`).
  *
- * `Date.parse` is inside `gameLockView` (a pure parse of a stored value);
- * no clock is read here.
+ * **A lapsed waiver hold reads as a free agent** (Chris 2026-11-18: players
+ * showed "On waivers until Wed, Oct 7" in November). The pool keeps
+ * `on_waivers` after the hold lapses — no processor flips it back — so the
+ * read applies the add RPC's own lapse rule (149's `on_waivers_lapsed`
+ * check, `waiverHoldLapsed`) once, at read time, against the league's
+ * `waiver_next_run_at`; every surface (players page, phone, rail, player
+ * card, search) gets the corrected state from here.
+ *
+ * `Date.parse` is inside `gameLockView` and `waiverHoldLapsed` (pure parses
+ * of stored values); the one clock read is the query's read instant,
+ * through the sanctioned `systemTime` (TimeProvider, §23).
  */
 
 export const leaguePoolKeys = {
@@ -76,28 +86,51 @@ export interface PoolRow {
 const POSTGREST_CAP = 1000
 export const POOL_TOO_LARGE_COPY = 'This league’s player pool is larger than one read can carry, so the list would be incomplete — try again later.'
 
+/**
+ * Whether an `on_waivers` hold has lapsed — the add RPC's own rule (149):
+ * the hold runs until its instant has passed AND the waiver run at or after
+ * it has been processed (the league's next unprocessed run is later than the
+ * hold). With no run tracked (`waiver_next_run_at` null — pre-draft, season
+ * over) the instant alone decides. A hold with no instant is not lapsed.
+ */
+export function waiverHoldLapsed(waiversUntil: string | null, nextRunAt: string | null, at: number): boolean {
+  if (!waiversUntil) return false
+  const until = Date.parse(waiversUntil)
+  if (Number.isNaN(until) || until > at) return false
+  return nextRunAt === null || until < Date.parse(nextRunAt)
+}
+
 export function useLeaguePool(leagueId: string | undefined) {
   return useQuery({
     queryKey: leaguePoolKeys.all(leagueId ?? 'none'),
     enabled: Boolean(leagueId),
     queryFn: async (): Promise<PoolRow[]> => {
       const supabase = createBrowserClient()
-      const { data, error } = await supabase
-        .from('league_player_pool')
-        .select('player_id, state, waivers_until, locked_until')
-        .eq('league_id', leagueId!)
-        .order('player_id', { ascending: true })
-      if (error) throw error
-      const rows = data ?? []
+      const [poolRead, leagueRead] = await Promise.all([
+        supabase
+          .from('league_player_pool')
+          .select('player_id, state, waivers_until, locked_until')
+          .eq('league_id', leagueId!)
+          .order('player_id', { ascending: true }),
+        supabase.from('leagues').select('waiver_next_run_at').eq('id', leagueId!).maybeSingle(),
+      ])
+      if (poolRead.error) throw poolRead.error
+      if (leagueRead.error) throw leagueRead.error
+      const rows = poolRead.data ?? []
       if (rows.length >= POSTGREST_CAP) {
         throw new Error(POOL_TOO_LARGE_COPY)
       }
-      return rows.map((row) => ({
-        player_id: row.player_id,
-        state: row.state,
-        waivers_until: row.waivers_until,
-        game_lock: gameLockView(row.locked_until),
-      }))
+      const nextRunAt = leagueRead.data?.waiver_next_run_at ?? null
+      const readAt = systemTime.now().getTime()
+      return rows.map((row) => {
+        const lapsed = row.state === 'on_waivers' && waiverHoldLapsed(row.waivers_until, nextRunAt, readAt)
+        return {
+          player_id: row.player_id,
+          state: lapsed ? 'free_agent' : row.state,
+          waivers_until: lapsed ? null : row.waivers_until,
+          game_lock: gameLockView(row.locked_until),
+        }
+      })
     },
   })
 }
