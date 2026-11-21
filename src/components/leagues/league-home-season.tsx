@@ -433,13 +433,23 @@ function ScoreboardMatchup({
   const href = `/app/leagues/${leagueId}/matchup/${row.id}`
   return (
     <div className="flex min-w-0 flex-col gap-[7px]" data-matchup={row.id} data-matchup-status={row.status}>
-      {/* v7's matchup pair: two side tiles with a "vs" disc between them. */}
-      <div className="relative grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-[7px]">
+      {/* v7's matchup pair: two side tiles with a "vs" disc between them.
+          The WHOLE pair opens the matchup (Chris 2026-11-18: "you can't click
+          on a matchup to the matchup detail page"): a stretched link under
+          the tiles, which let clicks through except on their own team and
+          manager links. */}
+      <div className="group relative grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-[7px]">
+        <Link
+          href={href}
+          aria-label={`Open the matchup: ${teamName(doc, row.home_team_id)}${row.away_team_id ? ` vs ${teamName(doc, row.away_team_id)}` : ' (bye)'}`}
+          className="absolute inset-0 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          data-open-matchup-card
+        />
         <ScoreboardSide doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} projected={projectedOf(row.home_team_id)} manager={managers.get(row.home_team_id) ?? null} mine={row.home_team_id === myTeamId} />
         {row.away_team_id ? (
           <ScoreboardSide doc={doc} row={row} teamId={row.away_team_id} score={row.away_score} projected={projectedOf(row.away_team_id)} manager={managers.get(row.away_team_id) ?? null} mine={row.away_team_id === myTeamId} align="end" />
         ) : (
-          <p className="flex min-w-0 items-center justify-end rounded-xl border border-n-4 px-3.5 py-3 text-right text-[12px] font-semibold text-n-6" data-side="bye">
+          <p className="pointer-events-none relative flex min-w-0 items-center justify-end rounded-xl border border-n-4 px-3.5 py-3 text-right text-[12px] font-semibold text-n-6 transition-shadow group-hover:shadow-hard-4" data-side="bye">
             Bye
           </p>
         )}
@@ -498,8 +508,10 @@ function ScoreboardSide({
     <div
       className={cn(
         // The viewer's own side is a resting FILL (never a shadow); the rest
-        // sit on the 1px hairline.
-        'flex min-w-0 flex-col gap-[9px] rounded-xl border px-3.5 py-3',
+        // sit on the 1px hairline. The tile lets clicks through to the
+        // pair's matchup link beneath (its own links take theirs) and lifts
+        // while that link is pointed at.
+        'pointer-events-none relative flex min-w-0 flex-col gap-[9px] rounded-xl border px-3.5 py-3 transition-shadow group-hover:shadow-hard-4',
         mine ? 'border-transparent bg-accent-soft' : 'border-n-4 bg-white',
         align === 'end' && 'items-end text-right',
       )}
@@ -509,9 +521,9 @@ function ScoreboardSide({
       <div className={cn('flex min-w-0 max-w-full items-center gap-2.5', align === 'end' && 'flex-row-reverse')}>
         <Crest name={name} src={null} className="h-[27px] w-[27px]" />
         <div className="min-w-0">
-          <TeamNameLink name={name} leagueId={doc.league_id} teamId={teamId} className="block truncate text-[12px] font-bold tracking-[-0.01em] text-ink" />
+          <TeamNameLink name={name} leagueId={doc.league_id} teamId={teamId} className="pointer-events-auto block truncate text-[12px] font-bold tracking-[-0.01em] text-ink" />
           {manager && (
-            <span className="block truncate text-[10px] font-medium text-n-6">
+            <span className="pointer-events-auto block truncate text-[10px] font-medium text-n-6">
               <UsernameLink username={manager} />
             </span>
           )}

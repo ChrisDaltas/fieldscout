@@ -294,6 +294,22 @@ function renderHome(seed: Seed = {}): string {
 // in_season — the hub (§16.5.1's in_season row)
 // ---------------------------------------------------------------------------
 
+describe('in_season — the whole matchup card opens the matchup (Chris 2026-11-18)', () => {
+  it('a stretched link under the two tiles goes to the matchup page; the tiles pass clicks through except their own links', () => {
+    const html = renderHome()
+    const card = html.slice(html.indexOf('data-matchup="w2-m1"'))
+    const at = card.indexOf('data-open-matchup-card')
+    const link = card.slice(card.lastIndexOf('<a', at), card.indexOf('>', at))
+    expect(link).toContain(`href="/app/leagues/${LEAGUE}/matchup/w2-m1"`)
+    expect(link).toMatch(/aria-label="Open the matchup: [^"]+ vs [^"]+"/)
+    const side = card.slice(card.lastIndexOf('<div', card.indexOf(`data-side="${T1}"`)), card.indexOf(`data-side="${T1}"`))
+    expect(side).toContain('pointer-events-none')
+    expect(side).toContain('group-hover:shadow-hard-4')
+    const tile = card.slice(card.indexOf(`data-side="${T1}"`), card.indexOf('data-score'))
+    expect(tile).toContain('pointer-events-auto')
+  })
+})
+
 describe('in_season — the matchup of the week is the viewer’s row at the ladder’s CURRENT week (the DoD probe)', () => {
   it('renders L.D5.2’s Scoreboard for week 2 (live), with the viewer’s side filled and the door’s stored scores', () => {
     const html = renderHome()
