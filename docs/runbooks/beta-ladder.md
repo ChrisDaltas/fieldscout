@@ -69,7 +69,7 @@ Pick the weekend when the rung-3 leagues draft. The window runs **from Friday 00
 2. **`platform_operator_actions`** in the window — every row, by verb.
 3. **The commissioner log** in the window — `commissioner_actions` plus the per-verb `commish_*_actions` tables, by type.
 4. **Admin Home when the window ends** (`/app/admin`, M8 — taken at the end point of §4.1, not before) — stuck weeks (`overdue_weeks`), job pauses, last cron runs — as counts.
-5. **Cron failures** in the window — `cron.job_run_details` rows with status `failed`. *Caveat:* the `*-ping` jobs call the app over HTTP; a ping that ran but whose call failed shows as `succeeded` here. Check the app's logs for those routes over the window as well and say so in the record.
+5. **Cron failures** in the window — `cron.job_run_details` rows with status `failed`. *Caveat:* the `*-ping` jobs call the app over HTTP; a ping that ran but whose call failed shows as `succeeded` here. Check the app's logs for those routes over the window as well and say so in the record. *How far back it reaches (migration 226):* runs that did not succeed are kept **30 days**, successful ones 7 — so take this count within 30 days of the window's start. A window that began longer ago than that reads as fewer failures than there were; if that is the case, say so in the record instead of writing the number down.
 6. **Every F-row filed** from anything seen in the window, with its TD6 severity (S0 = wrong score / standing / result, data loss or a permission breach; S1 = a draft or scoring weekend could not finish without operator help).
 
 ### 4.3 How a row is classed
@@ -86,7 +86,7 @@ Then: **"Ruling: awaiting Chris."** Chris's ruling is copied in verbatim with it
 
 ## 5. The SELECTs (read-only)
 
-Run against production through the Supabase MCP or the dashboard SQL editor as read-only SELECTs. Replace the two timestamps. Output is counts; nothing here names a person or a league.
+Run against production through the Supabase MCP or the dashboard SQL editor as read-only SELECTs. Replace the two timestamps. Output is counts; nothing here names a person or a league. `cron_failed_runs` only reaches back 30 days (§4.2 item 5).
 
 ```sql
 -- window: set once

@@ -149,7 +149,7 @@
 
 ### L.F2.4 — Alerts that page a human (§24.1, F330, F332) · ONE PASS — **PRE-LAUNCH (Q91)**
 - **Depends:** the launch window; **C3**. **Parallel-safe: yes** (route + config; no migration unless F332's purge needs one).
-- **Scope:** the §24.1 table wired to Sentry/logs; one outside-the-DB watchdog (TD4) that reads `op_platform_state` and pages when pg_cron stops or a week is stuck; `cron.job_run_details` retention (F332).
+- **Scope:** the §24.1 table wired to Sentry/logs; one outside-the-DB watchdog (TD4) that reads `op_platform_state` and pages when pg_cron stops or a week is stuck; ~~`cron.job_run_details` retention (F332)~~ *(done ahead of the window, 2026-11-17 — migration 226; what is left for this task is F918: the watchdog should read the run log's oldest run, because a prune that stops deleting still shows "Last run worked").*
 - **Acceptance:** each page-worthy alert fired once on the test project and received.
 
 ### L.F2.5 — Automatic trips on M8's `job_pauses` (§24.2, Q102) · **FULL** (production writes) — **PRE-LAUNCH (Q91)**
