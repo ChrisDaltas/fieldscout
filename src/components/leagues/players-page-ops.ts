@@ -84,10 +84,11 @@ export function holdersOf(
  * record; D294's reconciliation owns a broken mirror). `on_waivers` needs
  * its instant (113's CHECK ties them); a row that claims it without one is
  * rendered as a free agent rather than invented a date — the server's add
- * refusal, if any, says the rest. The instant is carried, NEVER compared:
- * a lapsed `waivers_until` still maps to `on_waivers` (the tick keeps the
- * state and no processor flips it), and the Add stays live because 113
- * admits the lapsed add (R894). `locked_in_game` is a free agent whose
+ * refusal, if any, says the rest. The instant is not compared here: a
+ * lapsed hold already reads as `free_agent` from the pool hook
+ * (`waiverHoldLapsed` in `use-league-pool.ts` — the add RPC's own lapse
+ * rule), so every `on_waivers` row this sees is a running hold.
+ * `locked_in_game` is a free agent whose
  * lock the tick recorded (116) — the availability is `free_agent`, the 🔒
  * comes from `game_lock`.
  */
